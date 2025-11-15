@@ -14,7 +14,7 @@
       "bundleIdentifier": "com.yourorg.adhanconnect",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Adhan Connect needs microphone access for live Adhan broadcasts.",
-        "UIBackgroundModes": ["audio"]  // allow background audio playback/streaming
+        "UIBackgroundModes": ["audio"]
       }
     },
 
@@ -55,9 +55,9 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/notification-icon.png",   // optional, supply if you have it
-          "color": "#1A73E8",                                // optional accent color for Android
-          "mode": "production"                               // ensures proper behavior in builds
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#1A73E8",
+          "mode": "production"
         }
       ]
     ],

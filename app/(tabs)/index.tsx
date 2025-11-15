@@ -30,6 +30,7 @@ type Subscription = {
 
 type StreamRow = {
   mosque_id: string;
+  type?: string | null;
   is_live: boolean;
   status?: string | null;
 };
@@ -40,13 +41,13 @@ export default function HomeScreen() {
 
   const [mosques, setMosques] = useState<Mosque[]>([]);
   const [subs, setSubs] = useState<Subscription[]>([]);
-  const [liveIds, setLiveIds] = useState<Set<string>>(new Set());
+  const [liveStreams, setLiveStreams] = useState<Record<string, StreamRow>>({});
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const [searchInput, setSearchInput] = useState('');
-  const [query, setQuery] = useState(''); // debounced value
+  const [query, setQuery] = useState(''); // applied value
 
   const subscribedIds = useMemo(
     () => new Set(subs.map((s) => s.mosque_id)),
@@ -73,7 +74,7 @@ export default function HomeScreen() {
           : Promise.resolve({ data: [] as Subscription[], error: null }),
         supabase
           .from('streams')
-          .select('mosque_id, is_live, status')
+          .select('mosque_id, type, is_live, status')
           .eq('is_live', true)
           .eq('status', 'active'),
       ]);
@@ -87,17 +88,19 @@ export default function HomeScreen() {
       }
 
       if (!streamsRes.error && streamsRes.data) {
-        const liveSet = new Set(
-          (streamsRes.data as StreamRow[])
-            .filter((s) => s.is_live)
-            .map((s) => s.mosque_id)
-        );
-        setLiveIds(liveSet);
+        const liveMap: Record<string, StreamRow> = {};
+        (streamsRes.data as StreamRow[]).forEach((s) => {
+          if (s.is_live) {
+            liveMap[s.mosque_id] = s;
+          }
+        });
+        setLiveStreams(liveMap);
       } else {
-        setLiveIds(new Set());
+        setLiveStreams({});
       }
     } catch (e) {
       console.warn('home load error', e);
+      setLiveStreams({});
     } finally {
       setLoading(false);
     }
@@ -115,13 +118,16 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  /** Debounce search input -> query */
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setQuery(searchInput.trim().toLowerCase());
-    }, 250);
-    return () => clearTimeout(id);
-  }, [searchInput]);
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (!value.trim()) {
+      setQuery('');
+    }
+  };
+
+  const applySearch = () => {
+    setQuery(searchInput.trim().toLowerCase());
+  };
 
   /** All mosques filtered by query */
   const filtered = useMemo(() => {
@@ -152,7 +158,8 @@ export default function HomeScreen() {
   const MosqueCard = ({ item }: { item: Mosque }) => {
     const isActive = item.status === 'active' || !item.status;
     const isSub = subscribedIds.has(item.id);
-    const isLive = liveIds.has(item.id);
+    const liveMeta = liveStreams[item.id];
+    const isLive = !!liveMeta;
 
     return (
       <View style={[styles.card, styles.shadow]}>
@@ -171,6 +178,11 @@ export default function HomeScreen() {
               <View style={[styles.chip, styles.chipLive]}>
                 <View style={styles.liveDot} />
                 <Text style={styles.chipLiveText}>LIVE</Text>
+                {liveMeta?.type && (
+                  <Text style={styles.chipLiveMeta}>
+                    {liveMeta.type.toUpperCase()}
+                  </Text>
+                )}
               </View>
             )}
             {isSub && (
@@ -207,87 +219,48 @@ export default function HomeScreen() {
     );
   };
 
-  /** Header with search + optional "Your mosques" section */
-  const ListHeader = () => (
-    <View style={[styles.header, { paddingTop: topPad }]}>
-      <Text style={styles.appTitle}>Adhan Connect</Text>
-      <Text style={styles.subtitle}>
-        Find your mosques, listen live, donate
-      </Text>
-
-      <View style={styles.searchWrap}>
-        <TextInput
-          placeholder="Search by name or city"
-          placeholderTextColor="#94A3B8"
-          value={searchInput}
-          onChangeText={setSearchInput}
-          returnKeyType="search"
-          style={styles.searchInput}
-        />
-      </View>
-
-      {loading && (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator size="small" color="#0EA5E9" />
-          <Text style={styles.loadingText}>Loading mosques…</Text>
-        </View>
-      )}
-
-      {!loading && subs.length > 0 && (
-        <Text style={styles.yourMosquesHint}>
-          You follow {subs.length} mosque{subs.length > 1 ? 's' : ''}.
-        </Text>
-      )}
-
-      {yourMosques.length > 0 && (
-        <View style={{ marginTop: 16 }}>
-          <Text style={styles.sectionTitle}>Your mosques</Text>
-          <FlatList
-            data={yourMosques}
-            keyExtractor={(m) => m.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingVertical: 8 }}
-            ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
-            renderItem={({ item }) => (
-              <View style={[styles.smallCard, styles.shadow]}>
-                <View style={styles.smallHeader}>
-                  <Text style={styles.smallName} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  {liveIds.has(item.id) && (
-                    <View style={[styles.chip, styles.chipLive, { marginLeft: 4 }]}>
-                      <View style={styles.liveDot} />
-                      <Text style={styles.chipLiveText}>LIVE</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.smallLocation} numberOfLines={1}>
-                  {[item.city, item.country].filter(Boolean).join(', ')}
-                </Text>
-
-                <View style={styles.smallButtonsRow}>
-                  <Link href="/(tabs)/now" asChild>
-                    <Pressable style={[styles.smallBtn, styles.smallBtnPrimary]}>
-                      <Text style={styles.smallBtnPrimaryText}>Listen</Text>
-                    </Pressable>
-                  </Link>
-                  <Link href="/(tabs)/settings/subscriptions" asChild>
-                    <Pressable style={[styles.smallBtn, styles.smallBtnSecondary]}>
-                      <Text style={styles.smallBtnSecondaryText}>Manage</Text>
-                    </Pressable>
-                  </Link>
-                </View>
-              </View>
-            )}
-          />
-        </View>
-      )}
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <View style={[styles.header, { paddingTop: topPad }]}>
+        <Text style={styles.appTitle}>Adhan Connect</Text>
+        <Text style={styles.subtitle}>
+          Find your mosques, listen live, donate
+        </Text>
+
+        <View style={styles.searchWrap}>
+          <TextInput
+            placeholder="Search by name or city"
+            placeholderTextColor="#94A3B8"
+            value={searchInput}
+            onChangeText={handleSearchChange}
+            onSubmitEditing={applySearch}
+            returnKeyType="search"
+            style={styles.searchInput}
+          />
+          <Pressable
+            onPress={applySearch}
+            style={styles.searchBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Apply search"
+          >
+            <Text style={styles.searchBtnText}>Search</Text>
+          </Pressable>
+        </View>
+
+        {loading && (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color="#0EA5E9" />
+            <Text style={styles.loadingText}>Loading mosques…</Text>
+          </View>
+        )}
+
+        {!loading && subs.length > 0 && (
+          <Text style={styles.yourMosquesHint}>
+            You follow {subs.length} mosque{subs.length > 1 ? 's' : ''}.
+          </Text>
+        )}
+      </View>
+
       <FlatList
         data={otherMosques}
         keyExtractor={(m) => m.id}
@@ -295,8 +268,62 @@ export default function HomeScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        ListHeaderComponent={<ListHeader />}
-        ListHeaderComponentStyle={{ marginBottom: 4 }}
+        ListHeaderComponent={
+          yourMosques.length > 0 ? (
+            <View style={styles.yourMosquesSection}>
+              <Text style={styles.sectionTitle}>Your mosques</Text>
+              <FlatList
+                data={yourMosques}
+                keyExtractor={(m) => m.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingVertical: 8 }}
+                ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
+                renderItem={({ item }) => {
+                  const liveMeta = liveStreams[item.id];
+                  return (
+                    <View style={[styles.smallCard, styles.shadow]}>
+                      <View style={styles.smallHeader}>
+                        <Text style={styles.smallName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        {!!liveMeta && (
+                          <View style={[styles.chip, styles.chipLive, { marginLeft: 4 }]}>
+                            <View style={styles.liveDot} />
+                            <Text style={styles.chipLiveText}>LIVE</Text>
+                            {liveMeta?.type && (
+                              <Text style={styles.chipLiveMeta}>
+                                {liveMeta.type.toUpperCase()}
+                              </Text>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.smallLocation} numberOfLines={1}>
+                        {[item.city, item.country].filter(Boolean).join(', ')}
+                      </Text>
+
+                      <View style={styles.smallButtonsRow}>
+                        <Link href="/(tabs)/now" asChild>
+                          <Pressable style={[styles.smallBtn, styles.smallBtnPrimary]}>
+                            <Text style={styles.smallBtnPrimaryText}>
+                              {liveMeta ? 'Listen live' : 'Listen'}
+                            </Text>
+                          </Pressable>
+                        </Link>
+                        <Link href="/(tabs)/settings/subscriptions" asChild>
+                          <Pressable style={[styles.smallBtn, styles.smallBtnSecondary]}>
+                            <Text style={styles.smallBtnSecondaryText}>Manage</Text>
+                          </Pressable>
+                        </Link>
+                      </View>
+                    </View>
+                  );
+                }}
+              />
+            </View>
+          ) : null
+        }
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           !loading ? (
@@ -323,8 +350,8 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    paddingHorizontal: 4,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   appTitle: {
     fontSize: 26,
@@ -340,8 +367,12 @@ const styles = StyleSheet.create({
 
   searchWrap: {
     marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   searchInput: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
     borderColor: '#E2E8F0',
     borderWidth: StyleSheet.hairlineWidth,
@@ -350,6 +381,16 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     color: '#0F172A',
+  },
+  searchBtn: {
+    backgroundColor: '#0EA5E9',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  searchBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 
   loadingRow: {
@@ -366,6 +407,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 12,
     color: '#64748B',
+  },
+  yourMosquesSection: {
+    marginBottom: 12,
   },
 
   sectionTitle: {
@@ -446,6 +490,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#DC2626',
     marginLeft: 4,
+  },
+  chipLiveMeta: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginLeft: 6,
   },
   liveDot: {
     width: 8,

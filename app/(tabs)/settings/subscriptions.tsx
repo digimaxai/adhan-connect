@@ -1,10 +1,11 @@
 // app/(tabs)/settings/subscriptions.tsx
-// (UI label keeps "Manage subscriptions" if you want continuity; functionally this manages "follows")
+// (UI label keeps "Manage subscriptions" for continuity; functionally this manages user subscriptions)
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { Appbar, Button, Chip, Divider, List, Searchbar, Text } from 'react-native-paper';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
 type MosqueRow = {
@@ -21,6 +22,8 @@ const FOLLOW_LIMIT = 5;
 
 export default function ManageFollows() {
   const router = useRouter();
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<MosqueRow[]>([]);
@@ -72,13 +75,17 @@ export default function ManageFollows() {
   }, [query, coords.lat, coords.lng]);
 
   const follow = async (mosque_id: string) => {
+    if (!userId) return;
     if (followCount >= FOLLOW_LIMIT) return;
     if (items.find(i => i.id === mosque_id)?.is_following) return;
     setSaving(true);
     // optimistic mark
     setItems(prev => prev.map(i => i.id === mosque_id ? ({ ...i, is_following: true }) : i));
     try {
-      const { error } = await supabase.from('follows').insert({ mosque_id });
+      const { error } = await supabase.from('subscriptions').insert({
+        mosque_id,
+        user_id: userId,
+      });
       if (error) throw error;
     } catch (e) {
       // revert
@@ -90,13 +97,18 @@ export default function ManageFollows() {
   };
 
   const unfollow = async (mosque_id: string) => {
+    if (!userId) return;
     if (!items.find(i => i.id === mosque_id)?.is_following) return;
     setSaving(true);
     const snapshot = items;
     // optimistic unmark
     setItems(prev => prev.map(i => i.id === mosque_id ? ({ ...i, is_following: false }) : i));
     try {
-      const { error } = await supabase.from('follows').delete().eq('mosque_id', mosque_id);
+      const { error } = await supabase
+        .from('subscriptions')
+        .delete()
+        .eq('mosque_id', mosque_id)
+        .eq('user_id', userId);
       if (error) throw error;
     } catch (e) {
       // revert
