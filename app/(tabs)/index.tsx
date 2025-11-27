@@ -1,19 +1,18 @@
 // app/(tabs)/index.tsx
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Platform,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
+import {
+  AdhanBroadcast,
+  canStartBroadcast,
+  fetchUpcomingBroadcasts,
+  formatTimeWithTz,
+  labelForPrayer,
+  statusBadge,
+} from '../../lib/adhans';
+import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
 
 type Mosque = {
@@ -36,12 +35,18 @@ type StreamRow = {
 };
 
 export default function HomeScreen() {
+  const router = useRouter();
   const { session } = useAuth();
+  const roles = useRoleFlags();
   const userId = session?.user?.id ?? null;
 
   const [mosques, setMosques] = useState<Mosque[]>([]);
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [liveStreams, setLiveStreams] = useState<Record<string, StreamRow>>({});
+
+  const [nextBroadcast, setNextBroadcast] = useState<AdhanBroadcast | null>(null);
+  const [muezzinLoading, setMuezzinLoading] = useState(false);
+  const [muezzinError, setMuezzinError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -140,6 +145,33 @@ export default function HomeScreen() {
     });
   }, [mosques, query]);
 
+  const loadMuezzin = async () => {
+    if (!roles.isMuezzin) {
+      setNextBroadcast(null);
+      setMuezzinError(null);
+      return;
+    }
+    setMuezzinLoading(true);
+    setMuezzinError(null);
+    try {
+      const upcoming = await fetchUpcomingBroadcasts(1);
+      setNextBroadcast(upcoming[0] ?? null);
+      if (!upcoming.length) {
+        setMuezzinError('No upcoming adhans scheduled.');
+      }
+    } catch (e: any) {
+      setMuezzinError(e?.message ?? 'Could not load upcoming adhans.');
+      setNextBroadcast(null);
+    } finally {
+      setMuezzinLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMuezzin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roles.isMuezzin]);
+
   /** Subscribed mosques (for "Your mosques") */
   const yourMosques = useMemo(
     () => filtered.filter((m) => subscribedIds.has(m.id)),
@@ -153,6 +185,110 @@ export default function HomeScreen() {
   );
 
   const topPad = Platform.OS === 'android' ? 8 : 0;
+
+  const NextAdhanHero = () => {
+    if (!roles.isMuezzin) return null;
+
+    const broadcast = nextBroadcast;
+    const [now, setNow] = useState(new Date());
+
+    useEffect(() => {
+      const id = setInterval(() => setNow(new Date()), 1000);
+      return () => clearInterval(id);
+    }, []);
+
+    const startable = broadcast ? canStartBroadcast(broadcast, now) : false;
+    const badge = broadcast ? statusBadge(broadcast, now) : null;
+
+    const remaining = (() => {
+      if (!broadcast) return null;
+      const target = new Date(broadcast.scheduled_for);
+      const diffSec = Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
+      const hours = Math.floor(diffSec / 3600);
+      const mins = Math.floor((diffSec % 3600) / 60);
+      return {
+        text: `Adhan in ${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`,
+        diffSec,
+      };
+    })();
+
+    const urgency = (() => {
+      if (!remaining) return { color: '#22C55E', label: 'Ready' };
+      if (remaining.diffSec < 120) return { color: '#EF4444', label: 'Critical' };
+      if (remaining.diffSec < 600) return { color: '#F59E0B', label: 'Soon' };
+      return { color: '#22C55E', label: 'Ready' };
+    })();
+
+    return (
+      <View style={[styles.heroCard, styles.shadow]}>
+        <Text style={styles.heroEyebrow}>Muezzin</Text>
+        <Text style={styles.heroTitle}>Your next Adhan</Text>
+        {muezzinLoading && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <ActivityIndicator color="#0EA5E9" />
+            <Text style={styles.heroSubtitle}>Loading your schedule�?�</Text>
+          </View>
+        )}
+        {!muezzinLoading && broadcast && (
+          <>
+            <Text style={styles.heroSubtitle}>
+              {labelForPrayer(broadcast.prayer)} • {formatTimeWithTz(broadcast)}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 10 }}>
+              <View style={[styles.livePill, { backgroundColor: broadcast.status === 'live' ? '#FEE2E2' : '#E2E8F0' }]}>
+                <View
+                  style={[
+                    styles.liveDot,
+                    { backgroundColor: broadcast.status === 'live' ? '#DC2626' : '#94A3B8' },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.livePillText,
+                    { color: broadcast.status === 'live' ? '#B91C1C' : '#0F172A' },
+                  ]}
+                >
+                  {broadcast.status === 'live' ? 'LIVE' : 'Ready'}
+                </Text>
+              </View>
+              {badge && <Text style={styles.heroBadge}>{badge}</Text>}
+            </View>
+            {remaining && (
+              <Text style={[styles.heroCountdown, { color: urgency.color }]}>
+                {remaining.text}
+              </Text>
+            )}
+            <Text style={[styles.heroUrgency, { color: urgency.color }]}>{urgency.label}</Text>
+            <View style={{ flexDirection: 'row', marginTop: 12, gap: 10 }}>
+              <Pressable
+                onPress={() => router.push(`/broadcast/${broadcast.id}`)}
+                style={({ pressed }) => [
+                  styles.heroButton,
+                  { backgroundColor: startable ? '#EF4444' : '#0EA5E9', opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={styles.heroButtonText}>{startable ? 'Go live' : 'View details'}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/(tabs)/muezzin')}
+                style={({ pressed }) => [
+                  styles.heroButton,
+                  { backgroundColor: '#E0F2FE', opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={[styles.heroButtonText, { color: '#0369A1' }]}>Full schedule</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+        {!muezzinLoading && !broadcast && (
+          <Text style={styles.heroSubtitle}>
+            {muezzinError || 'No upcoming adhans found. Upload a timetable to get reminders.'}
+          </Text>
+        )}
+      </View>
+    );
+  };
 
   /** Card used in both sections */
   const MosqueCard = ({ item }: { item: Mosque }) => {
@@ -219,6 +355,24 @@ export default function HomeScreen() {
     );
   };
 
+  // Dedicated layout for muezzin: focus on control panel only
+  if (roles.isMuezzin) {
+    return (
+      <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+        <View style={[styles.header, { paddingTop: topPad }]}>
+          <Text style={styles.appTitle}>Adhan Connect</Text>
+          <Text style={styles.subtitle}>Your Adhan control panel</Text>
+          <NextAdhanHero />
+          {!nextBroadcast && (
+            <Text style={[styles.heroSubtitle, { marginTop: 8 }]}>
+              No upcoming adhans found. Ensure adhan_broadcasts has future rows for your mosque and policies allow access.
+            </Text>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <View style={[styles.header, { paddingTop: topPad }]}>
@@ -226,6 +380,8 @@ export default function HomeScreen() {
         <Text style={styles.subtitle}>
           Find your mosques, listen live, donate
         </Text>
+
+        <NextAdhanHero />
 
         <View style={styles.searchWrap}>
           <TextInput
@@ -532,6 +688,83 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
     fontWeight: '600',
     fontSize: 14,
+  },
+
+  heroCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 14,
+    marginBottom: 12,
+  },
+  heroEyebrow: {
+    color: '#67E8F9',
+    fontWeight: '700',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  heroTitle: {
+    color: '#E2E8F0',
+    fontWeight: '800',
+    fontSize: 20,
+    marginTop: 4,
+  },
+  heroSubtitle: {
+    color: '#CBD5E1',
+    fontSize: 14,
+    marginTop: 6,
+  },
+  heroBadge: {
+    marginTop: 4,
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  heroCountdown: {
+    marginTop: 6,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  heroUrgency: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '700',
+  },
+  livePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  livePillText: {
+    fontWeight: '800',
+    fontSize: 12,
+    marginLeft: 6,
+  },
+  heroButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroButtonText: {
+    color: '#F8FAFC',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  debugCard: {
+    marginTop: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E2E8F0',
+  },
+  debugLine: {
+    fontSize: 12,
+    color: '#475569',
   },
 
   emptyText: {

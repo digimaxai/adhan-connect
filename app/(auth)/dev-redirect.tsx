@@ -1,10 +1,10 @@
 // app/(auth)/dev-redirect.tsx
-import * as Linking from 'expo-linking';
 import * as Clipboard from 'expo-clipboard';
 import { View, Text, Pressable } from 'react-native';
+import { getAuthRedirectUrl } from '../../lib/auth';
 
 export default function DevRedirect() {
-  const url = Linking.createURL('/auth/callback');
+  const url = getAuthRedirectUrl();
   return (
     <View style={{ padding: 24, gap: 12 }}>
       <Text selectable style={{ fontSize: 16 }}>Current Expo Go redirect URL:</Text>
@@ -16,7 +16,8 @@ export default function DevRedirect() {
         <Text style={{ color: 'white', textAlign: 'center' }}>Copy</Text>
       </Pressable>
       <Text style={{ opacity: 0.7 }}>
-        Add this exact URL in Supabase → Auth → URL Configuration → Additional Redirect URLs.
+        Add this URL in Supabase > Auth > URL Configuration > Additional Redirect URLs (or set
+        EXPO_PUBLIC_SUPABASE_REDIRECT_URL).
       </Text>
     </View>
   );

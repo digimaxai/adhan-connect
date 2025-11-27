@@ -39,6 +39,20 @@ export default function AuthLayout() {
             animation: 'slide_from_right',
           }}
         />
+        <Stack.Screen
+          name="callback"
+          options={{
+            title: 'Completing sign-in',
+            animation: 'fade_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="new-password"
+          options={{
+            title: 'Set new password',
+            animation: 'slide_from_right',
+          }}
+        />
       </Stack>
     </>
   );

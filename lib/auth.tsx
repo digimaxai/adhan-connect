@@ -4,6 +4,20 @@ import * as Linking from 'expo-linking';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
 
+export const getAuthRedirectUrl = () => {
+  const envUrl = process.env.EXPO_PUBLIC_SUPABASE_REDIRECT_URL?.trim();
+  if (envUrl) return envUrl;
+  return Linking.createURL('/callback', { scheme: 'adhanconnect' });
+};
+
+const deriveDisplayName = (raw?: string | null, fallbackEmail?: string | null) => {
+  const trimmed = raw?.trim();
+  if (trimmed) return trimmed;
+  const emailLocal = fallbackEmail?.split('@')[0];
+  if (emailLocal) return emailLocal;
+  return 'User';
+};
+
 /* ------------------------------------------------------------------
    Types
 ------------------------------------------------------------------- */
@@ -53,13 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
- const redirectTo = useMemo(() => {
-  const url = Linking.createURL('/callback');
-  console.log('🔥 REDIRECT_TO:', url);
-  return url;
-}, []);
-
-
+  const redirectTo = useMemo(() => getAuthRedirectUrl(), []);
   // Load session & subscribe to auth changes
   useEffect(() => {
     let mounted = true;
@@ -98,12 +106,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const userId = session.user.id;
+
     try {
       const { data: row, error } = await supabase
         .from('users')
         .select('id, email, display_name, role')
-        .eq('id', session.user.id)
-        .single();
+        .eq('id', userId)
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -117,17 +127,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
     } catch {
-      // fallback if no DB profile exists
-      const u = session.user as User;
-      setUser({
-        id: u.id,
-        email: u.email ?? null,
-        display_name: (u.user_metadata as any)?.display_name ?? null,
-        role:
-          (u.user_metadata as any)?.role ??
-          (u.app_metadata as any)?.role ??
-          'user',
-      });
+      // ignore read errors and fall back to auth metadata
+    }
+
+    // fallback if no DB profile exists yet
+    const u = session.user as User;
+    const fallback = {
+      id: u.id,
+      email: u.email ?? null,
+      display_name: deriveDisplayName(
+        (u.user_metadata as any)?.display_name,
+        u.email ?? null
+      ),
+      role:
+        (u.user_metadata as any)?.role ??
+        (u.app_metadata as any)?.role ??
+        'user',
+    };
+
+    setUser(fallback);
+
+    try {
+      await supabase.from('users').upsert(
+        {
+          id: fallback.id,
+          email: fallback.email,
+          display_name: fallback.display_name,
+          role: fallback.role,
+        },
+        { onConflict: 'id' }
+      );
+    } catch {
+      // ignore profile sync errors
     }
   };
 
@@ -143,12 +174,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp: AuthContextType['signUp'] = async (email, password, displayName) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedDisplay = deriveDisplayName(displayName, normalizedEmail);
+
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
-          data: displayName ? { display_name: displayName } : undefined,
+          data: { display_name: normalizedDisplay },
           emailRedirectTo: redirectTo,
         },
       });
@@ -156,16 +190,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const needsVerification = !data.session;
 
-      if (data.user) {
-        await supabase.from('users').upsert(
-          {
-            id: data.user.id,
-            email: data.user.email,
-            display_name: displayName ?? (data.user.user_metadata as any)?.display_name ?? null,
-            role: 'user',
-          },
-          { onConflict: 'id' }
-        );
+      if (data.user && data.session) {
+        try {
+          await supabase.from('users').upsert(
+            {
+              id: data.user.id,
+              email: data.user.email,
+              display_name: deriveDisplayName(
+                displayName ?? (data.user.user_metadata as any)?.display_name,
+                data.user.email
+              ),
+              role: 'user',
+            },
+            { onConflict: 'id' }
+          );
+        } catch {
+          // ignore profile sync errors, user can proceed
+        }
       }
 
       return { needsVerification };
@@ -214,5 +255,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    Hook
 ------------------------------------------------------------------- */
 export const useAuth = () => useContext(AuthContext);
+
 
 

@@ -55,13 +55,13 @@ export default function SignInScreen() {
         />
 
         <TouchableOpacity style={[s.button, busy && s.buttonDisabled]} onPress={onSubmit} disabled={busy}>
-          <Text style={s.buttonText}>{busy ? 'Signing in…' : 'Sign In'}</Text>
+          <Text style={s.buttonText}>{busy ? 'Signing in...' : 'Sign In'}</Text>
         </TouchableOpacity>
 
         <View style={s.row}>
-          {/* ✅ Group names are stripped from paths */}
+          {/* Group names are stripped from paths */}
           <Link href="/reset" style={s.link}>Forgot password?</Link>
-          <Text style={s.sep}>•</Text>
+          <Text style={s.sep}>·</Text>
           <Link href="/sign-up" style={s.link}>Create account</Link>
         </View>
       </View>

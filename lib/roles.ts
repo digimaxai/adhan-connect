@@ -79,9 +79,11 @@ export function useRoleFlags(): RoleFlags {
           .maybeSingle();
 
         if (mzErr && mzErr.code !== 'PGRST116') {
-          // ignore "no rows" error
+          console.warn('muezzin lookup error', mzErr);
           throw mzErr;
         }
+
+        console.log('muezzin lookup row', mzRow);
 
         if (cancelled) return;
 

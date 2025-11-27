@@ -55,19 +55,18 @@ export default function AuthCallback() {
       setStatus('working');
 
       try {
-        console.log('[callback] URL:', url);
         const params = getParams(url);
-        console.log('[callback] merged params:', params);
 
-        const code = params.code;             // PKCE / OAuth
-        const token_hash = params.token_hash; // OTP links (incl. recovery)
-        const type = (params.type || '') as
+        const code = params.code; // PKCE / OAuth
+        const token_hash = params.token_hash || params.token; // OTP links (incl. recovery)
+        const rawType = (params.type || '') as
           | 'signup'
           | 'recovery'
           | 'magiclink'
           | 'email_change'
           | 'invite'
           | '';
+        const type = rawType.toLowerCase();
 
         const access_token = params.access_token;
         const refresh_token = params.refresh_token;
@@ -84,11 +83,12 @@ export default function AuthCallback() {
           );
         }
 
+        // --- Primary token-based flows ---
         if (code) {
           const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
           if (exErr) throw exErr;
         } else if (token_hash && type) {
-          const { error: otpErr } = await supabase.auth.verifyOtp({ token_hash, type });
+          const { error: otpErr } = await supabase.auth.verifyOtp({ token_hash, type: rawType as any });
           if (otpErr) throw otpErr;
         } else if (access_token && refresh_token) {
           const { error: sessErr } = await supabase.auth.setSession({
@@ -96,23 +96,28 @@ export default function AuthCallback() {
             refresh_token,
           });
           if (sessErr) throw sessErr;
+        } else if (type === 'signup') {
+          // Special case: email confirmed but no session tokens (email verified but not signed in)
+          if (!mounted) return;
+          setStatus('done');
+          router.replace('/sign-in' as any);
+          return;
         } else {
-          // No error and no tokens → truly unexpected URL
+          // No error and no tokens -> unexpected URL
           throw new Error('No auth code or token found in callback URL.');
         }
 
         if (!mounted) return;
         setStatus('done');
 
-        if (type.toLowerCase() === 'recovery') {
-          // new-password screen: app/(auth)/new-password.tsx → "/new-password"
+        // Route based on recovery vs normal auth
+        if (type === 'recovery') {
           router.replace('/new-password' as any);
         } else {
           router.replace('/(tabs)' as any);
         }
       } catch (e: any) {
         if (!mounted) return;
-        console.warn('[callback] error:', e);
         setErr(e?.message ?? 'Failed to complete sign-in.');
         setStatus('error');
       }
@@ -135,9 +140,9 @@ export default function AuthCallback() {
         <>
           <ActivityIndicator size="large" />
           <Text style={{ marginTop: 12 }}>
-            {status === 'working' && 'Completing sign-in…'}
-            {status === 'idle' && 'Waiting for callback…'}
-            {status === 'done' && 'Signed in. Redirecting…'}
+            {status === 'working' && 'Completing sign-in...'}
+            {status === 'idle' && 'Waiting for callback...'}
+            {status === 'done' && 'Signed in. Redirecting...'}
           </Text>
         </>
       ) : (

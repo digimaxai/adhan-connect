@@ -25,14 +25,14 @@ export default function ResetScreen() {
       return;
     }
     Alert.alert('Email sent', 'Check your inbox for a password reset link.');
-    router.replace('/sign-in'); // ✅ no group in path
+    router.replace('/sign-in'); // no group in path
   };
 
   return (
     <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={s.card}>
         <Text style={s.title}>Reset password</Text>
-        <Text style={s.subtle}>Enter your email and we’ll send a reset link.</Text>
+        <Text style={s.subtle}>Enter your email and we'll send a reset link.</Text>
 
         <Text style={s.label}>Email</Text>
         <TextInput
@@ -46,7 +46,7 @@ export default function ResetScreen() {
         />
 
         <TouchableOpacity style={[s.button, busy && s.buttonDisabled]} onPress={onSubmit} disabled={busy}>
-          <Text style={s.buttonText}>{busy ? 'Sending…' : 'Send reset link'}</Text>
+          <Text style={s.buttonText}>{busy ? 'Sending...' : 'Send reset link'}</Text>
         </TouchableOpacity>
 
         <View style={s.row}>

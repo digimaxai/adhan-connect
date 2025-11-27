@@ -57,11 +57,10 @@ export default function SignUpScreen() {
     if (needsVerification) {
       Alert.alert(
         'Verify your email',
-        'We’ve sent a confirmation link to your inbox. After verifying, please sign in.'
+        "We've sent a confirmation link to your inbox. After verifying, please sign in."
       );
       router.replace('/sign-in'); // group folders are stripped from the path
     } else {
-      // if email confirmation is disabled in your project
       router.replace('/(tabs)');
     }
   };
@@ -111,7 +110,7 @@ export default function SignUpScreen() {
           onPress={onSubmit}
           disabled={busy}
         >
-          <Text style={s.buttonText}>{busy ? 'Creating…' : 'Create Account'}</Text>
+          <Text style={s.buttonText}>{busy ? 'Creating...' : 'Create Account'}</Text>
         </TouchableOpacity>
 
         <View style={s.row}>

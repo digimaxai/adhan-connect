@@ -1,10 +1,10 @@
 // app/_layout.tsx
-import { Stack, useSegments } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import { useEffect } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { AuthProvider, useAuth } from '../lib/auth';
 
-// ✅ Notifications setup
+// Notifications setup
 import * as Notifications from 'expo-notifications';
 import { ensureAndroidChannel } from '../lib/notify';
 
@@ -21,28 +21,23 @@ Notifications.setNotificationHandler({
 
 function RootNavigator() {
   const { session, loading } = useAuth();
+  const router = useRouter();
   const segments = useSegments();
+  const navigationState = useRootNavigationState();
 
-  const [routerReady, setRouterReady] = useState(false);
-  const [initialCheckDone, setInitialCheckDone] = useState(false);
-  const [isSignedIn, setIsSignedIn] = useState<boolean | null>(null);
-  
+  const inAuthGroup = segments[0] === '(auth)';
 
-  // Ensure router segments are ready (avoid flicker)
   useEffect(() => {
-    setRouterReady(true);
-  }, [segments]);
+    if (!navigationState?.key || loading) return;
 
-  // Wait until initial auth check completes once
-  useEffect(() => {
-    if (!loading) {
-      setIsSignedIn(!!session);
-      setInitialCheckDone(true);
+    if (!session && !inAuthGroup) {
+      router.replace('/sign-in');
+    } else if (session && inAuthGroup) {
+      router.replace('/(tabs)');
     }
-  }, [loading, session]);
+  }, [session, loading, inAuthGroup, navigationState?.key, router]);
 
-  // Show a loader until both router + auth are ready
-  if (!routerReady || !initialCheckDone) {
+  if (loading || !navigationState?.key) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#0EA5E9" />
@@ -50,26 +45,9 @@ function RootNavigator() {
     );
   }
 
-  // User not signed in → show auth stack
-  if (!isSignedIn) {
-    return (
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen
-          name="modal"
-          options={{
-            presentation: 'modal',
-            headerShown: true,
-            title: 'Quick Action',
-          }}
-        />
-      </Stack>
-    );
-  }
-
-  // Signed in → show main tabs
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen
         name="modal"
@@ -77,6 +55,13 @@ function RootNavigator() {
           presentation: 'modal',
           headerShown: true,
           title: 'Quick Action',
+        }}
+      />
+      <Stack.Screen
+        name="broadcast/[id]"
+        options={{
+          title: 'Adhan broadcast',
+          presentation: 'modal',
         }}
       />
     </Stack>

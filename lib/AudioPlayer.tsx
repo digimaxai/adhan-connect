@@ -7,10 +7,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 type Props = {
   url: string;
   mosqueName?: string;
-  globalPlay?: boolean;
+  isActive?: boolean;
+  onRequestPlay?: () => void;
 };
 
-export default function AudioPlayer({ url, mosqueName, globalPlay }: Props) {
+export default function AudioPlayer({ url, mosqueName, isActive, onRequestPlay }: Props) {
   const sound = useRef<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -30,6 +31,7 @@ export default function AudioPlayer({ url, mosqueName, globalPlay }: Props) {
         await sound.current!.pauseAsync();
         setIsPlaying(false);
       } else {
+        onRequestPlay?.();
         await sound.current!.playAsync();
         setIsPlaying(true);
       }
@@ -44,19 +46,13 @@ export default function AudioPlayer({ url, mosqueName, globalPlay }: Props) {
   }
 
   useEffect(() => {
-    (async () => {
-      if (globalPlay === undefined) return;
-      await ensureLoaded();
-      if (globalPlay) {
-        await sound.current!.playAsync();
-        setIsPlaying(true);
-      } else {
-        await sound.current!.pauseAsync();
-        setIsPlaying(false);
-      }
-    })();
+    if (isActive === undefined) return;
+    if (!isActive && isPlaying && sound.current) {
+      sound.current.pauseAsync().catch(() => {});
+      setIsPlaying(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globalPlay]);
+  }, [isActive]);
 
   useEffect(() => {
     return () => { if (sound.current) sound.current.unloadAsync(); };

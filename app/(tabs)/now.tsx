@@ -12,6 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useAuth } from '../../lib/auth';
 import AudioPlayer from '../../lib/AudioPlayer';
 import { supabase } from '../../lib/supabase';
 
@@ -25,11 +26,15 @@ type StreamRow = {
 };
 
 export default function NowScreen() {
-  const [rows, setRows] = useState<StreamRow[]>([]);
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+
+  const [followedStreams, setFollowedStreams] = useState<StreamRow[]>([]);
+  const [otherStreams, setOtherStreams] = useState<StreamRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [globalPlay, setGlobalPlay] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const topPad = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
 
@@ -50,47 +55,125 @@ export default function NowScreen() {
   async function load() {
     setError(null);
     setLoading(true);
-    const { data, error } = await supabase
-      .from('streams')
-      .select('id, mosque_id, type, url, status, is_live')
-      .eq('status', 'active')
-      .limit(50);
-    if (error) setError(error.message);
-    setRows(data ?? []);
-    setLoading(false);
+    try {
+      const [subsRes, streamsRes] = await Promise.all([
+        userId
+          ? supabase
+              .from('subscriptions')
+              .select('mosque_id')
+              .eq('user_id', userId)
+          : Promise.resolve({ data: [] as { mosque_id: string }[], error: null }),
+        supabase
+          .from('streams')
+          .select('id, mosque_id, type, url, status, is_live')
+          .eq('status', 'active')
+          .eq('is_live', true)
+          .limit(100),
+      ]);
+
+      if (streamsRes.error) throw streamsRes.error;
+
+      const streams = (streamsRes.data ?? []) as StreamRow[];
+      const subIds = new Set((subsRes.data ?? []).map((s) => s.mosque_id));
+
+      const followed = streams.filter((s) => subIds.has(s.mosque_id));
+      const others = streams.filter((s) => !subIds.has(s.mosque_id));
+
+      setFollowedStreams(followed);
+      setOtherStreams(others);
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to load streams');
+      setFollowedStreams([]);
+      setOtherStreams([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load(); }, []);
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  // Realtime live status updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('live-streams')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'streams' },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+          const isLiveActive = row.status === 'active' && row.is_live;
+
+          const updater = (items: StreamRow[]) => {
+            const idx = items.findIndex((s) => s.id === row.id);
+            if (!isLiveActive && idx === -1) return items;
+            if (!isLiveActive && idx !== -1) {
+              const copy = [...items];
+              copy.splice(idx, 1);
+              return copy;
+            }
+            const updated: StreamRow = {
+              id: row.id,
+              mosque_id: row.mosque_id,
+              type: row.type,
+              url: row.url,
+              status: row.status,
+              is_live: row.is_live,
+            };
+            if (idx === -1) return [...items, updated];
+            const copy = [...items];
+            copy[idx] = updated;
+            return copy;
+          };
+
+          setFollowedStreams((prev) => updater(prev));
+          setOtherStreams((prev) => updater(prev));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const Header = () => (
     <View style={[styles.header, { paddingTop: topPad + 8 }]}>
-      {/* Top row: title + pill */}
-      <View style={styles.headerTopRow}>
-        <Text style={styles.h1}>Now Playing</Text>
-        <Pressable
-          onPress={() => setGlobalPlay(!globalPlay)}
-          style={[styles.allPill, globalPlay ? styles.allPause : styles.allPlay]}
-          accessibilityRole="button"
-          accessibilityLabel={globalPlay ? 'Pause all streams' : 'Play all streams'}
-        >
-          <Text style={styles.allText}>{globalPlay ? 'Pause All' : 'Play All'}</Text>
-        </Pressable>
-      </View>
-
-      {/* Subtitle on its own line so nothing overlaps */}
-      <Text style={styles.subtleSmall}>Tap Play All or control each stream below</Text>
+      <Text style={styles.h1}>Now Playing</Text>
+      <Text style={styles.subtleSmall}>Tap a stream to play; only one plays at a time</Text>
     </View>
   );
 
-  if (loading) return (<SafeAreaView style={styles.screen}><Header /><Text style={styles.subtle}>Loading…</Text></SafeAreaView>);
-  if (error)   return (<SafeAreaView style={styles.screen}><Header /><Text style={styles.error}>Error: {error}</Text></SafeAreaView>);
-  if (!rows.length) {
+  if (loading)
+    return (
+      <SafeAreaView style={styles.screen}>
+        <Header />
+        <Text style={styles.subtle}>Loading...</Text>
+      </SafeAreaView>
+    );
+  if (error)
+    return (
+      <SafeAreaView style={styles.screen}>
+        <Header />
+        <Text style={styles.error}>Error: {error}</Text>
+      </SafeAreaView>
+    );
+  if (!followedStreams.length && !otherStreams.length) {
     return (
       <SafeAreaView style={styles.screen}>
         <Header />
         <Text style={styles.subtle}>No active streams found.</Text>
-        <Text style={styles.tip}>Add a stream in Supabase → streams (type=hls, status=active, is_live=true).</Text>
+        <Text style={styles.tip}>
+          Add a stream in Supabase -> streams (type=hls, status=active, is_live=true).
+        </Text>
         <Pressable onPress={load} style={[styles.refreshBtn, styles.shadow]}>
           <Text style={styles.refreshText}>Refresh</Text>
         </Pressable>
@@ -102,11 +185,16 @@ export default function NowScreen() {
     <SafeAreaView style={styles.screen}>
       <FlatList
         contentContainerStyle={styles.listContent}
-        data={rows}
+        data={followedStreams}
         keyExtractor={(r) => r.id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListHeaderComponent={<Header />}
         ListHeaderComponentStyle={{ marginBottom: 8 }}
+        ListEmptyComponent={
+          !loading && (
+            <Text style={styles.subtle}>You have no live streams from followed mosques.</Text>
+          )
+        }
         renderItem={({ item }) => (
           <View style={[styles.card, styles.shadow]}>
             <View style={styles.cardTopRow}>
@@ -119,7 +207,8 @@ export default function NowScreen() {
             <AudioPlayer
               url={item.url}
               mosqueName={`Mosque ${item.mosque_id.slice(0, 6)}`}
-              globalPlay={globalPlay}
+              isActive={activeId === item.id}
+              onRequestPlay={() => setActiveId(item.id)}
             />
 
             <Text style={styles.url} numberOfLines={1}>
@@ -128,6 +217,40 @@ export default function NowScreen() {
           </View>
         )}
       />
+
+      {!!otherStreams.length && (
+        <FlatList
+          data={otherStreams}
+          keyExtractor={(r) => r.id}
+          contentContainerStyle={[styles.listContent, { paddingTop: 0, paddingBottom: 40 }]}
+          ListHeaderComponent={
+            <View style={[styles.header, { paddingHorizontal: 16 }]}>
+              <Text style={styles.sectionLabel}>Other live streams</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={[styles.card, styles.shadow]}>
+              <View style={styles.cardTopRow}>
+                <Text style={styles.badge}>{item.type?.toUpperCase() || 'STREAM'}</Text>
+                <Text style={[styles.live, item.is_live ? styles.liveOn : styles.liveOff]}>
+                  {item.is_live ? 'LIVE' : 'Idle'}
+                </Text>
+              </View>
+
+              <AudioPlayer
+                url={item.url}
+                mosqueName={`Mosque ${item.mosque_id.slice(0, 6)}`}
+                isActive={activeId === item.id}
+                onRequestPlay={() => setActiveId(item.id)}
+              />
+
+              <Text style={styles.url} numberOfLines={1}>
+                {item.url}
+              </Text>
+            </View>
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -135,18 +258,11 @@ export default function NowScreen() {
 const styles = StyleSheet.create({
   // layout
   screen: { flex: 1, backgroundColor: '#F8FAFC' },
-  listContent: { paddingHorizontal: 16, paddingBottom: 40, backgroundColor: '#F8FAFC' },
+  listContent: { paddingHorizontal: 16, paddingBottom: 24, backgroundColor: '#F8FAFC' },
 
   // header
   header: { backgroundColor: '#F8FAFC', paddingHorizontal: 16, paddingBottom: 8 },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   h1: { fontSize: 24, fontWeight: '800', letterSpacing: 0.2 },
-
-  // play-all pill
-  allPill: { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10 },
-  allPlay: { backgroundColor: '#0EA5E9' },
-  allPause: { backgroundColor: '#475569' },
-  allText: { color: '#fff', fontWeight: '800' },
 
   // cards
   card: {
@@ -188,6 +304,7 @@ const styles = StyleSheet.create({
   subtleSmall: { color: '#94A3B8', marginTop: 6, fontSize: 12 },
   tip: { color: '#94A3B8', marginTop: 6, fontSize: 12, fontStyle: 'italic', paddingHorizontal: 16 },
   url: { color: '#475569', marginTop: 10, fontSize: 12 },
+  sectionLabel: { fontSize: 14, fontWeight: '700', color: '#0F172A', marginTop: 8 },
 
   // empty refresh
   refreshBtn: {
