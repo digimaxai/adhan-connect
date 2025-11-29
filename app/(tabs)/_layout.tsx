@@ -1,6 +1,7 @@
 import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Platform, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../../lib/auth';
 import { useRoleFlags } from '../../lib/roles';
 
@@ -21,12 +22,6 @@ export default function TabsLayout() {
     return <Redirect href="/sign-in" />;
   }
 
-  const iconText = (label: string, color: string) => (
-    <Text style={{ color, fontSize: 14, fontWeight: '800' }}>{label}</Text>
-  );
-
-  const isMz = roles.isMuezzin;
-
   return (
     <Tabs
       initialRouteName="index"
@@ -36,7 +31,7 @@ export default function TabsLayout() {
         lazy: true,
         tabBarActiveTintColor: '#0EA5E9',
         tabBarInactiveTintColor: '#94A3B8',
-        tabBarLabelStyle: { fontWeight: '700', fontSize: 11 },
+        tabBarLabelStyle: { fontWeight: '700', fontSize: 12 },
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
           borderTopColor: '#E2E8F0',
@@ -50,49 +45,38 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => iconText('Home', color),
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={20} color={color} />,
         }}
       />
 
-      {isMz ? (
-        <Tabs.Screen
-          name="muezzin"
-          options={{
-            title: 'Muezzin',
-            tabBarIcon: ({ color }) => iconText('Adhan', color),
-          }}
-        />
-      ) : (
-        <>
-          <Tabs.Screen
-            name="now"
-            options={{
-              title: 'Now',
-              tabBarIcon: ({ color }) => iconText('Now', color),
-            }}
-          />
-          <Tabs.Screen
-            name="events"
-            options={{
-              title: 'Events',
-              tabBarIcon: ({ color }) => iconText('Events', color),
-            }}
-          />
-        </>
-      )}
+      <Tabs.Screen
+        name="discover"
+        options={{
+          title: 'Mosques',
+          tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" size={20} color={color} />,
+        }}
+      />
 
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => iconText('Settings', color),
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={20} color={color} />,
         }}
       />
 
       {/* Internal routes not shown as tabs */}
-      {roles.isAdmin && <Tabs.Screen name="admin" options={{ href: null }} />}
-      {!isMz && <Tabs.Screen name="muezzin" options={{ href: null }} />}
-      <Tabs.Screen name="explore" options={{ href: null }} />
+      <Tabs.Screen name="admin" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="admin/prayer-times" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="muezzin" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="now" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="explore" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="events" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="manage-mosques" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="live-player" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="event" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="campaign" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

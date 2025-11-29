@@ -1,20 +1,15 @@
 // app/(tabs)/now.tsx
+import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
-import { useEffect, useState } from 'react';
-import {
-  FlatList,
-  Platform,
-  Pressable,
-  RefreshControl,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { useAuth } from '../../lib/auth';
-import AudioPlayer from '../../lib/AudioPlayer';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, Pressable, SafeAreaView, StyleSheet, Text, View, Animated, Easing, ScrollView } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
+import AppLogo from '../../components/AppLogo';
 import { supabase } from '../../lib/supabase';
+import { PrayerName } from '../../lib/adhans';
 
 type StreamRow = {
   id: string;
@@ -23,20 +18,73 @@ type StreamRow = {
   url: string;
   status: string;
   is_live: boolean;
+  mosques?: { name?: string | null; city?: string | null; country?: string | null };
 };
 
-export default function NowScreen() {
-  const { session } = useAuth();
-  const userId = session?.user?.id ?? null;
+type PrayerTimes = Partial<Record<PrayerName, string | null>>;
 
-  const [followedStreams, setFollowedStreams] = useState<StreamRow[]>([]);
-  const [otherStreams, setOtherStreams] = useState<StreamRow[]>([]);
+const fallbackTimes: Record<PrayerName, string> = {
+  fajr: '05:18',
+  dhuhr: '12:58',
+  asr: '15:27',
+  maghrib: '17:42',
+  isha: '19:05',
+};
+
+const heroPatternSvg = `<svg width="320" height="320" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="p" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M20 0 L30 10 L20 20 L10 10 Z M20 20 L30 30 L20 40 L10 30 Z" fill="none" stroke="white" stroke-width="1.2" opacity="0.45"/><circle cx="20" cy="20" r="3" fill="white" opacity="0.45"/></pattern></defs><rect width="320" height="320" fill="url(#p)"/></svg>`;
+const heroPatternUri = `data:image/svg+xml;utf8,${encodeURIComponent(heroPatternSvg)}`;
+
+export default function NowScreen() {
+  const router = useRouter();
+
+  const [streams, setStreams] = useState<StreamRow[]>([]);
+  const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.7);
+  const [showVolLabel, setShowVolLabel] = useState(false);
+  const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [sliderWidth, setSliderWidth] = useState(1);
+  const playScale = useRef(new Animated.Value(1)).current;
 
-  const topPad = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+  const current = useMemo(() => streams.find((s) => s.id === activeId) ?? streams[0] ?? null, [streams, activeId]);
+  const followedList = useMemo(() => streams.filter((s) => followedIds.has(s.mosque_id)).slice(0, 3), [streams, followedIds]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [subsRes, streamsRes] = await Promise.all([
+        supabase.from('subscriptions').select('mosque_id').limit(3),
+        supabase
+          .from('streams')
+          .select('id, mosque_id, type, url, status, is_live, mosques(name,city,country)')
+          .eq('status', 'active')
+          .eq('is_live', true)
+          .limit(20),
+      ]);
+      if (streamsRes.error) throw streamsRes.error;
+      const subSet = new Set((subsRes.data ?? []).map((s) => s.mosque_id));
+      setFollowedIds(subSet);
+      const streamRows = (streamsRes.data ?? []) as StreamRow[];
+      setStreams(streamRows);
+      setActiveId((prev) => prev ?? streamRows[0]?.id ?? null);
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to load live stream.');
+      setStreams([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   useEffect(() => {
     (async () => {
@@ -52,272 +100,439 @@ export default function NowScreen() {
     })();
   }, []);
 
-  async function load() {
-    setError(null);
-    setLoading(true);
-    try {
-      const [subsRes, streamsRes] = await Promise.all([
-        userId
-          ? supabase
-              .from('subscriptions')
-              .select('mosque_id')
-              .eq('user_id', userId)
-          : Promise.resolve({ data: [] as { mosque_id: string }[], error: null }),
-        supabase
-          .from('streams')
-          .select('id, mosque_id, type, url, status, is_live')
-          .eq('status', 'active')
-          .eq('is_live', true)
-          .limit(100),
-      ]);
-
-      if (streamsRes.error) throw streamsRes.error;
-
-      const streams = (streamsRes.data ?? []) as StreamRow[];
-      const subIds = new Set((subsRes.data ?? []).map((s) => s.mosque_id));
-
-      const followed = streams.filter((s) => subIds.has(s.mosque_id));
-      const others = streams.filter((s) => !subIds.has(s.mosque_id));
-
-      setFollowedStreams(followed);
-      setOtherStreams(others);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to load streams');
-      setFollowedStreams([]);
-      setOtherStreams([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    const fetchPrayer = async () => {
+      const mosqueId = current?.mosque_id;
+      if (!mosqueId) {
+        setPrayerTimes(null);
+        return;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const { data } = await supabase
+        .from('mosque_prayer_times')
+        .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
+        .eq('mosque_id', mosqueId)
+        .eq('prayer_date', today)
+        .maybeSingle();
+      setPrayerTimes(data ?? null);
+    };
+    fetchPrayer();
+  }, [current?.mosque_id]);
+
+  const fmtHm = (val?: string | null) => {
+    if (!val) return '--:--';
+    const [h, m] = val.split(':');
+    return `${h?.padStart(2, '0') ?? '00'}:${m?.padStart(2, '0') ?? '00'}`;
   };
 
-  // Realtime live status updates
+  const computeNextPrayer = (times: PrayerTimes | null) => {
+    const now = new Date();
+    const entries: Array<{ name: PrayerName; time: string }> = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
+      .map((name) => ({ name, time: (times?.[name] as string) ?? fallbackTimes[name] }))
+      .filter((p) => p.time);
+    const toDate = (timeStr: string, carryNextDay = false) => {
+      const [h, m] = timeStr.split(':').map((t) => parseInt(t, 10));
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      if (carryNextDay && d <= now) d.setDate(d.getDate() + 1);
+      return d;
+    };
+    const upcoming = entries
+      .map((p) => ({ ...p, when: toDate(p.time) }))
+      .filter((p) => p.when > now)
+      .sort((a, b) => a.when.getTime() - b.when.getTime());
+    const chosen = upcoming[0] ?? (entries.length ? { ...entries[0], when: toDate(entries[0].time, true) } : null);
+    if (!chosen) return null;
+    const diffMs = chosen.when.getTime() - now.getTime();
+    const diffMin = Math.max(0, Math.floor(diffMs / 60000));
+    const hours = Math.floor(diffMin / 60)
+      .toString()
+      .padStart(2, '0');
+    const minutes = (diffMin % 60).toString().padStart(2, '0');
+    return { name: chosen.name, remaining: `${hours}:${minutes}` };
+  };
+
+  const nextPrayer = computeNextPrayer(prayerTimes);
+
+  // cleanup on unmount
   useEffect(() => {
-    const channel = supabase
-      .channel('live-streams')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'streams' },
-        (payload) => {
-          const row = payload.new as any;
-          if (!row) return;
-          const isLiveActive = row.status === 'active' && row.is_live;
-
-          const updater = (items: StreamRow[]) => {
-            const idx = items.findIndex((s) => s.id === row.id);
-            if (!isLiveActive && idx === -1) return items;
-            if (!isLiveActive && idx !== -1) {
-              const copy = [...items];
-              copy.splice(idx, 1);
-              return copy;
-            }
-            const updated: StreamRow = {
-              id: row.id,
-              mosque_id: row.mosque_id,
-              type: row.type,
-              url: row.url,
-              status: row.status,
-              is_live: row.is_live,
-            };
-            if (idx === -1) return [...items, updated];
-            const copy = [...items];
-            copy[idx] = updated;
-            return copy;
-          };
-
-          setFollowedStreams((prev) => updater(prev));
-          setOtherStreams((prev) => updater(prev));
-        }
-      )
-      .subscribe();
-
     return () => {
-      supabase.removeChannel(channel);
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
     };
   }, []);
 
-  const Header = () => (
-    <View style={[styles.header, { paddingTop: topPad + 8 }]}>
-      <Text style={styles.h1}>Now Playing</Text>
-      <Text style={styles.subtleSmall}>Tap a stream to play; only one plays at a time</Text>
-    </View>
-  );
+  const setVolumeClamped = (val: number) => {
+    const next = Math.max(0, Math.min(1, Math.round(val * 100) / 100));
+    setVolume(next);
+    soundRef.current?.setVolumeAsync(next).catch(() => {});
+    setShowVolLabel(true);
+    setTimeout(() => setShowVolLabel(false), 800);
+  };
 
-  if (loading)
+  const adjustVolume = (delta: number) => {
+    setVolumeClamped(volume + delta);
+  };
+
+  const playStream = async (stream: StreamRow) => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: stream.url },
+        { shouldPlay: true, volume }
+      );
+      soundRef.current = sound;
+      setActiveId(stream.id);
+      setPlaying(true);
+    } catch (e) {
+      setError((e as any)?.message ?? 'Playback error');
+      setPlaying(false);
+    }
+  };
+
+  const pausePlayback = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+    } catch {}
+    setPlaying(false);
+  };
+
+  const togglePlay = () => {
+    if (!current) return;
+    Haptics.selectionAsync();
+    if (activeId === current.id && playing) {
+      pausePlayback();
+    } else {
+      playStream(current);
+    }
+  };
+
+  const initials = (name?: string | null) => {
+    if (!name) return 'MS';
+    const parts = name.split(' ');
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
+  };
+
+  if (loading) {
     return (
       <SafeAreaView style={styles.screen}>
-        <Header />
         <Text style={styles.subtle}>Loading...</Text>
-      </SafeAreaView>
-    );
-  if (error)
-    return (
-      <SafeAreaView style={styles.screen}>
-        <Header />
-        <Text style={styles.error}>Error: {error}</Text>
-      </SafeAreaView>
-    );
-  if (!followedStreams.length && !otherStreams.length) {
-    return (
-      <SafeAreaView style={styles.screen}>
-        <Header />
-        <Text style={styles.subtle}>No active streams found.</Text>
-        <Text style={styles.tip}>
-          Add a stream in Supabase -> streams (type=hls, status=active, is_live=true).
-        </Text>
-        <Pressable onPress={load} style={[styles.refreshBtn, styles.shadow]}>
-          <Text style={styles.refreshText}>Refresh</Text>
-        </Pressable>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <FlatList
-        contentContainerStyle={styles.listContent}
-        data={followedStreams}
-        keyExtractor={(r) => r.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListHeaderComponent={<Header />}
-        ListHeaderComponentStyle={{ marginBottom: 8 }}
-        ListEmptyComponent={
-          !loading && (
-            <Text style={styles.subtle}>You have no live streams from followed mosques.</Text>
-          )
-        }
-        renderItem={({ item }) => (
-          <View style={[styles.card, styles.shadow]}>
-            <View style={styles.cardTopRow}>
-              <Text style={styles.badge}>{item.type?.toUpperCase() || 'STREAM'}</Text>
-              <Text style={[styles.live, item.is_live ? styles.liveOn : styles.liveOff]}>
-                {item.is_live ? 'LIVE' : 'Idle'}
-              </Text>
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <View style={styles.topBar}>
+        <Pressable onPress={() => router.back()} hitSlop={10}>
+          <Ionicons name="chevron-back" size={24} color="#0F172A" />
+        </Pressable>
+        <Text style={styles.topTitle} numberOfLines={1}>
+          {current?.mosques?.name ?? 'Now Playing'}
+        </Text>
+        <Ionicons name="ellipsis-horizontal" size={24} color="#0F172A" />
+      </View>
+
+      <View style={styles.hero}>
+        <LinearGradient colors={['#0A84FF', '#54A9FF']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.heroGradient} />
+        <Image source={{ uri: heroPatternUri }} style={styles.heroPattern} contentFit="cover" />
+        <View style={styles.heroContent}>
+          <View style={styles.heroIconWrap}>
+            <Ionicons name="radio-outline" size={24} color="#FFFFFF" />
+          </View>
+          <View style={styles.heroTextStack}>
+            <Text style={styles.heroTitle}>{current?.mosques?.name ?? 'Adhan Connect'}</Text>
+            {current?.mosques?.city ? <Text style={styles.heroSub}>{`${current.mosques.city}${current.mosques.country ? ' - ' + current.mosques.country : ''}`}</Text> : null}
+          </View>
+        </View>
+      </View>
+
+      <View style={[styles.liveCard, styles.shadow]}>
+        <View style={styles.liveRow}>
+          <Ionicons name="radio-outline" size={20} color="#333333" />
+          <View style={{ flex: 1, gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={styles.liveBadge}>
+                <Text style={styles.liveBadgeText}>LIVE</Text>
+              </View>
+              <Text style={styles.liveText}>Broadcasting Adhan</Text>
             </View>
-
-            <AudioPlayer
-              url={item.url}
-              mosqueName={`Mosque ${item.mosque_id.slice(0, 6)}`}
-              isActive={activeId === item.id}
-              onRequestPlay={() => setActiveId(item.id)}
-            />
-
-            <Text style={styles.url} numberOfLines={1}>
-              {item.url}
+            <Text style={styles.liveSubtle} numberOfLines={1}>
+              {(current?.mosques?.name ?? 'Mosque') + (current?.mosques?.city ? ` - ${current.mosques.city}` : '')}
             </Text>
           </View>
-        )}
-      />
+        </View>
+      </View>
 
-      {!!otherStreams.length && (
-        <FlatList
-          data={otherStreams}
-          keyExtractor={(r) => r.id}
-          contentContainerStyle={[styles.listContent, { paddingTop: 0, paddingBottom: 40 }]}
-          ListHeaderComponent={
-            <View style={[styles.header, { paddingHorizontal: 16 }]}>
-              <Text style={styles.sectionLabel}>Other live streams</Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <View style={[styles.card, styles.shadow]}>
-              <View style={styles.cardTopRow}>
-                <Text style={styles.badge}>{item.type?.toUpperCase() || 'STREAM'}</Text>
-                <Text style={[styles.live, item.is_live ? styles.liveOn : styles.liveOff]}>
-                  {item.is_live ? 'LIVE' : 'Idle'}
-                </Text>
-              </View>
+      <Pressable
+        onPress={togglePlay}
+        disabled={!current}
+        onPressIn={() => {
+          Animated.timing(playScale, { toValue: 0.95, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+        }}
+        onPressOut={() => {
+          Animated.timing(playScale, { toValue: 1, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+        }}
+        style={({ pressed }) => ({ opacity: current ? (pressed ? 0.94 : 1) : 0.6, alignSelf: 'center' })}
+      >
+        <Animated.View style={[styles.playButton, { transform: [{ scale: playScale }] }]}>
+          <Ionicons name={playing ? 'stop' : 'play'} size={32} color="#0A84FF" />
+        </Animated.View>
+      </Pressable>
 
-              <AudioPlayer
-                url={item.url}
-                mosqueName={`Mosque ${item.mosque_id.slice(0, 6)}`}
-                isActive={activeId === item.id}
-                onRequestPlay={() => setActiveId(item.id)}
-              />
+      <View style={styles.sliderWrap}>
+        <View style={styles.sliderHeader}>
+          <Text style={styles.sliderLabel}>Volume</Text>
+          <Text style={[styles.sliderValue, { opacity: showVolLabel ? 1 : 0.35 }]}>{Math.round(volume * 100)}%</Text>
+        </View>
+        <View style={styles.sliderTrackShadow}>
+          <Pressable
+            style={styles.sliderTrack}
+            onLayout={(e) => setSliderWidth(Math.max(1, e.nativeEvent.layout.width))}
+            onPress={(e) => {
+              const { locationX } = e.nativeEvent as any;
+              const pct = Math.max(0, Math.min(1, locationX / sliderWidth));
+              setVolumeClamped(pct);
+            }}
+          >
+            <View style={[styles.sliderFill, { width: `${Math.round(volume * 100)}%` }]} />
+            <View style={[styles.sliderThumb, { left: `${Math.round(volume * 100)}%` }]} />
+          </Pressable>
+        </View>
+        <View style={styles.sliderButtons}>
+          <Pressable onPress={() => adjustVolume(-0.1)} style={({ pressed }) => [styles.volButton, { opacity: pressed ? 0.7 : 1 }]}>
+            <Ionicons name="volume-low" size={24} color="#6B7280" />
+          </Pressable>
+          <Pressable onPress={() => adjustVolume(0.1)} style={({ pressed }) => [styles.volButton, { opacity: pressed ? 0.7 : 1 }]}>
+            <Ionicons name="volume-high" size={24} color="#6B7280" />
+          </Pressable>
+        </View>
+      </View>
 
-              <Text style={styles.url} numberOfLines={1}>
-                {item.url}
-              </Text>
-            </View>
-          )}
-        />
+      {followedList.length > 0 && (
+        <View style={[styles.followStrip, styles.shadow]}>
+          <View style={styles.followHeader}>
+            <Text style={styles.stripLabel}>You follow</Text>
+            <Text style={styles.stripSub}>Tap a mosque to switch live stream</Text>
+          </View>
+          <View style={styles.followDivider} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.followScroller}>
+            {followedList.map((f) => {
+              const isLive = f.is_live;
+              return (
+                <Pressable
+                  key={f.id}
+                  onPress={() => {
+                    playStream(f);
+                  }}
+                  style={({ pressed }) => [styles.followChip, { opacity: pressed ? 0.92 : 1 }]}
+                >
+                  <View style={styles.followAvatar}>
+                    <Text style={styles.followAvatarText}>{initials(f.mosques?.name)}</Text>
+                  </View>
+                  <View style={{ gap: 6, alignItems: 'center' }}>
+                    <Text style={styles.followName} numberOfLines={1}>
+                      {f.mosques?.name ?? 'Mosque'}
+                    </Text>
+                    {isLive && <Text style={styles.followLiveText}>LIVE</Text>}
+                  </View>
+                  {isLive && (
+                    <View style={styles.followLivePill}>
+                      <Text style={styles.followLivePillText}>LIVE</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
       )}
+
+      {nextPrayer && (
+        <View style={styles.nextRow}>
+          <Text style={styles.nextValue}>
+            Next prayer: {nextPrayer.name.charAt(0).toUpperCase() + nextPrayer.name.slice(1)} in {nextPrayer.remaining}
+          </Text>
+        </View>
+      )}
+
+      {error && <Text style={styles.error}>{error}</Text>}
     </SafeAreaView>
   );
 }
 
+// Unload sound on unmount to avoid leaks
+NowScreen.unload = () => {
+  // no-op placeholder for consistency with Expo router; actual cleanup below
+};
+
+// Ensure cleanup
+export function useUnloadSound(soundRef: React.MutableRefObject<Audio.Sound | null>) {
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
+    };
+  }, [soundRef]);
+}
+
 const styles = StyleSheet.create({
-  // layout
-  screen: { flex: 1, backgroundColor: '#F8FAFC' },
-  listContent: { paddingHorizontal: 16, paddingBottom: 24, backgroundColor: '#F8FAFC' },
+  screen: { flex: 1, backgroundColor: '#F8F9FB', paddingHorizontal: 20, paddingBottom: 80, gap: 24 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Platform.OS === 'android' ? 8 : 0, height: 56 },
+  topTitle: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '600', color: '#000000', paddingHorizontal: 12 },
 
-  // header
-  header: { backgroundColor: '#F8FAFC', paddingHorizontal: 16, paddingBottom: 8 },
-  h1: { fontSize: 24, fontWeight: '800', letterSpacing: 0.2 },
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 20,
+    height: 200,
+    backgroundColor: '#0A84FF',
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+  },
+  heroGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroContent: { alignItems: 'center', justifyContent: 'center', gap: 12 },
+  heroIconWrap: { transform: [{ translateY: -16 }] },
+  heroTextStack: { alignItems: 'center', gap: 6 },
+  heroPattern: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.05,
+    transform: [{ scale: 1.15 }],
+  },
+  heroTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 22 },
+  heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 16 },
 
-  // cards
-  card: {
-    backgroundColor: '#fff',
+  liveCard: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 14,
+    padding: 16,
+    gap: 12,
+  },
+  liveRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  liveBadge: { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#FF3B30', borderRadius: 8 },
+  liveBadgeText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
+  liveText: { color: '#000000', fontWeight: '700', fontSize: 16 },
+  liveSubtle: { color: '#555555', fontWeight: '500', fontSize: 14 },
+
+  playButton: {
+    marginTop: 14,
+    alignSelf: 'center',
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+
+  sliderWrap: {
     marginTop: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
   },
-  shadow: Platform.select({
-    ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-    android: { elevation: 3 },
-  }) as object,
-
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  badge: {
-    backgroundColor: '#F1F5F9',
-    color: '#0F172A',
+  sliderHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sliderLabel: { color: '#555555', fontWeight: '400', fontSize: 14 },
+  sliderValue: { color: '#475569', fontWeight: '600' },
+  sliderTrackShadow: { borderRadius: 999, shadowColor: '#000000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  sliderTrack: {
+    height: 4,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    fontSize: 12,
+    backgroundColor: '#E5E5EA',
     overflow: 'hidden',
   },
-  live: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    fontSize: 12,
-    overflow: 'hidden',
-    color: '#fff',
+  sliderFill: { height: '100%', backgroundColor: '#0A84FF' },
+  sliderThumb: {
+    position: 'absolute',
+    top: -6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF',
+    transform: [{ translateX: -8 }],
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  liveOn: { backgroundColor: '#EF4444' },
-  liveOff: { backgroundColor: '#94A3B8' },
+  sliderButtons: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  volButton: { padding: 6 },
 
-  // text
-  subtle: { color: '#64748B', marginTop: 8, paddingHorizontal: 16 },
-  subtleSmall: { color: '#94A3B8', marginTop: 6, fontSize: 12 },
-  tip: { color: '#94A3B8', marginTop: 6, fontSize: 12, fontStyle: 'italic', paddingHorizontal: 16 },
-  url: { color: '#475569', marginTop: 10, fontSize: 12 },
-  sectionLabel: { fontSize: 14, fontWeight: '700', color: '#0F172A', marginTop: 8 },
-
-  // empty refresh
-  refreshBtn: {
+  followStrip: {
     marginTop: 10,
-    marginLeft: 16,
-    alignSelf: 'flex-start',
-    backgroundColor: '#0EA5E9',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    gap: 10,
   },
-  refreshText: { color: '#fff', fontWeight: '700' },
+  followHeader: { gap: 4 },
+  stripLabel: { color: '#0F172A', fontWeight: '700', fontSize: 18 },
+  stripSub: { color: '#777777', fontWeight: '400', fontSize: 13 },
+  followDivider: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 4 },
+  followScroller: { paddingVertical: 2, paddingHorizontal: 4, alignItems: 'center', gap: 12, justifyContent: 'center' },
+  followChip: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    width: 80,
+    height: 100,
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 0,
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  followAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followAvatarText: { color: '#0369A1', fontWeight: '800', fontSize: 13 },
+  followName: { color: '#0F172A', fontWeight: '700', fontSize: 12, textAlign: 'center' },
+  followLiveText: { color: '#EF4444', fontWeight: '700', fontSize: 11 },
+  followLivePill: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
+  },
+  followLivePillText: { color: '#B91C1C', fontWeight: '800', fontSize: 11 },
 
-  // errors
-  error: { color: '#B91C1C', marginTop: 8, paddingHorizontal: 16 },
+  nextRow: { marginTop: 12, paddingBottom: 40, alignItems: 'center' },
+  nextValue: { color: '#444444', fontWeight: '600', fontSize: 15 },
+
+  subtle: { color: '#64748B', marginTop: 12, paddingHorizontal: 16 },
+  error: { color: '#B91C1C', marginTop: 10, fontWeight: '700' },
+
+  shadow: { shadowColor: '#000000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
 });
