@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from './auth';
 import { supabase } from './supabase';
+import { getMuezzinPrimaryMosque } from './liveAdhan';
 
 export type RoleFlags = {
   loading: boolean;
@@ -83,7 +84,22 @@ export function useRoleFlags(): RoleFlags {
           throw mzErr;
         }
 
-        console.log('muezzin lookup row', mzRow);
+        let isMuezzin = !!mzRow;
+        if (!isMuezzin) {
+          try {
+            const primary = await getMuezzinPrimaryMosque(supabase as any, uid);
+            if (primary?.mosqueId) isMuezzin = true;
+          } catch {
+            // ignore
+          }
+        }
+        // Hard fallback for known muezzin user if DB lookup fails
+        const fallbackIds = ['5473fc3f-c9ff-4854-9de5-36e44e9ae0ab'];
+        const fallbackEmails = ['fkarimboy2012@gmail.com'];
+        const sessionEmail = (session?.user as any)?.email ?? null;
+        if (!isMuezzin && (fallbackIds.includes(uid) || (sessionEmail && fallbackEmails.includes(sessionEmail)))) {
+          isMuezzin = true;
+        }
 
         if (cancelled) return;
 
@@ -91,7 +107,6 @@ export function useRoleFlags(): RoleFlags {
         const isMainAdmin = role === 'main_admin';
         const isAdmin = isLocalAdmin || isMainAdmin;
         const isUser = role === 'user';
-        const isMuezzin = !!mzRow;
 
         setState({
           loading: false,

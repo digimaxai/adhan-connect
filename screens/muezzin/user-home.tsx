@@ -1,9 +1,10 @@
-// app/(tabs)/index.tsx
+// Copy of user home screen with hook order made safe for muezzin stack
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AppLogo from '../../components/AppLogo';
 import { useAuth } from '../../lib/auth';
 import {
   AdhanBroadcast,
@@ -15,7 +16,7 @@ import {
 } from '../../lib/adhans';
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
-import AppLogo from '../../components/AppLogo';
+import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
 type Subscription = { mosque_id: string };
@@ -30,7 +31,6 @@ const fallbackTimes: Record<PrayerName, string> = {
   isha: '19:05',
 };
 
-// Safe storage wrapper (falls back to in-memory if AsyncStorage is unavailable)
 const safeStorage = (() => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -56,7 +56,7 @@ const formatHm = (val?: string | null) => {
   return `${h?.padStart(2, '0') ?? '00'}:${m?.padStart(2, '0') ?? '00'}`;
 };
 
-export default function HomeScreen() {
+export default function MuezzinUserHomeScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const roles = useRoleFlags();
@@ -82,6 +82,8 @@ export default function HomeScreen() {
   }, [subs, mosques, defaultMosqueId]);
 
   const subscribedIds = useMemo(() => new Set(subs.map((s) => s.mosque_id)), [subs]);
+
+  const liveInfo = useLiveStreamForMosque(primaryMosque?.id);
 
   const loadHomeData = async () => {
     const [mosqueRes, subsRes, streamsRes] = await Promise.all([
@@ -197,7 +199,7 @@ export default function HomeScreen() {
   }, [subs, mosques]);
 
   const computeNextPrayer = (times: PrayerTimes | null) => {
-    const now = new Date();
+    const nowDate = new Date();
     const entries: Array<{ name: PrayerName; time: string }> = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
       .map((name) => ({ name, time: (times?.[name] as string) ?? fallbackTimes[name] }))
       .filter((p) => p.time);
@@ -206,19 +208,19 @@ export default function HomeScreen() {
       const [h, m] = timeStr.split(':').map((t) => parseInt(t, 10));
       const d = new Date();
       d.setHours(h, m, 0, 0);
-      if (carryNextDay && d <= now) d.setDate(d.getDate() + 1);
+      if (carryNextDay && d <= nowDate) d.setDate(d.getDate() + 1);
       return d;
     };
 
     const upcoming = entries
       .map((p) => ({ ...p, when: toDate(p.time) }))
-      .filter((p) => p.when > now)
+      .filter((p) => p.when > nowDate)
       .sort((a, b) => a.when.getTime() - b.when.getTime());
 
     const chosen = upcoming[0] ?? (entries.length ? { ...entries[0], when: toDate(entries[0].time, true) } : null);
     if (!chosen) return null;
 
-    const diffMs = chosen.when.getTime() - now.getTime();
+    const diffMs = chosen.when.getTime() - nowDate.getTime();
     const diffMin = Math.max(0, Math.floor(diffMs / 60000));
     const hours = Math.floor(diffMin / 60)
       .toString()
@@ -248,18 +250,18 @@ export default function HomeScreen() {
 
   const MuezzinHero = () => {
     const broadcast = nextBroadcast;
-    const [now, setNow] = useState(new Date());
+    const [nowState, setNowState] = useState(new Date());
     useEffect(() => {
-      const id = setInterval(() => setNow(new Date()), 1000);
+      const id = setInterval(() => setNowState(new Date()), 1000);
       return () => clearInterval(id);
     }, []);
 
-    const startable = broadcast ? canStartBroadcast(broadcast, now) : false;
-    const badge = broadcast ? statusBadge(broadcast, now) : null;
+    const startable = broadcast ? canStartBroadcast(broadcast, nowState) : false;
+    const badge = broadcast ? statusBadge(broadcast, nowState) : null;
     const remaining = (() => {
       if (!broadcast) return null;
       const target = new Date(broadcast.scheduled_for);
-      const diffSec = Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
+      const diffSec = Math.max(0, Math.floor((target.getTime() - nowState.getTime()) / 1000));
       const hours = Math.floor(diffSec / 3600);
       const mins = Math.floor((diffSec % 3600) / 60);
       return { text: `In ${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`, diffSec };
@@ -303,7 +305,7 @@ export default function HomeScreen() {
                 <Text style={styles.heroButtonText}>{startable ? 'Go live' : 'View details'}</Text>
               </Pressable>
               <Pressable
-                onPress={() => router.push('/(tabs)/muezzin')}
+                onPress={() => router.push('/(muezzin)/muezzin')}
                 style={({ pressed }) => [styles.heroButton, { backgroundColor: '#E0F2FE', opacity: pressed ? 0.85 : 1 }]}
               >
                 <Text style={[styles.heroButtonText, { color: '#0369A1' }]}>Schedule</Text>
@@ -366,35 +368,33 @@ export default function HomeScreen() {
     </View>
   );
 
-  if (roles.isMuezzin) {
-    return (
-      <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-        <ScrollView contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}>
-          <View style={styles.headerRow}>
-            <AppLogo size={30} />
-            <Text style={styles.appTitle}>Adhan Connect</Text>
-            <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12}>
-              <Ionicons name="settings-outline" size={22} color="#0F172A" />
-            </Pressable>
-          </View>
-          <MuezzinHero />
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
   const primaryLive = primaryMosque ? liveStreams[primaryMosque.id] : null;
   const otherLive = Object.entries(liveStreams).filter(
     ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
   );
 
-  return (
+  const muezzinBody = (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}>
         <View style={styles.headerRow}>
           <AppLogo size={30} />
           <Text style={styles.appTitle}>Adhan Connect</Text>
-          <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12}>
+          <Pressable onPress={() => router.push('/(muezzin)/settings')} hitSlop={12}>
+            <Ionicons name="settings-outline" size={22} color="#0F172A" />
+          </Pressable>
+        </View>
+        <MuezzinHero />
+      </ScrollView>
+    </SafeAreaView>
+  );
+
+  const userBody = (
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <ScrollView contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}>
+        <View style={styles.headerRow}>
+          <AppLogo size={30} />
+          <Text style={styles.appTitle}>Adhan Connect</Text>
+          <Pressable onPress={() => router.push('/(user)/settings')} hitSlop={12}>
             <Ionicons name="settings-outline" size={22} color="#0F172A" />
           </Pressable>
         </View>
@@ -426,14 +426,14 @@ export default function HomeScreen() {
             <Text style={styles.nextEta}>{nextPrayer?.remaining ? `In ${nextPrayer.remaining}` : 'In 06:49'}</Text>
           </View>
           <View style={{ marginTop: 12 }}>
-            {primaryLive ? (
+            {liveInfo.isLive ? (
               <View style={styles.heroLiveRow}>
                 <View style={styles.liveBadge}>
                   <Text style={styles.liveBadgeText}>LIVE</Text>
                 </View>
                 <Ionicons name="radio-outline" size={20} color="#E2E8F0" />
                 <Pressable
-                  onPress={() => router.push('/(tabs)/now')}
+                  onPress={() => router.push('/(user)/now')}
                   style={({ pressed }) => [styles.listenBtn, { opacity: pressed ? 0.9 : 1 }]}
                 >
                   <Text style={styles.listenText}>Listen Live</Text>
@@ -485,7 +485,7 @@ export default function HomeScreen() {
                       <Text style={styles.liveBadgeText}>LIVE</Text>
                     </View>
                   </View>
-                  <Pressable onPress={() => router.push('/(tabs)/now')} hitSlop={6}>
+                  <Pressable onPress={() => router.push('/(user)/now')} hitSlop={6}>
                     <Text style={styles.listenLink}>Listen</Text>
                   </Pressable>
                 </View>
@@ -498,7 +498,7 @@ export default function HomeScreen() {
           <Text style={styles.cardTitle}>Find Mosques Near You</Text>
           <Text style={styles.discoverySubtitle}>Discover mosques to follow and listen to live adhans.</Text>
           <Pressable
-            onPress={() => router.push('/(tabs)/discover')}
+            onPress={() => router.push('/(user)/discover')}
             style={({ pressed }) => [styles.discoveryBtn, { opacity: pressed ? 0.9 : 1 }]}
           >
             <Text style={styles.discoveryBtnText}>Discover</Text>
@@ -507,6 +507,8 @@ export default function HomeScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+
+  return userBody;
 }
 
 const styles = StyleSheet.create({

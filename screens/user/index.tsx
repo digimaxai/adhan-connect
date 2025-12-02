@@ -16,6 +16,7 @@ import {
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
 import AppLogo from '../../components/AppLogo';
+import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
 type Subscription = { mosque_id: string };
@@ -303,7 +304,7 @@ export default function HomeScreen() {
                 <Text style={styles.heroButtonText}>{startable ? 'Go live' : 'View details'}</Text>
               </Pressable>
               <Pressable
-                onPress={() => router.push('/(tabs)/muezzin')}
+                onPress={() => router.push('/(muezzin)/muezzin')}
                 style={({ pressed }) => [styles.heroButton, { backgroundColor: '#E0F2FE', opacity: pressed ? 0.85 : 1 }]}
               >
                 <Text style={[styles.heroButtonText, { color: '#0369A1' }]}>Schedule</Text>
@@ -384,6 +385,7 @@ export default function HomeScreen() {
   }
 
   const primaryLive = primaryMosque ? liveStreams[primaryMosque.id] : null;
+  const liveInfo = useLiveStreamForMosque(primaryMosque?.id);
   const otherLive = Object.entries(liveStreams).filter(
     ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
   );
@@ -426,14 +428,14 @@ export default function HomeScreen() {
             <Text style={styles.nextEta}>{nextPrayer?.remaining ? `In ${nextPrayer.remaining}` : 'In 06:49'}</Text>
           </View>
           <View style={{ marginTop: 12 }}>
-            {primaryLive ? (
+            {liveInfo.isLive ? (
               <View style={styles.heroLiveRow}>
                 <View style={styles.liveBadge}>
                   <Text style={styles.liveBadgeText}>LIVE</Text>
                 </View>
                 <Ionicons name="radio-outline" size={20} color="#E2E8F0" />
                 <Pressable
-                  onPress={() => router.push('/(tabs)/now')}
+                  onPress={() => router.push('/(user)/now')}
                   style={({ pressed }) => [styles.listenBtn, { opacity: pressed ? 0.9 : 1 }]}
                 >
                   <Text style={styles.listenText}>Listen Live</Text>
@@ -485,7 +487,7 @@ export default function HomeScreen() {
                       <Text style={styles.liveBadgeText}>LIVE</Text>
                     </View>
                   </View>
-                  <Pressable onPress={() => router.push('/(tabs)/now')} hitSlop={6}>
+                  <Pressable onPress={() => router.push('/(user)/now')} hitSlop={6}>
                     <Text style={styles.listenLink}>Listen</Text>
                   </Pressable>
                 </View>
@@ -498,7 +500,7 @@ export default function HomeScreen() {
           <Text style={styles.cardTitle}>Find Mosques Near You</Text>
           <Text style={styles.discoverySubtitle}>Discover mosques to follow and listen to live adhans.</Text>
           <Pressable
-            onPress={() => router.push('/(tabs)/discover')}
+            onPress={() => router.push('/(user)/discover')}
             style={({ pressed }) => [styles.discoveryBtn, { opacity: pressed ? 0.9 : 1 }]}
           >
             <Text style={styles.discoveryBtnText}>Discover</Text>

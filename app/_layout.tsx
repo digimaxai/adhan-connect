@@ -3,6 +3,7 @@ import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-rout
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { AuthProvider, useAuth } from '../lib/auth';
+import { useRoleFlags } from '../lib/roles';
 
 // Notifications setup
 import * as Notifications from 'expo-notifications';
@@ -21,23 +22,32 @@ Notifications.setNotificationHandler({
 
 function RootNavigator() {
   const { session, loading } = useAuth();
+  const roles = useRoleFlags();
   const router = useRouter();
   const segments = useSegments();
   const navigationState = useRootNavigationState();
 
   const inAuthGroup = segments[0] === '(auth)';
+  const isAdmin = roles.isAdmin || roles.isLocalAdmin;
+  const isMuezzin = roles.isMuezzin;
+  const targetStack = isMuezzin ? '/(muezzin)' : isAdmin ? '/(admin)' : '/(user)';
 
   useEffect(() => {
-    if (!navigationState?.key || loading) return;
+    if (!navigationState?.key || loading || roles.loading) return;
 
-    if (!session && !inAuthGroup) {
-      router.replace('/sign-in');
-    } else if (session && inAuthGroup) {
-      router.replace('/(tabs)');
+    const currentRoot = `/${segments[0] ?? ''}`;
+    if (!session) {
+      if (!inAuthGroup) router.replace('/sign-in');
+      return;
     }
-  }, [session, loading, inAuthGroup, navigationState?.key, router]);
 
-  if (loading || !navigationState?.key) {
+    // Always prioritize muezzin stack if muezzin flag is true, regardless of admin role.
+    if (currentRoot !== targetStack) {
+      router.replace(targetStack);
+    }
+  }, [session, loading, roles.loading, targetStack, inAuthGroup, navigationState?.key, router, segments]);
+
+  if (loading || roles.loading || !navigationState?.key) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#0EA5E9" />
@@ -49,6 +59,9 @@ function RootNavigator() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(user)" />
+      <Stack.Screen name="(admin)" />
+      <Stack.Screen name="(muezzin)" />
       <Stack.Screen
         name="modal"
         options={{
