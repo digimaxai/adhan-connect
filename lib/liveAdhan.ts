@@ -4,18 +4,29 @@ import { PrayerName } from './adhans';
 type PrimaryMosque = { mosqueId: string; mosqueName?: string | null; stream?: any | null };
 
 export async function getMuezzinPrimaryMosque(supabase: SupabaseClient, userId: string): Promise<PrimaryMosque | null> {
-  const { data, error } = await supabase
-    .from('muezzins')
-    .select('mosque_id, mosques(name), streams(*)')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
+  try {
+    const log = (...args: any[]) => console.log('[liveAdhan.getMuezzinPrimaryMosque]', ...args);
+    log('lookup start', { userId });
+    const { data, error } = await supabase
+      .from('muezzins')
+      .select('mosque_id, mosques(name)')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false }) // prefer the most recently assigned active mosque
+      .limit(1)
+      .maybeSingle();
 
-  if (error || !data) return null;
-  const stream = (data as any)?.streams ?? null;
-  const mosqueName = (data as any)?.mosques?.name ?? null;
-  return { mosqueId: (data as any).mosque_id, mosqueName, stream };
+    if (error || !data) {
+      log('lookup result', { data, error });
+      return null;
+    }
+    log('lookup result', { data });
+    const mosqueName = (data as any)?.mosques?.name ?? null;
+    return { mosqueId: (data as any).mosque_id, mosqueName, stream: null };
+  } catch (e) {
+    console.log('[liveAdhan.getMuezzinPrimaryMosque] error', e);
+    return null;
+  }
 }
 
 type StartArgs = {
@@ -38,7 +49,14 @@ function resolvePrayer(args: StartArgs) {
 export async function startBroadcast(supabase: SupabaseClient, args: StartArgs) {
   const now = new Date().toISOString();
   const scheduledAt = args.scheduledTime ?? now;
-  const prayer = resolvePrayer(args);
+  const allowed: Array<PrayerName | string> = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  const resolved = resolvePrayer(args);
+  const prayer =
+    args.mode === 'test'
+      ? 'maghrib'
+      : allowed.includes((resolved ?? '').toString().toLowerCase())
+      ? resolved
+      : 'maghrib';
   const source = args.mode === 'test' ? 'test' : 'live';
 
   const { data: existingLive } = await supabase

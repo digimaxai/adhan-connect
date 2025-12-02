@@ -35,6 +35,7 @@ export default function MuezzinLiveScreen() {
   const mosqueId = params.mosqueId ?? '';
   const mosqueName = params.mosqueName ?? 'Mosque';
   const prayerName = params.prayerName ?? 'Adhan';
+  const prayerKey = (prayerName ?? '').toString().toLowerCase() as PrayerName;
   const mode = params.mode === 'test' ? 'test' : 'normal';
 
   const [liveState, setLiveState] = useState<LiveState>('READY');
@@ -48,14 +49,23 @@ export default function MuezzinLiveScreen() {
   const prayerTimes = useMosquePrayerTimes(mosqueId);
 
   const scheduledDate = (() => {
+    // 1) explicit param
     if (params.scheduledTime) return new Date(params.scheduledTime);
+    // 2) live adhan row
     const raw = (liveInfo.currentAdhan as any)?.scheduled_for ?? (liveInfo.currentAdhan as any)?.scheduled_at;
     if (raw) return new Date(raw);
-    const fromTimes = prayerTimes.times?.[prayerName as PrayerName];
+    // 3) today's prayer time from mosque prayer times
+    const fromTimes = prayerTimes.times?.[prayerKey];
     if (fromTimes) {
       const [h, m] = fromTimes.split(':').map((v) => parseInt(v, 10));
       const d = new Date();
       d.setHours(h, m, 0, 0);
+      return d;
+    }
+    // 4) for test mode, set a near-future time for meaningful countdown
+    if (mode === 'test') {
+      const d = new Date();
+      d.setSeconds(d.getSeconds() + 120);
       return d;
     }
     return null;
@@ -155,10 +165,16 @@ export default function MuezzinLiveScreen() {
   })();
 
   const circleStyle = (() => {
-    if (liveState === 'LIVE') return { bg: '#DC2626', text: 'Tap to end' };
-    if (liveState === 'READY') return { bg: '#0EA5E9', text: 'Tap to start' };
-    if (liveState === 'ENDED') return { bg: '#0F172A', text: 'Ended' };
-    return { bg: '#E2E8F0', text: 'Too early' };
+    if (liveState === 'LIVE') return { bg: '#DC2626', main: 'Live', sub: elapsed !== null ? `Elapsed ${formatCountdown(elapsed)}` : 'Tap to end', cta: 'Tap to end' };
+    if (liveState === 'READY')
+      return {
+        bg: '#0EA5E9',
+        main: 'Ready',
+        sub: timeUntil !== null ? `Starts in ${formatCountdown(timeUntil)}` : 'Tap to start',
+        cta: 'Tap to start',
+      };
+    if (liveState === 'ENDED') return { bg: '#0F172A', main: 'Ended', sub: 'Tap to end', cta: 'Tap to end' };
+    return { bg: '#E2E8F0', main: 'Too early', sub: timeUntil !== null ? `Opens in ${formatCountdown(timeUntil)}` : '', cta: 'Too early' };
   })();
 
   const connectionStatus = liveInfo.isLive ? 'Stream connected' : busy ? 'Connecting...' : 'Ready to connect';
@@ -200,38 +216,50 @@ export default function MuezzinLiveScreen() {
             >
               <Ionicons
                 name="mic"
-                size={34}
+                size={36}
                 color={liveState === 'TOO_EARLY' ? '#475569' : '#FFFFFF'}
-                style={{ marginBottom: 6 }}
+                style={{ marginBottom: 10 }}
               />
-              <Text style={styles.circleText}>{busy ? 'Working...' : circleStyle.text}</Text>
-              {liveState === 'LIVE' && elapsed !== null ? (
-                <Text style={styles.circleSub}>{formatCountdown(elapsed)}</Text>
-              ) : liveState !== 'LIVE' && timeUntil !== null ? (
-                <Text style={styles.circleSub}>Starts in {formatCountdown(timeUntil)}</Text>
-              ) : null}
+              <Text style={styles.circleText}>{busy ? 'Working...' : circleStyle.main}</Text>
+              {circleStyle.sub ? <Text style={styles.circleSub}>{circleStyle.sub}</Text> : null}
             </Pressable>
           </View>
         </View>
 
-        <View style={styles.meta}>
+        <View style={styles.metaCard}>
+          <Text style={styles.metaHeading}>Timing</Text>
           {scheduledDate ? (
             <>
-              <Text style={styles.metaText}>Scheduled time: {scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaLabel}>Scheduled</Text>
+                <Text style={styles.metaValue}>{scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+              </View>
               {windowStartLabel && windowEndLabel ? (
-                <Text style={styles.metaText}>
-                  Live window: {windowStartLabel.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
-                  {windowEndLabel.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Live window</Text>
+                  <Text style={styles.metaValue}>
+                    {windowStartLabel.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
+                    {windowEndLabel.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
               ) : null}
             </>
           ) : (
-            <Text style={styles.metaText}>Scheduled time: Soon</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Scheduled</Text>
+              <Text style={styles.metaValue}>Soon</Text>
+            </View>
           )}
           {liveState === 'LIVE' && broadcastStart ? (
-            <Text style={styles.metaText}>Live since {broadcastStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Live since</Text>
+              <Text style={styles.metaValue}>{broadcastStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+            </View>
           ) : timeUntil !== null ? (
-            <Text style={styles.metaText}>Time until scheduled adhan: {formatCountdown(timeUntil)}</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Time until adhan</Text>
+              <Text style={styles.metaValue}>{formatCountdown(timeUntil)}</Text>
+            </View>
           ) : null}
         </View>
 
@@ -280,11 +308,11 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   bannerText: { color: '#166534', fontWeight: '700' },
-  circleWrap: { alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  circleWrap: { alignItems: 'center', justifyContent: 'center', marginTop: 12, marginBottom: 8 },
   circleOuter: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E2E8F0',
@@ -293,17 +321,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0F2FE',
   },
   circle: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
+    padding: 16,
   },
-  circleText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
-  circleSub: { color: '#E0F2FE', fontWeight: '700', marginTop: 4 },
-  meta: { gap: 6, marginTop: 8 },
-  metaText: { color: '#475569', fontWeight: '700' },
+  circleText: { color: '#FFFFFF', fontWeight: '800', fontSize: 17, marginBottom: 2 },
+  circleSub: { color: '#E0F2FE', fontWeight: '700', fontSize: 14 },
+  metaCard: {
+    marginTop: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    gap: 8,
+  },
+  metaHeading: { color: '#0F172A', fontWeight: '800', fontSize: 14 },
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  metaLabel: { color: '#475569', fontWeight: '700' },
+  metaValue: { color: '#0F172A', fontWeight: '800' },
   secondaryAction: {
     marginTop: 10,
     alignSelf: 'center',

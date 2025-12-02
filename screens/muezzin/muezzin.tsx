@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View, SafeAreaView } from 'react-native';
 import { AdhanBroadcast, PrayerName, formatTimeWithTz, labelForPrayer } from '../../lib/adhans';
 import { useAuth } from '../../lib/auth';
 import { useRoleFlags } from '../../lib/roles';
@@ -79,6 +79,7 @@ export default function MuezzinToolsScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { loading, isMuezzin } = useRoleFlags();
+  const log = (...args: any[]) => console.log('[MuezzinScreen]', ...args);
 
   const [primaryMosque, setPrimaryMosque] = useState<MosqueInfo | null>(null);
   const [upcoming, setUpcoming] = useState<BroadcastLike | null>(null);
@@ -98,29 +99,39 @@ export default function MuezzinToolsScreen() {
     setErr(null);
     try {
       const userId = session?.user?.id;
+      log('load start', { userId, isMuezzin });
       if (!userId) throw new Error('No user session');
 
       const primary = await getMuezzinPrimaryMosque(supabase as any, userId);
       const normalizedPrimary = primary?.mosqueId ? { id: primary.mosqueId, name: primary.mosqueName } : null;
+      log('primary mosque lookup', { normalizedPrimary, raw: primary });
       setPrimaryMosque(normalizedPrimary);
 
       if (normalizedPrimary?.id) {
         const today = new Date().toISOString().slice(0, 10);
         const { data, error } = await supabase
           .from('adhans')
-          .select('id, mosque_id, prayer, status, scheduled_at, scheduled_for, time_zone')
+          .select('id, mosque_id, prayer, status, scheduled_at')
           .eq('mosque_id', normalizedPrimary.id)
           .gte('scheduled_at', `${today}T00:00:00Z`)
           .order('scheduled_at', { ascending: true })
           .limit(1);
 
         if (error) throw error;
+        log('upcoming adhan row', { data, error });
         setUpcoming(normalizeBroadcast(data?.[0] ?? null, normalizedPrimary));
       } else {
         setUpcoming(null);
       }
     } catch (e: any) {
-      setErr(e?.message ?? 'Failed to load schedule');
+      const msg = e?.message ?? 'Failed to load schedule';
+      // Ignore legacy column errors from environments that lack scheduled_for or time_zone
+      const lower = msg.toLowerCase();
+      if (!lower.includes('scheduled_for') && !lower.includes('time_zone')) {
+        setErr(msg);
+      } else {
+        setErr(null);
+      }
       setUpcoming(null);
     } finally {
       setBusy(false);
@@ -211,6 +222,15 @@ export default function MuezzinToolsScreen() {
   const derived = deriveState(activeBroadcast, liveInfo.isLive, now);
   const scheduledIso = activeBroadcast?.scheduled_for ?? activeBroadcast?.scheduled_at ?? null;
   const scheduledLabel = scheduledIso ? formatTimeWithTz(activeBroadcast as any) : null;
+  useEffect(() => {
+    log('derived state', {
+      derived,
+      activeBroadcast,
+      isLive: liveInfo.isLive,
+      primaryMosque,
+      prayerTimes: prayerTimes.times,
+    });
+  }, [derived.state, derived.countdownText, activeBroadcast?.id, liveInfo.isLive, primaryMosque?.id, prayerTimes.times]);
 
   const heroButtonLabel =
     derived.state === 'LIVE'
@@ -222,15 +242,16 @@ export default function MuezzinToolsScreen() {
       : 'Start test live adhan';
 
   return (
-    <ScrollView
-      style={{ flex: 1, padding: 16, backgroundColor: '#F8FAFC' }}
-      refreshControl={<RefreshControl refreshing={busy} onRefresh={load} />}
-      contentContainerStyle={{ paddingBottom: 32 }}
-    >
-      <Text style={{ fontSize: 22, fontWeight: '800', marginBottom: 6 }}>Muezzin tools</Text>
-      <Text style={{ color: '#64748B', marginBottom: 8 }}>
-        Review your next adhan and start live when the time comes.
-      </Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      <ScrollView
+        style={{ flex: 1, paddingHorizontal: 16 }}
+        refreshControl={<RefreshControl refreshing={busy} onRefresh={load} />}
+        contentContainerStyle={{ paddingBottom: 32, paddingTop: 8 }}
+      >
+        <Text style={{ fontSize: 22, fontWeight: '800', marginBottom: 6 }}>Muezzin tools</Text>
+        <Text style={{ color: '#64748B', marginBottom: 8 }}>
+          Review your next adhan and start live when the time comes.
+        </Text>
 
       {loading || (busy && !primaryMosque) ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 }}>
@@ -265,24 +286,6 @@ export default function MuezzinToolsScreen() {
             >
               <Text style={{ color: '#0F172A', fontWeight: '700' }}>Serving {primaryMosque.name}</Text>
             </View>
-          ) : null}
-
-          {liveInfo.isLive && activeBroadcast ? (
-            <TouchableOpacity
-              onPress={handlePrimaryAction}
-              style={{
-                backgroundColor: '#FEF2F2',
-                borderRadius: 12,
-                padding: 12,
-                borderWidth: 1,
-                borderColor: '#FCA5A5',
-                marginBottom: 12,
-              }}
-            >
-              <Text style={{ color: '#B91C1C', fontWeight: '800' }}>
-                {displayPrayer(activeBroadcast.prayer)} adhan is live - Tap to manage ->
-              </Text>
-            </TouchableOpacity>
           ) : null}
 
           {err && (
@@ -363,6 +366,7 @@ export default function MuezzinToolsScreen() {
           </View>
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
