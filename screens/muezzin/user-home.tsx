@@ -37,7 +37,8 @@ const safeStorage = (() => {
     const mod = require('@react-native-async-storage/async-storage');
     return mod.default ?? mod;
   } catch {
-    const memory: Record<string, string> = {};
+    const globalKey = '__ac_default_mosque_store__';
+    const memory: Record<string, string> = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {});
     return {
       getItem: async (key: string) => memory[key] ?? null,
       setItem: async (key: string, val: string) => {
@@ -85,6 +86,15 @@ export default function MuezzinUserHomeScreen() {
 
   const liveInfo = useLiveStreamForMosque(primaryMosque?.id);
 
+  const loadDefault = React.useCallback(async () => {
+    try {
+      const stored = await safeStorage.getItem('default_mosque_id');
+      setDefaultMosqueId(stored ?? null);
+    } catch {
+      setDefaultMosqueId(null);
+    }
+  }, []);
+
   const loadHomeData = async () => {
     const [mosqueRes, subsRes, streamsRes] = await Promise.all([
       supabase.from('mosques').select('id, name, city, country, status').order('name', { ascending: true }).limit(200),
@@ -111,20 +121,34 @@ export default function MuezzinUserHomeScreen() {
   }, [userId]);
 
   useEffect(() => {
-    const loadDefault = async () => {
-      try {
-        const stored = await safeStorage.getItem('default_mosque_id');
-        if (stored) setDefaultMosqueId(stored);
-      } catch {}
-    };
     loadDefault();
-  }, []);
+  }, [loadDefault]);
 
   useFocusEffect(
     React.useCallback(() => {
       loadHomeData();
-    }, [userId])
+      loadDefault();
+    }, [userId, loadDefault])
   );
+
+  useEffect(() => {
+    if (!defaultMosqueId) return;
+    if (mosques.find((m) => m.id === defaultMosqueId)) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('mosques')
+        .select('id, name, city, country, status')
+        .eq('id', defaultMosqueId)
+        .maybeSingle();
+      if (!cancelled && data && !error) {
+        setMosques((prev) => [...prev, data]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [defaultMosqueId, mosques]);
 
   useEffect(() => {
     const loadMuezzin = async () => {
@@ -180,7 +204,7 @@ export default function MuezzinUserHomeScreen() {
 
   useEffect(() => {
     const loadPrayerTimes = async () => {
-      const primaryId = subs[0]?.mosque_id ?? mosques[0]?.id;
+      const primaryId = primaryMosque?.id;
       if (!primaryId) {
         setPrayerTimes(null);
         setPrayerError(null);
@@ -196,7 +220,7 @@ export default function MuezzinUserHomeScreen() {
       }
     };
     loadPrayerTimes();
-  }, [subs, mosques]);
+  }, [primaryMosque?.id]);
 
   const computeNextPrayer = (times: PrayerTimes | null) => {
     const nowDate = new Date();

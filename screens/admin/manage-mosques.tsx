@@ -14,8 +14,6 @@ type FollowedMosque = {
   country?: string | null;
 };
 
-const MAX_FOLLOW = 3;
-
 // Lightweight storage wrapper (falls back to in-memory if AsyncStorage is absent)
 const safeStorage = (() => {
   try {
@@ -23,7 +21,8 @@ const safeStorage = (() => {
     const mod = require('@react-native-async-storage/async-storage');
     return mod.default ?? mod;
   } catch {
-    const memory: Record<string, string> = {};
+    const globalKey = '__ac_default_mosque_store__';
+    const memory: Record<string, string> = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {});
     return {
       getItem: async (key: string) => memory[key] ?? null,
       setItem: async (key: string, val: string) => {
@@ -46,7 +45,6 @@ export default function ManageMosques() {
   const [defaultId, setDefaultId] = useState<string | null>(null);
 
   const count = items.length;
-  const atLimit = count >= MAX_FOLLOW;
 
   const load = async () => {
     if (!userId) return;
@@ -54,14 +52,12 @@ export default function ManageMosques() {
     try {
       const { data } = await supabase.from('subscriptions').select('mosque_id, mosques(name,city,country)').eq('user_id', userId);
       if (Array.isArray(data)) {
-        const mapped: FollowedMosque[] = data
-          .map((row) => ({
-            mosque_id: row.mosque_id,
-            name: row.mosques?.name ?? 'Mosque',
-            city: row.mosques?.city,
-            country: row.mosques?.country,
-          }))
-          .slice(0, MAX_FOLLOW);
+        const mapped: FollowedMosque[] = data.map((row) => ({
+          mosque_id: row.mosque_id,
+          name: row.mosques?.name ?? 'Mosque',
+          city: row.mosques?.city,
+          country: row.mosques?.country,
+        }));
         setItems(mapped);
       }
     } finally {
@@ -118,7 +114,9 @@ export default function ManageMosques() {
     try {
       await safeStorage.setItem('default_mosque_id', mosqueId);
       setDefaultId(mosqueId);
-    } catch {}
+    } catch {
+      setDefaultId(mosqueId);
+    }
   };
 
   const renderRow = ({ item, index }: { item: FollowedMosque; index: number }) => {
@@ -166,8 +164,8 @@ export default function ManageMosques() {
         <View style={{ width: 24 }} />
       </View>
 
-      <View style={[styles.summary, atLimit && styles.summaryMax]}>
-        <Text style={styles.summaryText}>{`You are following ${count} / ${MAX_FOLLOW} mosques`}</Text>
+      <View style={styles.summary}>
+        <Text style={styles.summaryText}>{`You are following ${count} mosque${count === 1 ? '' : 's'}`}</Text>
       </View>
 
       {items.length === 0 && !loading ? (
