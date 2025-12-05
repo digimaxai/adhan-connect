@@ -249,9 +249,9 @@ export default function MuezzinToolsScreen() {
         contentContainerStyle={{ paddingBottom: 32, paddingTop: 8 }}
       >
         <Text style={{ fontSize: 22, fontWeight: '800', marginBottom: 6 }}>Muezzin tools</Text>
-        <Text style={{ color: '#64748B', marginBottom: 8 }}>
-          Review your next adhan and start live when the time comes.
-        </Text>
+          <Text style={{ color: '#64748B', marginBottom: 8 }}>
+            Review your next adhan and start live when the time comes.
+          </Text>
 
       {loading || (busy && !primaryMosque) ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 }}>
@@ -284,7 +284,8 @@ export default function MuezzinToolsScreen() {
                 marginBottom: 12,
               }}
             >
-              <Text style={{ color: '#0F172A', fontWeight: '700' }}>Serving {primaryMosque.name}</Text>
+              <Text style={{ color: '#0F172A', fontWeight: '800', fontSize: 22 }}>{primaryMosque.name}</Text>
+              <Text style={{ color: '#475569', fontWeight: '600', fontSize: 12, marginTop: 2 }}>Muezzin</Text>
             </View>
           ) : null}
 
