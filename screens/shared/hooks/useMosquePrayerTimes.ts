@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PrayerName } from '../../../lib/adhans';
-import { supabase } from '../../../lib/supabase';
+import { getDailyPrayerTimes, NormalizedPrayerTimes } from '@/lib/api/prayerTimesUnified';
 
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
 
@@ -8,6 +8,20 @@ type State = {
   loading: boolean;
   error: string | null;
   times: PrayerTimes | null;
+};
+
+const PRAYER_NAMES: PrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+
+const toTimeString = (value: Date | null) =>
+  value ? value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
+
+const mapToLegacyShape = (normalized: NormalizedPrayerTimes | null): PrayerTimes | null => {
+  if (!normalized) return null;
+  const times: PrayerTimes = {};
+  PRAYER_NAMES.forEach((name) => {
+    times[name] = toTimeString(normalized[name]?.adhan ?? null);
+  });
+  return times;
 };
 
 export function useMosquePrayerTimes(mosqueId?: string | null): State {
@@ -22,39 +36,10 @@ export function useMosquePrayerTimes(mosqueId?: string | null): State {
       }
       if (mounted) setState({ loading: true, error: null, times: null });
 
-      const todayStr = new Date().toISOString().slice(0, 10);
-
-      const fetchWithDate = async (op: 'eq' | 'gte' | 'lte', asc: boolean) => {
-        const query = supabase
-          .from('mosque_prayer_times')
-          .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-          .eq('mosque_id', mosqueId)
-          [op]('prayer_date', todayStr)
-          .order('prayer_date', { ascending: asc })
-          .limit(1)
-          .maybeSingle<PrayerTimes & { prayer_date?: string }>();
-        return query;
-      };
-
       try {
-        const { data: todayData } = await fetchWithDate('eq', true);
-        if (mounted && todayData) {
-          setState({ loading: false, error: null, times: todayData });
-          return;
-        }
-
-        const { data: nextData, error: nextErr } = await fetchWithDate('gte', true);
-        if (nextErr) throw nextErr;
-        if (mounted && nextData) {
-          setState({ loading: false, error: null, times: nextData });
-          return;
-        }
-
-        const { data: prevData, error: prevErr } = await fetchWithDate('lte', false);
-        if (prevErr) throw prevErr;
-        if (mounted) {
-          setState({ loading: false, error: null, times: prevData ?? null });
-        }
+        const normalized = await getDailyPrayerTimes(mosqueId, new Date());
+        if (!mounted) return;
+        setState({ loading: false, error: null, times: mapToLegacyShape(normalized) });
       } catch (e: any) {
         if (!mounted) return;
         setState({ loading: false, error: e?.message ?? 'Could not load prayer times', times: null });

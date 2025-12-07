@@ -75,6 +75,7 @@ export async function startBroadcast(supabase: SupabaseClient, args: StartArgs) 
     status: 'live',
     source,
     broadcast_started_at: now,
+    started_at: now,
   };
 
   let adhan = existingLive ?? null;
@@ -95,8 +96,18 @@ export async function startBroadcast(supabase: SupabaseClient, args: StartArgs) 
 
   const { data: stream, error: streamErr } = await supabase
     .from('streams')
-    .update({ is_live: true, status: 'live', last_health_check: now })
-    .eq('mosque_id', args.mosqueId)
+    .upsert(
+      {
+        mosque_id: args.mosqueId,
+        is_live: true,
+        status: 'live',
+        last_health_check: now,
+        current_prayer: prayer,
+        started_at: now,
+        ended_at: null,
+      } as any,
+      { onConflict: 'mosque_id' }
+    )
     .select()
     .maybeSingle();
   if (streamErr) throw streamErr;
@@ -124,7 +135,7 @@ export async function endBroadcast(supabase: SupabaseClient, args: EndArgs) {
   if (targetAdhanId) {
     const { data, error } = await supabase
       .from('adhans')
-      .update({ status: 'completed', broadcast_ended_at: now })
+      .update({ status: 'completed', broadcast_ended_at: now, ended_at: now })
       .eq('id', targetAdhanId)
       .select()
       .maybeSingle();
@@ -134,7 +145,7 @@ export async function endBroadcast(supabase: SupabaseClient, args: EndArgs) {
 
   const { data: stream, error: streamErr } = await supabase
     .from('streams')
-    .update({ is_live: false, status: 'active', last_health_check: now })
+    .update({ is_live: false, status: 'active', last_health_check: now, ended_at: now })
     .eq('mosque_id', args.mosqueId)
     .select()
     .maybeSingle();

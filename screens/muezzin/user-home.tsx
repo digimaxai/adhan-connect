@@ -14,8 +14,11 @@ import {
   formatTimeWithTz,
   statusBadge,
 } from '../../lib/adhans';
+import { labelForPrayer } from '../../lib/adhans';
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
+import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
+import { useLiveBroadcastEngine } from '../../lib/hooks/useLiveBroadcastEngine';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
@@ -62,6 +65,8 @@ export default function MuezzinUserHomeScreen() {
   const { session } = useAuth();
   const roles = useRoleFlags();
   const userId = session?.user?.id ?? null;
+  const muezzinSchedule = useMuezzinSchedule();
+  const liveEngine = useLiveBroadcastEngine(muezzinSchedule.mosqueId, muezzinSchedule.nextAdhan);
 
   const [mosques, setMosques] = useState<Mosque[]>([]);
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -73,6 +78,7 @@ export default function MuezzinUserHomeScreen() {
   const [muezzinError, setMuezzinError] = useState<string | null>(null);
   const [nextPrayer, setNextPrayer] = useState<ReturnType<typeof computeNextPrayer> | null>(null);
   const [defaultMosqueId, setDefaultMosqueId] = useState<string | null>(null);
+  const [nextCountdown, setNextCountdown] = useState<string | null>(null);
 
   const primaryMosque = useMemo(() => {
     const preferredId = defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
@@ -270,6 +276,25 @@ export default function MuezzinUserHomeScreen() {
     return () => clearInterval(id);
   }, [prayerTimes]);
 
+  useEffect(() => {
+    const targetIso = muezzinSchedule.nextAdhan?.scheduled_at ?? null;
+    if (!targetIso) {
+      setNextCountdown(null);
+      return;
+    }
+    const compute = () => {
+      const target = new Date(targetIso).getTime();
+      const now = Date.now();
+      const diffSec = Math.max(0, Math.floor((target - now) / 1000));
+      const mins = Math.floor(diffSec / 60);
+      const secs = diffSec % 60;
+      return `in ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+    setNextCountdown(compute());
+    const id = setInterval(() => setNextCountdown(compute()), 1000);
+    return () => clearInterval(id);
+  }, [muezzinSchedule.nextAdhan?.scheduled_at]);
+
   const topPad = Platform.OS === 'android' ? 8 : 0;
 
   const MuezzinHero = () => {
@@ -392,10 +417,130 @@ export default function MuezzinUserHomeScreen() {
     </View>
   );
 
+  const MuezzinLiveSummary = () => {
+    const statusLabel = (() => {
+      if (liveEngine.isLive) return 'LIVE';
+      if (liveEngine.isEarly) return 'Not yet';
+      if (liveEngine.canStart) return 'Ready';
+      if (liveEngine.isLate) return 'Completed';
+      return 'Scheduled';
+    })();
+    const statusStyle = statusLabel === 'LIVE' ? styles.liveStatusLive : statusLabel === 'Ready' ? styles.liveStatusReady : styles.liveStatusMuted;
+
+    return (
+      <View style={[styles.cardContainer, styles.shadow, { gap: 10 }]}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.cardTitle}>Next Adhan</Text>
+          {statusLabel ? (
+            <View style={[styles.statusPill, statusStyle]}>
+              <Text style={styles.statusPillText}>{statusLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+        {muezzinSchedule.loading ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <ActivityIndicator color="#0EA5E9" />
+            <Text style={styles.cardSubtitle}>Loading your schedule…</Text>
+          </View>
+        ) : nextScheduledAdhan ? (
+          <>
+            <Text style={styles.heroSource}>{muezzinSchedule.mosqueName ?? 'Your mosque'}</Text>
+            <Text style={styles.livePrayer}>{labelForPrayer(nextScheduledAdhan.prayer as PrayerName)}</Text>
+            <Text style={styles.liveTime}>{nextScheduledLabel ?? '--:--'}</Text>
+            <Text style={styles.liveCountdown}>{nextCountdown ?? 'Starting soon'}</Text>
+          </>
+        ) : (
+          <Text style={styles.cardSubtitle}>No upcoming adhans for today.</Text>
+        )}
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: '/(muezzin)/muezzin-live',
+              params: {
+                mosqueId: muezzinSchedule.mosqueId ?? '',
+                mosqueName: muezzinSchedule.mosqueName ?? 'Your mosque',
+                prayerName: (nextScheduledAdhan?.prayer ?? 'Adhan').toString(),
+                scheduledTime: nextScheduledAdhan?.scheduled_at ?? '',
+                adhanId: nextScheduledAdhan?.id ?? '',
+              },
+            })
+          }
+          disabled={!muezzinSchedule.mosqueId}
+          style={({ pressed }) => [
+            styles.primaryCta,
+            liveEngine.isLive ? styles.primaryCtaLive : null,
+            { opacity: (!muezzinSchedule.mosqueId ? 0.6 : pressed ? 0.9 : 1) },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            {liveEngine.isLive ? <View style={styles.liveDotLarge} /> : null}
+            <Text style={styles.primaryCtaText}>{liveEngine.isLive ? 'Manage Live Broadcast' : 'Manage Live Broadcast'}</Text>
+          </View>
+        </Pressable>
+        {liveEngine.errorMessage ? <Text style={styles.errorText}>{liveEngine.errorMessage}</Text> : null}
+      </View>
+    );
+  };
+
+  const TodaysAdhans = () => (
+    <View style={[styles.cardContainer, styles.shadow]}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.cardTitle}>Today's Adhans</Text>
+        {muezzinSchedule.mosqueName ? <Text style={styles.cardSubtitle}>Based on {muezzinSchedule.mosqueName}</Text> : null}
+      </View>
+      {muezzinSchedule.loading ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
+          <ActivityIndicator color="#0EA5E9" />
+          <Text style={styles.cardSubtitle}>Loading</Text>
+        </View>
+      ) : todayScheduleRows.length ? (
+        <View style={{ marginTop: 10, gap: 10 }}>
+          {todayScheduleRows.map((row) => (
+            <View
+              key={row.id}
+              style={[
+                styles.prayerRowWrap,
+                row.assigned ? styles.assignedRow : null,
+              ]}
+            >
+              <View>
+                <Text style={styles.prayerName}>{labelForPrayer(row.prayer as PrayerName)}</Text>
+                <Text style={styles.heroMuted}>{row.time}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {row.assigned ? (
+                  <View style={styles.assignedBadgeSoft}>
+                    <Text style={styles.assignedBadgeText}>Assigned to You</Text>
+                  </View>
+                ) : null}
+                <View style={[styles.statusPill, styles.statusPillMuted]}>
+                  <Text style={styles.statusPillText}>{row.status?.toUpperCase?.() ?? 'SCHEDULED'}</Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.cardSubtitle}>No adhans scheduled for today.</Text>
+      )}
+    </View>
+  );
+
   const primaryLive = primaryMosque ? liveStreams[primaryMosque.id] : null;
   const otherLive = Object.entries(liveStreams).filter(
     ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
   );
+  const nextScheduledAdhan = muezzinSchedule.nextAdhan;
+  const nextScheduledLabel = nextScheduledAdhan
+    ? new Date(nextScheduledAdhan.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
+  const todayScheduleRows = muezzinSchedule.todayAdhans.map((row) => ({
+    id: row.id,
+    prayer: row.prayer,
+    time: new Date(row.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    status: (row.status ?? 'scheduled') as string,
+    assigned: muezzinSchedule.assignedPrayers[(row.prayer as PrayerName) ?? 'fajr'],
+  }));
 
   const muezzinBody = (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
@@ -422,6 +567,7 @@ export default function MuezzinUserHomeScreen() {
             <Ionicons name="settings-outline" size={22} color="#0F172A" />
           </Pressable>
         </View>
+        {roles.isMuezzin ? <MuezzinLiveSummary /> : null}
 
         <Pressable
           disabled={!primaryMosque}
@@ -468,6 +614,8 @@ export default function MuezzinUserHomeScreen() {
         </Pressable>
 
         <MyMosques />
+
+        {roles.isMuezzin ? <TodaysAdhans /> : null}
 
         <View style={[styles.cardContainer, styles.shadow]}>
           <View style={styles.sectionHeader}>
@@ -671,4 +819,28 @@ const styles = StyleSheet.create({
   errorText: { color: '#F97316', marginTop: 6, fontSize: 12 },
   sourceText: { color: '#64748B', fontSize: 12, fontWeight: '700' },
   shadow: { shadowColor: '#000000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#E2E8F0' },
+  statusPillText: { fontWeight: '800', fontSize: 12, color: '#0F172A' },
+  statusPillMuted: { backgroundColor: '#E2E8F0' },
+  liveStatusLive: { backgroundColor: '#FEE2E2' },
+  liveStatusReady: { backgroundColor: '#DCFCE7' },
+  liveStatusMuted: { backgroundColor: '#E2E8F0' },
+  primaryCta: {
+    marginTop: 8,
+    backgroundColor: '#0EA5E9',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryCtaLive: { backgroundColor: '#EF4444' },
+  primaryCtaText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
+  livePrayer: { fontSize: 18, fontWeight: '800', color: '#0F172A' },
+  liveTime: { fontSize: 24, fontWeight: '900', color: '#0F172A' },
+  liveCountdown: { color: '#0EA5E9', fontWeight: '800', marginTop: 4 },
+  liveDotLarge: { width: 10, height: 10, borderRadius: 10, backgroundColor: '#FFFFFF' },
+  prayerRowWrap: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  assignedRow: { borderWidth: 1.4, borderColor: '#BFDBFE', borderRadius: 12, paddingHorizontal: 10, backgroundColor: '#F8FBFF' },
+  assignedBadgeSoft: { backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  assignedBadgeText: { color: '#0369A1', fontWeight: '800', fontSize: 11 },
 });

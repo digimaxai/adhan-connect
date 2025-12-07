@@ -1,12 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrayerName, labelForPrayer } from '../../lib/adhans';
-import { endBroadcast, startBroadcast } from '../../lib/liveAdhan';
-import { supabase } from '../../lib/supabase';
-import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
+import { useLiveBroadcastEngine } from '../../lib/hooks/useLiveBroadcastEngine';
+import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
 import { useMosquePrayerTimes } from '../shared/hooks/useMosquePrayerTimes';
 
 type Params = {
@@ -18,10 +17,8 @@ type Params = {
   adhanId?: string;
 };
 
-type LiveState = 'TOO_EARLY' | 'READY' | 'LIVE' | 'ENDED';
-
-const WINDOW_START_MS = 2 * 60 * 1000;
-const WINDOW_END_MS = 3 * 60 * 1000;
+const WINDOW_START_MS = 3 * 60 * 1000; // 3 minutes before
+const WINDOW_END_MS = 2 * 60 * 1000; // 2 minutes after
 
 const formatCountdown = (seconds: number) => {
   const mins = Math.max(0, Math.floor(seconds / 60));
@@ -32,152 +29,133 @@ const formatCountdown = (seconds: number) => {
 export default function MuezzinLiveScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<Params>();
-  const mosqueId = params.mosqueId ?? '';
-  const mosqueName = params.mosqueName ?? 'Mosque';
-  const prayerName = params.prayerName ?? 'Adhan';
+  const schedule = useMuezzinSchedule();
+  const paramsMosqueId = params.mosqueId ?? null;
+  const resolvedMosqueId = paramsMosqueId ?? schedule.mosqueId ?? '';
+  const mosqueName = params.mosqueName ?? schedule.mosqueName ?? 'Mosque';
+  const prayerName = params.prayerName ?? (schedule.nextAdhan?.prayer as string) ?? 'Adhan';
   const prayerKey = (prayerName ?? '').toString().toLowerCase() as PrayerName;
   const mode = params.mode === 'test' ? 'test' : 'normal';
 
-  const [liveState, setLiveState] = useState<LiveState>('READY');
-  const [adhanId, setAdhanId] = useState<string | null>(params.adhanId ?? null);
-  const [now, setNow] = useState(new Date());
-  const [busy, setBusy] = useState(false);
+  const prayerTimes = useMosquePrayerTimes(resolvedMosqueId);
   const [banner, setBanner] = useState<string | null>(null);
-  const [broadcastStart, setBroadcastStart] = useState<Date | null>(null);
+  const pulse = useRef(new Animated.Value(1)).current;
 
-  const liveInfo = useLiveStreamForMosque(mosqueId);
-  const prayerTimes = useMosquePrayerTimes(mosqueId);
+  const adhanFromParams = useMemo(() => {
+    if (!params.scheduledTime) return null;
+    return {
+      id: params.adhanId ?? 'pending',
+      mosque_id: resolvedMosqueId,
+      prayer: prayerName,
+      scheduled_at: params.scheduledTime,
+      status: 'scheduled',
+    };
+  }, [params.adhanId, params.scheduledTime, prayerName, resolvedMosqueId]);
 
-  const scheduledDate = (() => {
-    // 1) explicit param
-    if (params.scheduledTime) return new Date(params.scheduledTime);
-    // 2) live adhan row
-    const raw = (liveInfo.currentAdhan as any)?.scheduled_for ?? (liveInfo.currentAdhan as any)?.scheduled_at;
-    if (raw) return new Date(raw);
-    // 3) today's prayer time from mosque prayer times
+  const activeAdhan = useMemo(() => {
+    if (adhanFromParams) return adhanFromParams;
+    if (schedule.nextAdhan) return schedule.nextAdhan;
+    // fallback to nearest prayer time if available
     const fromTimes = prayerTimes.times?.[prayerKey];
     if (fromTimes) {
       const [h, m] = fromTimes.split(':').map((v) => parseInt(v, 10));
       const d = new Date();
       d.setHours(h, m, 0, 0);
-      return d;
+      return {
+        id: 'fallback',
+        mosque_id: resolvedMosqueId,
+        prayer: prayerName,
+        scheduled_at: d.toISOString(),
+        status: 'scheduled',
+      };
     }
-    // 4) for test mode, set a near-future time for meaningful countdown
+    return null;
+  }, [adhanFromParams, schedule.nextAdhan, prayerTimes.times, prayerKey, prayerName, resolvedMosqueId]);
+
+  const scheduledDate = useMemo(() => {
+    if (activeAdhan?.scheduled_at) return new Date(activeAdhan.scheduled_at);
     if (mode === 'test') {
       const d = new Date();
       d.setSeconds(d.getSeconds() + 120);
       return d;
     }
     return null;
-  })();
+  }, [activeAdhan?.scheduled_at, mode]);
+
+  const engine = useLiveBroadcastEngine(resolvedMosqueId, activeAdhan);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (liveInfo.currentAdhan?.id) setAdhanId(liveInfo.currentAdhan.id);
-    if (liveInfo.currentAdhan?.broadcast_started_at) {
-      setBroadcastStart(new Date(liveInfo.currentAdhan.broadcast_started_at as any));
+    if (engine.status === 'READY' || engine.status === 'LIVE') {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.05, duration: 900, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
     }
-    if (liveInfo.isLive) {
-      setLiveState('LIVE');
-    }
-  }, [liveInfo.isLive, liveInfo.currentAdhan]);
+    pulse.setValue(1);
+  }, [engine.status, pulse]);
 
-  const windowStart = scheduledDate ? scheduledDate.getTime() - WINDOW_START_MS : null;
-  const windowEnd = scheduledDate ? scheduledDate.getTime() + WINDOW_END_MS : null;
-
-  useEffect(() => {
-    if (liveInfo.isLive) return;
-    if (!windowStart || !windowEnd) return;
-    if (now.getTime() < windowStart) {
-      setLiveState('TOO_EARLY');
-    } else if (now.getTime() <= windowEnd) {
-      setLiveState('READY');
-    } else if (liveState === 'LIVE') {
-      setLiveState('READY');
-    }
-  }, [now, windowStart, windowEnd, liveInfo.isLive, liveState]);
-
-  const timeUntil = scheduledDate ? Math.max(0, Math.floor((scheduledDate.getTime() - now.getTime()) / 1000)) : null;
-  const windowStartLabel = windowStart ? new Date(windowStart) : null;
-  const windowEndLabel = windowEnd ? new Date(windowEnd) : null;
-
-  const elapsed = broadcastStart ? Math.max(0, Math.floor((now.getTime() - broadcastStart.getTime()) / 1000)) : null;
-
-  const startLive = async () => {
-    if (!mosqueId) {
-      Alert.alert('Missing data', 'No mosque provided for this broadcast.');
-      return;
-    }
-    setBusy(true);
-    setBanner(null);
-    try {
-      const { adhan } = await startBroadcast(supabase as any, {
-        mosqueId,
-        prayerName,
-        scheduledTime: scheduledDate?.toISOString() ?? new Date().toISOString(),
-        mode,
-      });
-      if (adhan?.id) setAdhanId(adhan.id);
-      if (adhan?.broadcast_started_at) setBroadcastStart(new Date(adhan.broadcast_started_at as any));
-      else setBroadcastStart(new Date());
-      setLiveState('LIVE');
-      setBanner('Broadcast started');
-    } catch (e: any) {
-      Alert.alert('Cannot start', e?.message ?? 'Failed to start broadcast.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const endLive = async () => {
-    if (!mosqueId) return;
-    setBusy(true);
-    setBanner(null);
-    try {
-      await endBroadcast(supabase as any, { mosqueId, adhanId: adhanId ?? undefined });
-      setLiveState('ENDED');
-      setBanner('Broadcast ended');
-    } catch (e: any) {
-      Alert.alert('Cannot end', e?.message ?? 'Failed to end broadcast.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handlePrimaryPress = () => {
-    if (liveState === 'TOO_EARLY') return;
-    if (liveState === 'LIVE') {
-      endLive();
-      return;
-    }
-    startLive();
-  };
+  const timeUntil = engine.timeUntilSeconds;
+  const windowStartLabel = scheduledDate ? new Date(scheduledDate.getTime() - WINDOW_START_MS) : null;
+  const windowEndLabel = scheduledDate ? new Date(scheduledDate.getTime() + WINDOW_END_MS) : null;
 
   const statusPill = (() => {
-    if (mode === 'test') return { label: 'Test mode', bg: '#E2E8F0', color: '#0F172A' };
-    if (liveState === 'LIVE') return { label: 'LIVE', bg: '#FEE2E2', color: '#B91C1C' };
-    if (liveState === 'READY') return { label: 'Ready to go live', bg: '#DCFCE7', color: '#166534' };
-    return { label: 'Too early', bg: '#E2E8F0', color: '#475569' };
+    if (engine.isLive) return { label: 'LIVE', bg: '#FEE2E2', color: '#B91C1C' };
+    if (engine.isEarly) return { label: 'Not yet', bg: '#E2E8F0', color: '#475569' };
+    if (engine.canStart) return { label: 'Ready', bg: '#DCFCE7', color: '#166534' };
+    if (engine.isLate) return { label: 'Completed', bg: '#E2E8F0', color: '#475569' };
+    return { label: 'Scheduled', bg: '#E2E8F0', color: '#475569' };
   })();
 
+  const helperText = (() => {
+    if (engine.isLive) return 'Broadcast is live.';
+    if (engine.isEarly) return 'You can start within 3 minutes before the adhan time.';
+    if (engine.canStart) return 'Ready to start broadcast.';
+    if (engine.isLate) return 'Adhan window has passed.';
+    return 'Awaiting schedule.';
+  })();
+
+  const isAssigned = schedule.assignedPrayers[prayerKey] ?? false;
+
+  const connectionStatus = engine.isLive ? 'Stream connected' : engine.loading ? 'Connecting…' : 'Ready to connect';
+
+  const handlePrimaryPress = async () => {
+    setBanner(null);
+    if (engine.isLive) {
+      await engine.endBroadcast();
+      if (!engine.errorMessage) setBanner('Broadcast ended');
+    } else {
+      await engine.startBroadcast();
+      if (!engine.errorMessage) setBanner('Broadcast started');
+    }
+  };
+
   const circleStyle = (() => {
-    if (liveState === 'LIVE') return { bg: '#DC2626', main: 'Live', sub: elapsed !== null ? `Elapsed ${formatCountdown(elapsed)}` : 'Tap to end', cta: 'Tap to end' };
-    if (liveState === 'READY')
+    if (engine.isLive)
+      return {
+        bg: '#DC2626',
+        main: 'Live',
+        sub: engine.stream?.started_at ? `Since ${new Date(engine.stream.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Tap to end',
+      };
+    if (engine.canStart)
       return {
         bg: '#0EA5E9',
         main: 'Ready',
         sub: timeUntil !== null ? `Starts in ${formatCountdown(timeUntil)}` : 'Tap to start',
-        cta: 'Tap to start',
       };
-    if (liveState === 'ENDED') return { bg: '#0F172A', main: 'Ended', sub: 'Tap to end', cta: 'Tap to end' };
-    return { bg: '#E2E8F0', main: 'Too early', sub: timeUntil !== null ? `Opens in ${formatCountdown(timeUntil)}` : '', cta: 'Too early' };
+    if (engine.isEarly)
+      return {
+        bg: '#E2E8F0',
+        main: 'Too early',
+        sub: 'You can start within 3 minutes before time',
+      };
+    if (engine.isLate)
+      return { bg: '#0F172A', main: 'Completed', sub: 'Adhan window ended' };
+    return { bg: '#E2E8F0', main: 'Scheduled', sub: timeUntil !== null ? `In ${formatCountdown(timeUntil)}` : '' };
   })();
-
-  const connectionStatus = liveInfo.isLive ? 'Stream connected' : busy ? 'Connecting...' : 'Ready to connect';
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -194,37 +172,41 @@ export default function MuezzinLiveScreen() {
         <View style={[styles.statusPill, { backgroundColor: statusPill.bg }]}>
           <Text style={[styles.statusPillText, { color: statusPill.color }]}>{statusPill.label}</Text>
         </View>
+        {isAssigned ? <Text style={styles.assignmentNote}>You are assigned to this adhan today.</Text> : null}
 
-        {banner ? (
-          <View style={styles.banner}>
-            <Text style={styles.bannerText}>{banner}</Text>
+        {(banner || engine.errorMessage) ? (
+          <View style={[styles.banner, engine.errorMessage ? styles.bannerError : null]}>
+            <Text style={[styles.bannerText, engine.errorMessage ? styles.bannerErrorText : null]}>
+              {engine.errorMessage ?? banner}
+            </Text>
           </View>
         ) : null}
 
         <View style={styles.circleWrap}>
-          <View style={[styles.circleOuter, liveState === 'READY' && timeUntil !== null ? styles.circleOuterReady : null]}>
+          <Animated.View style={[styles.circleOuter, (engine.canStart || engine.isLive) && timeUntil !== null ? styles.circleOuterReady : null, { transform: [{ scale: pulse }] }]}>
             <Pressable
-              disabled={liveState === 'TOO_EARLY' || busy}
+              disabled={engine.loading || (!engine.canStart && !engine.isLive)}
               onPress={handlePrimaryPress}
               style={({ pressed }) => [
                 styles.circle,
                 {
                   backgroundColor: circleStyle.bg,
-                  opacity: pressed && liveState !== 'TOO_EARLY' ? 0.9 : liveState === 'TOO_EARLY' ? 0.6 : 1,
+                  opacity: pressed && !engine.isEarly ? 0.9 : engine.isEarly ? 0.6 : 1,
                 },
               ]}
             >
               <Ionicons
                 name="mic"
                 size={36}
-                color={liveState === 'TOO_EARLY' ? '#475569' : '#FFFFFF'}
+                color={engine.isEarly ? '#475569' : '#FFFFFF'}
                 style={{ marginBottom: 10 }}
               />
-              <Text style={styles.circleText}>{busy ? 'Working...' : circleStyle.main}</Text>
+              <Text style={styles.circleText}>{engine.loading ? 'Working...' : circleStyle.main}</Text>
               {circleStyle.sub ? <Text style={styles.circleSub}>{circleStyle.sub}</Text> : null}
             </Pressable>
-          </View>
+          </Animated.View>
         </View>
+        <Text style={styles.helperText}>{helperText}</Text>
 
         <View style={styles.metaCard}>
           <Text style={styles.metaHeading}>Timing</Text>
@@ -250,10 +232,12 @@ export default function MuezzinLiveScreen() {
               <Text style={styles.metaValue}>Soon</Text>
             </View>
           )}
-          {liveState === 'LIVE' && broadcastStart ? (
+          {engine.isLive && engine.stream?.started_at ? (
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>Live since</Text>
-              <Text style={styles.metaValue}>{broadcastStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+              <Text style={styles.metaValue}>
+                {new Date(engine.stream.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
             </View>
           ) : timeUntil !== null ? (
             <View style={styles.metaRow}>
@@ -263,8 +247,8 @@ export default function MuezzinLiveScreen() {
           ) : null}
         </View>
 
-        {liveState === 'LIVE' ? (
-          <Pressable onPress={endLive} style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.85 : 1 }]}>
+        {engine.isLive ? (
+          <Pressable onPress={handlePrimaryPress} style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.85 : 1 }]}>
             <Text style={styles.secondaryActionText}>End and mark adhan completed</Text>
           </Pressable>
         ) : null}
@@ -308,6 +292,8 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   bannerText: { color: '#166534', fontWeight: '700' },
+  bannerError: { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
+  bannerErrorText: { color: '#B91C1C' },
   circleWrap: { alignItems: 'center', justifyContent: 'center', marginTop: 12, marginBottom: 8 },
   circleOuter: {
     width: 220,
@@ -330,6 +316,8 @@ const styles = StyleSheet.create({
   },
   circleText: { color: '#FFFFFF', fontWeight: '800', fontSize: 17, marginBottom: 2 },
   circleSub: { color: '#E0F2FE', fontWeight: '700', fontSize: 14 },
+  helperText: { textAlign: 'center', color: '#475569', marginTop: 6, fontWeight: '600' },
+  assignmentNote: { color: '#0F172A', fontWeight: '700', marginTop: 6 },
   metaCard: {
     marginTop: 10,
     backgroundColor: '#FFFFFF',
