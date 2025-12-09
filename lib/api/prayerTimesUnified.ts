@@ -35,6 +35,18 @@ const safeDate = (value?: string | Date | null): Date | null => {
   return isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const safeDateWithBase = (value: string | Date | null | undefined, dateIso: string) => {
+  if (!value) return null;
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value.trim())) {
+    const timePart = value.length === 5 ? `${value}:00` : value;
+    const parsed = new Date(`${dateIso}T${timePart}`);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const emptyNormalized = (): NormalizedPrayerTimes => ({
   fajr: { adhan: null, iqama: null },
   dhuhr: { adhan: null, iqama: null },
@@ -42,6 +54,13 @@ const emptyNormalized = (): NormalizedPrayerTimes => ({
   maghrib: { adhan: null, iqama: null },
   isha: { adhan: null, iqama: null },
 });
+
+const formatLocalDate = (d: Date) => {
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export function normalizePrayerTimes(row?: PrayerTimesRow | null): NormalizedPrayerTimes | null {
   if (!row) return null;
@@ -65,7 +84,7 @@ export function convertLegacyTimesToDate(prayerDate: string | Date, time?: strin
 }
 
 export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise<NormalizedPrayerTimes | null> {
-  const dateIso = date.toISOString().slice(0, 10);
+  const dateIso = formatLocalDate(date);
 
   const { data: primary, error: primaryErr } = await supabase
     .from('prayer_times')
@@ -78,7 +97,15 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
 
   if (primaryErr && primaryErr.code !== 'PGRST116') throw primaryErr;
 
-  const normalized = normalizePrayerTimes(primary);
+  const normalized = primary
+    ? {
+        fajr: { adhan: safeDateWithBase(primary.fajr_adhan_time, dateIso), iqama: safeDateWithBase(primary.fajr_iqama_time, dateIso) },
+        dhuhr: { adhan: safeDateWithBase(primary.dhuhr_adhan_time, dateIso), iqama: safeDateWithBase(primary.dhuhr_iqama_time, dateIso) },
+        asr: { adhan: safeDateWithBase(primary.asr_adhan_time, dateIso), iqama: safeDateWithBase(primary.asr_iqama_time, dateIso) },
+        maghrib: { adhan: safeDateWithBase(primary.maghrib_adhan_time, dateIso), iqama: safeDateWithBase(primary.maghrib_iqama_time, dateIso) },
+        isha: { adhan: safeDateWithBase(primary.isha_adhan_time, dateIso), iqama: safeDateWithBase(primary.isha_iqama_time, dateIso) },
+      }
+    : null;
   if (normalized) return normalized;
 
   const { data: legacy, error: legacyErr } = await supabase

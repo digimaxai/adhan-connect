@@ -13,6 +13,7 @@ type Params = {
   mosqueName?: string;
   prayerName?: string;
   scheduledTime?: string;
+  adhanTime?: string;
   mode?: string;
   adhanId?: string;
 };
@@ -29,11 +30,11 @@ const formatCountdown = (seconds: number) => {
 export default function MuezzinLiveScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<Params>();
-  const schedule = useMuezzinSchedule();
+  const { schedule, nextAssignedSlot } = useMuezzinSchedule();
   const paramsMosqueId = params.mosqueId ?? null;
-  const resolvedMosqueId = paramsMosqueId ?? schedule.mosqueId ?? '';
-  const mosqueName = params.mosqueName ?? schedule.mosqueName ?? 'Mosque';
-  const prayerName = params.prayerName ?? (schedule.nextAdhan?.prayer as string) ?? 'Adhan';
+  const resolvedMosqueId = paramsMosqueId ?? schedule?.mosqueId ?? '';
+  const mosqueName = params.mosqueName ?? schedule?.mosqueName ?? 'Mosque';
+  const prayerName = params.prayerName ?? (nextAssignedSlot?.prayerName as string) ?? 'Adhan';
   const prayerKey = (prayerName ?? '').toString().toLowerCase() as PrayerName;
   const mode = params.mode === 'test' ? 'test' : 'normal';
 
@@ -42,19 +43,28 @@ export default function MuezzinLiveScreen() {
   const pulse = useRef(new Animated.Value(1)).current;
 
   const adhanFromParams = useMemo(() => {
-    if (!params.scheduledTime) return null;
+    const scheduledTime = (params.adhanTime as string | undefined) ?? params.scheduledTime;
+    if (!scheduledTime) return null;
     return {
       id: params.adhanId ?? 'pending',
       mosque_id: resolvedMosqueId,
       prayer: prayerName,
-      scheduled_at: params.scheduledTime,
+      scheduled_at: scheduledTime,
       status: 'scheduled',
     };
-  }, [params.adhanId, params.scheduledTime, prayerName, resolvedMosqueId]);
+  }, [params.adhanId, params.adhanTime, params.scheduledTime, prayerName, resolvedMosqueId]);
 
   const activeAdhan = useMemo(() => {
     if (adhanFromParams) return adhanFromParams;
-    if (schedule.nextAdhan) return schedule.nextAdhan;
+    if (nextAssignedSlot?.adhanTime) {
+      return {
+        id: `assigned-${nextAssignedSlot.prayerName}`,
+        mosque_id: resolvedMosqueId,
+        prayer: nextAssignedSlot.prayerName,
+        scheduled_at: nextAssignedSlot.adhanTime.toISOString(),
+        status: 'scheduled',
+      };
+    }
     // fallback to nearest prayer time if available
     const fromTimes = prayerTimes.times?.[prayerKey];
     if (fromTimes) {
@@ -70,7 +80,7 @@ export default function MuezzinLiveScreen() {
       };
     }
     return null;
-  }, [adhanFromParams, schedule.nextAdhan, prayerTimes.times, prayerKey, prayerName, resolvedMosqueId]);
+  }, [adhanFromParams, nextAssignedSlot?.adhanTime, prayerTimes.times, prayerKey, prayerName, resolvedMosqueId]);
 
   const scheduledDate = useMemo(() => {
     if (activeAdhan?.scheduled_at) return new Date(activeAdhan.scheduled_at);
@@ -118,7 +128,8 @@ export default function MuezzinLiveScreen() {
     return 'Awaiting schedule.';
   })();
 
-  const isAssigned = schedule.assignedPrayers[prayerKey] ?? false;
+  const isAssigned =
+    schedule?.slots?.some((slot) => slot.prayerName === prayerKey && slot.isAssignedToMe) ?? false;
 
   const connectionStatus = engine.isLive ? 'Stream connected' : engine.loading ? 'Connecting…' : 'Ready to connect';
 

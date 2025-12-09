@@ -24,6 +24,26 @@ const prayers: Array<{ key: PrayerName; label: string }> = [
   { key: 'isha', label: 'Isha' },
 ];
 
+// Simple in-memory cache to preserve selections across tab navigations.
+const rotaCache: Record<string, StaffRotaForDay> = {};
+const storageCache: Record<string, StaffRotaForDay> = {};
+
+const safeStorage = (() => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('@react-native-async-storage/async-storage');
+    return (mod.default ?? mod) as {
+      getItem: (key: string) => Promise<string | null>;
+      setItem: (key: string, value: string) => Promise<void>;
+    };
+  } catch {
+    return {
+      getItem: async () => null,
+      setItem: async () => {},
+    };
+  }
+})();
+
 export default function StaffRotaScreen() {
   const router = useRouter();
   const { loading: roleLoading, isAdmin } = useRoleFlags();
@@ -36,53 +56,127 @@ export default function StaffRotaScreen() {
   const [loadingData, setLoadingData] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pickerPrayer, setPickerPrayer] = useState<PrayerName | null>(null);
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
 
-  const dateIso = useMemo(() => selectedDate.toISOString().slice(0, 10), [selectedDate]);
+  const dateIso = useMemo(() => formatLocalDate(selectedDate), [selectedDate]);
   const disableControls = !selectedMosque || loadingData || saving || !prayerTimes;
 
+  const cacheKey = selectedMosque ? `${selectedMosque.mosqueId}:${dateIso}` : null;
+  const lastDateKey = 'staff_rota:last_selected_date';
+
+  // Load last selected date (persisted) on mount.
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      if (!selectedMosque) {
-        setRota(null);
-        setPrayerTimes(null);
-        setMuezzins([]);
-        setError(null);
-        return;
-      }
-      setLoadingData(true);
-      setError(null);
+    (async () => {
       try {
-        const [timesRow, rotaMap, muezzinList] = await Promise.all([
-          getPrayerTimesByDate(selectedMosque.mosqueId, dateIso),
-          getStaffRotaForDate(selectedMosque.mosqueId, selectedDate),
-          getMuezzinsForMosque(selectedMosque.mosqueId),
-        ]);
-        if (cancelled) return;
-        const normalizedTimes = normalizePrayerTimes(timesRow as any);
-        setPrayerTimes(normalizedTimes);
-        setMuezzins(muezzinList);
-        const base = emptyRota(normalizedTimes);
-        setRota(mergeRota(base, rotaMap));
-        if (!timesRow) {
-          setError('Please create prayer times for this date before assigning staff.');
+        const raw = await safeStorage.getItem(lastDateKey);
+        if (cancelled || !raw) return;
+        const parsed = new Date(raw);
+        if (!isNaN(parsed.getTime())) {
+          setSelectedDate(parsed);
         }
-      } catch (e: any) {
-        if (cancelled) return;
-        console.warn('load staff rota', e?.message ?? e);
-        setError('Unable to load staff rota.');
-        setPrayerTimes(null);
-        setRota(emptyRota(null));
-      } finally {
-        if (!cancelled) setLoadingData(false);
+      } catch {
+        // ignore
       }
-    };
-    load();
+    })();
     return () => {
       cancelled = true;
     };
-  }, [selectedMosque?.mosqueId, dateIso]);
+  }, []);
+
+  const setCachedRota = React.useCallback(
+    (rotaVal: StaffRotaForDay | null) => {
+      if (!cacheKey || !rotaVal) return;
+      rotaCache[cacheKey] = rotaVal;
+      storageCache[cacheKey] = rotaVal;
+      safeStorage.setItem(`staff_rota_cache:${cacheKey}`, JSON.stringify(rotaVal)).catch(() => {});
+    },
+    [cacheKey]
+  );
+
+  const getCachedRota = React.useCallback((): StaffRotaForDay | null => {
+    if (!cacheKey) return null;
+    if (rotaCache[cacheKey]) return rotaCache[cacheKey];
+    if (storageCache[cacheKey]) return storageCache[cacheKey];
+    return null;
+  }, [cacheKey]);
+
+  // Load persisted cache on key change
+  useEffect(() => {
+    let cancelled = false;
+    if (!cacheKey) return;
+    safeStorage
+      .getItem(`staff_rota_cache:${cacheKey}`)
+      .then((raw) => {
+        if (cancelled || !raw) return;
+        const parsed = JSON.parse(raw);
+        storageCache[cacheKey] = parsed;
+        setRota((prev) => prev ?? parsed);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [cacheKey]);
+
+  const loadData = React.useCallback(async () => {
+    if (!selectedMosque) {
+      return;
+    }
+    setLoadingData(true);
+    setError(null);
+    setNotice(null);
+    const cached = getCachedRota();
+    if (cached) {
+      setRota(cached);
+    }
+    try {
+      const [timesRow, rotaMap, muezzinList] = await Promise.all([
+        getPrayerTimesByDate(selectedMosque.mosqueId, dateIso),
+        getStaffRotaForDate(selectedMosque.mosqueId, selectedDate),
+        getMuezzinsForMosque(selectedMosque.mosqueId),
+      ]);
+      console.log('[StaffRota] load', { mosqueId: selectedMosque.mosqueId, dateIso, rotaCount: Object.keys(rotaMap ?? {}).length });
+      const normalizedTimes = normalizePrayerTimes(timesRow as any);
+      setPrayerTimes(normalizedTimes);
+      setMuezzins(muezzinList);
+      const profileNameMap = await buildNameMap(muezzinList, rotaMap);
+      setNameMap(profileNameMap);
+      const base = emptyRota(normalizedTimes);
+      const merged = mergeRota(base, rotaMap);
+      const hasServerRows = rotaMap && Object.keys(rotaMap).length > 0;
+      if (!hasServerRows && cached) {
+        setRota(cached);
+        setCachedRota(cached);
+        setNotice('Showing cached assignments (no server rows returned). Please verify admin access for staff rota.');
+      } else {
+        setRota(merged);
+        setCachedRota(merged);
+        if (!hasServerRows) {
+          setNotice('No assignments returned from server. If you expect data, check staff_rota RLS for your admin user.');
+        }
+      }
+      if (!timesRow) {
+        setError('Please create prayer times for this date before assigning staff.');
+      }
+      if ((muezzinList ?? []).length === 0) {
+        setError((prev) => prev ?? 'No active muezzins found. If you expect options, please ensure admin access to the muezzins table.');
+      }
+    } catch (e: any) {
+      console.warn('load staff rota', e?.message ?? e);
+      setError('Unable to load staff rota.');
+      setPrayerTimes(null);
+      setRota(emptyRota(null));
+    } finally {
+      setLoadingData(false);
+    }
+  }, [selectedMosque?.mosqueId, selectedDate, dateIso]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSelectMuezzin = (prayer: PrayerName, userId: string) => {
     setRota((prev) => {
@@ -94,6 +188,7 @@ export default function StaffRotaScreen() {
         adhanTime: prayerTimes?.[prayer]?.adhan ?? base[prayer]?.adhanTime ?? null,
         iqamaTime: prayerTimes?.[prayer]?.iqama ?? base[prayer]?.iqamaTime ?? null,
       };
+      setCachedRota(next);
       return next;
     });
   };
@@ -108,14 +203,21 @@ export default function StaffRotaScreen() {
         adhanTime: prayerTimes?.[prayer]?.adhan ?? base[prayer]?.adhanTime ?? null,
         iqamaTime: prayerTimes?.[prayer]?.iqama ?? base[prayer]?.iqamaTime ?? null,
       };
+      setCachedRota(next);
       return next;
     });
   };
 
   const handleSave = async () => {
     if (!selectedMosque || !rota || !prayerTimes) return;
+    const hasAssignments = Object.values(rota).some((r) => r?.muezzinUserId);
+    if (!hasAssignments) {
+      setError('Select at least one muezzin before saving.');
+      return;
+    }
     setSaving(true);
     setError(null);
+    setNotice(null);
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
       const assignedBy = authData?.user?.id;
@@ -123,11 +225,20 @@ export default function StaffRotaScreen() {
         setError('Unable to verify your account. Please re-login.');
         return;
       }
+      console.log('[StaffRota] save', {
+        mosqueId: selectedMosque.mosqueId,
+        dateIso,
+        assignments: rota,
+        assignedBy,
+      });
       const result = await saveStaffRotaForDate(selectedMosque.mosqueId, selectedDate, rota, assignedBy);
       if (!result.success) {
         setError(result.error ?? 'Unable to save assignments.');
       } else {
+        const msg = `Saved staff rota for ${dateIso} (${selectedMosque.name}).`;
+        setNotice(msg);
         Alert.alert('Saved', 'Staff rota saved.');
+        setCachedRota(rota);
       }
     } catch (e: any) {
       console.warn('save staff rota', e?.message ?? e);
@@ -168,7 +279,13 @@ export default function StaffRotaScreen() {
         onGoStaffRota={() => router.push('/(admin)/staff-rota')}
       />
       <View style={{ marginTop: 12 }}>
-        <DateSelector date={selectedDate} onChange={setSelectedDate} />
+        <DateSelector
+          date={selectedDate}
+          onChange={(d) => {
+            setSelectedDate(d);
+            safeStorage.setItem(lastDateKey, d.toISOString()).catch(() => {});
+          }}
+        />
       </View>
       {selectedMosque ? <Text style={styles.mosqueLabel}>Mosque: {selectedMosque.name}</Text> : null}
 
@@ -187,9 +304,10 @@ export default function StaffRotaScreen() {
         prayers.map((p) => {
           const row = currentRota[p.key];
           const selectedName = row?.muezzinUserId
-            ? muezzins.find((m) => m.userId === row.muezzinUserId || m.user_id === row.muezzinUserId)?.displayName ??
+            ? nameMap[row.muezzinUserId] ??
+              muezzins.find((m) => m.userId === row.muezzinUserId || m.user_id === row.muezzinUserId)?.displayName ??
               muezzins.find((m) => m.user_id === row.muezzinUserId)?.name ??
-              'Assigned'
+              row.muezzinUserId
             : 'Select muezzin';
           return (
             <View key={p.key} style={[styles.card, disableControls && styles.cardDisabled]}>
@@ -218,10 +336,11 @@ export default function StaffRotaScreen() {
       {!hasPrayerTimes && !loadingData ? (
         <Text style={styles.infoText}>Please create prayer times for this date before assigning staff.</Text>
       ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable
-        onPress={handleSave}
-        disabled={saving || disableControls || !rota}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+        <Pressable
+          onPress={handleSave}
+          disabled={saving || disableControls || !rota}
         style={({ pressed }) => [styles.saveBtn, pressed && !saving && !disableControls && { opacity: 0.9 }, (saving || disableControls || !rota) && { opacity: 0.5 }]}
       >
         <Text style={styles.saveText}>{saving ? 'Saving...' : 'Save Assignments'}</Text>
@@ -325,6 +444,43 @@ function formatTimeOrDash(val?: Date | null) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+async function buildNameMap(muezzins: MuezzinSummary[], rota: StaffRotaForDay | null) {
+  const map: Record<string, string> = {};
+  muezzins.forEach((m) => {
+    if (m.userId) map[m.userId] = m.displayName ?? m.name ?? 'Muezzin';
+    if (m.user_id) map[m.user_id] = m.displayName ?? m.name ?? 'Muezzin';
+  });
+
+  const rotaIds = Object.values(rota ?? {})
+    .map((r) => r?.muezzinUserId)
+    .filter(Boolean) as string[];
+  const missing = rotaIds.filter((id) => !map[id]);
+  if (missing.length) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, display_name, email')
+        .in('id', missing);
+      if (!error && data) {
+        data.forEach((row: any) => {
+          const label = row.display_name ?? row.full_name ?? row.email ?? row.id;
+          map[row.id] = label;
+        });
+      }
+    } catch (e) {
+      // ignore lookup errors; fallback to ids
+    }
+  }
+  return map;
+}
+
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 22, fontWeight: '800', color: '#0F172A' },
@@ -359,6 +515,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   error: { color: '#DC2626', marginTop: 8 },
+  notice: { color: '#0F172A', marginTop: 6, fontWeight: '700' },
   infoText: { marginTop: 8, color: '#475569' },
   saveBtn: {
     marginTop: 18,
@@ -402,3 +559,4 @@ const styles = StyleSheet.create({
   navText: { fontWeight: '700', color: '#0F172A' },
   navTextActive: { color: '#0C4A6E' },
 });
+

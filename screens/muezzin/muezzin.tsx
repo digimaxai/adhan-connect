@@ -245,7 +245,14 @@ export default function MuezzinToolsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       <ScrollView
         style={{ flex: 1, paddingHorizontal: 16 }}
-        refreshControl={<RefreshControl refreshing={busy} onRefresh={load} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={busy}
+            onRefresh={load}
+            tintColor="#0EA5E9"
+            colors={['#0EA5E9']}
+          />
+        }
         contentContainerStyle={{ paddingBottom: 32, paddingTop: 8 }}
       >
         <Text style={{ fontSize: 22, fontWeight: '800', marginBottom: 6 }}>Muezzin tools</Text>

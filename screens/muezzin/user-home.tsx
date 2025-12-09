@@ -1,8 +1,8 @@
-// Copy of user home screen with hook order made safe for muezzin stack
+﻿// Copy of user home screen with hook order made safe for muezzin stack
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppLogo from '../../components/AppLogo';
 import { useAuth } from '../../lib/auth';
@@ -65,8 +65,26 @@ export default function MuezzinUserHomeScreen() {
   const { session } = useAuth();
   const roles = useRoleFlags();
   const userId = session?.user?.id ?? null;
-  const muezzinSchedule = useMuezzinSchedule();
-  const liveEngine = useLiveBroadcastEngine(muezzinSchedule.mosqueId, muezzinSchedule.nextAdhan);
+  const {
+    schedule: muezzinSchedule,
+    nextAssignedSlot,
+    loading: muezzinScheduleLoading,
+    error: muezzinScheduleError,
+    refresh: refreshMuezzinSchedule,
+  } = useMuezzinSchedule();
+  const muezzinMosqueId = muezzinSchedule?.mosqueId ?? null;
+  const muezzinMosqueName = muezzinSchedule?.mosqueName ?? null;
+  const liveEngine = useLiveBroadcastEngine(
+    muezzinMosqueId,
+    nextAssignedSlot && nextAssignedSlot.adhanTime
+      ? {
+          id: `${muezzinMosqueId ?? 'mosque'}-${nextAssignedSlot.prayerName}-${nextAssignedSlot.adhanTime.toISOString()}`,
+          mosque_id: muezzinMosqueId ?? '',
+          prayer: nextAssignedSlot.prayerName,
+          scheduled_at: nextAssignedSlot.adhanTime.toISOString(),
+        }
+      : null
+  );
 
   const [mosques, setMosques] = useState<Mosque[]>([]);
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -79,6 +97,7 @@ export default function MuezzinUserHomeScreen() {
   const [nextPrayer, setNextPrayer] = useState<ReturnType<typeof computeNextPrayer> | null>(null);
   const [defaultMosqueId, setDefaultMosqueId] = useState<string | null>(null);
   const [nextCountdown, setNextCountdown] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const primaryMosque = useMemo(() => {
     const preferredId = defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
@@ -91,6 +110,22 @@ export default function MuezzinUserHomeScreen() {
   const subscribedIds = useMemo(() => new Set(subs.map((s) => s.mosque_id)), [subs]);
 
   const liveInfo = useLiveStreamForMosque(primaryMosque?.id);
+
+  const parseTimeToDate = (timeStr?: string | null) => {
+    if (!timeStr) return null;
+    const [h, m] = timeStr.split(':').map((v) => parseInt(v, 10));
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d;
+  };
+
+  const slotAdhanDate = (slot?: { adhanTime: Date | null; prayerName: PrayerName | string }) => {
+    if (!slot) return null;
+    if (slot.adhanTime) return slot.adhanTime;
+    const fallback = prayerTimes?.[slot.prayerName as PrayerName] as string | undefined;
+    return parseTimeToDate(fallback ?? null);
+  };
 
   const loadDefault = React.useCallback(async () => {
     try {
@@ -277,25 +312,39 @@ export default function MuezzinUserHomeScreen() {
   }, [prayerTimes]);
 
   useEffect(() => {
-    const targetIso = muezzinSchedule.nextAdhan?.scheduled_at ?? null;
-    if (!targetIso) {
+    const targetDate = slotAdhanDate(nextAssignedSlot) ?? null;
+    if (!targetDate) {
       setNextCountdown(null);
       return;
     }
     const compute = () => {
-      const target = new Date(targetIso).getTime();
+      const target = targetDate.getTime();
       const now = Date.now();
       const diffSec = Math.max(0, Math.floor((target - now) / 1000));
       const mins = Math.floor(diffSec / 60);
       const secs = diffSec % 60;
-      return `in ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      return `In ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
     setNextCountdown(compute());
     const id = setInterval(() => setNextCountdown(compute()), 1000);
     return () => clearInterval(id);
-  }, [muezzinSchedule.nextAdhan?.scheduled_at]);
+  }, [nextAssignedSlot?.adhanTime]);
 
   const topPad = Platform.OS === 'android' ? 8 : 0;
+
+  const handleRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([loadHomeData(), loadDefault()]);
+      await refreshMuezzinSchedule();
+      const primaryId = primaryMosque?.id;
+      if (primaryId) {
+        await fetchPrayerTimes(primaryId);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadDefault, primaryMosque?.id, refreshMuezzinSchedule, userId]);
 
   const MuezzinHero = () => {
     const broadcast = nextBroadcast;
@@ -420,12 +469,31 @@ export default function MuezzinUserHomeScreen() {
   const MuezzinLiveSummary = () => {
     const statusLabel = (() => {
       if (liveEngine.isLive) return 'LIVE';
-      if (liveEngine.isEarly) return 'Not yet';
       if (liveEngine.canStart) return 'Ready';
       if (liveEngine.isLate) return 'Completed';
       return 'Scheduled';
     })();
     const statusStyle = statusLabel === 'LIVE' ? styles.liveStatusLive : statusLabel === 'Ready' ? styles.liveStatusReady : styles.liveStatusMuted;
+    const nextAdhanDate = slotAdhanDate(nextAssignedSlot);
+    const nextTimeLabel = nextAdhanDate
+      ? nextAdhanDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : null;
+
+    const handleManagePress = () => {
+      if (!nextAssignedSlot) {
+        Alert.alert('No adhans assigned', "You don't have any adhans assigned right now.");
+        return;
+      }
+      router.push({
+        pathname: '/(muezzin)/muezzin-live',
+        params: {
+          mosqueId: muezzinMosqueId ?? '',
+          mosqueName: muezzinMosqueName ?? 'Your mosque',
+          prayerName: nextAssignedSlot.prayerName,
+          adhanTime: nextAssignedSlot.adhanTime?.toISOString() ?? '',
+        },
+      });
+    };
 
     return (
       <View style={[styles.cardContainer, styles.shadow, { gap: 10 }]}>
@@ -437,39 +505,36 @@ export default function MuezzinUserHomeScreen() {
             </View>
           ) : null}
         </View>
-        {muezzinSchedule.loading ? (
+        {muezzinScheduleLoading ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <ActivityIndicator color="#0EA5E9" />
-            <Text style={styles.cardSubtitle}>Loading your schedule…</Text>
+            <Text style={styles.cardSubtitle}>Loading schedule...</Text>
           </View>
-        ) : nextScheduledAdhan ? (
+        ) : !muezzinSchedule ? (
+          <Text style={styles.cardSubtitle}>You are not set up as a muezzin for any mosque.</Text>
+        ) : !nextAssignedSlot ? (
           <>
-            <Text style={styles.heroSource}>{muezzinSchedule.mosqueName ?? 'Your mosque'}</Text>
-            <Text style={styles.livePrayer}>{labelForPrayer(nextScheduledAdhan.prayer as PrayerName)}</Text>
-            <Text style={styles.liveTime}>{nextScheduledLabel ?? '--:--'}</Text>
-            <Text style={styles.liveCountdown}>{nextCountdown ?? 'Starting soon'}</Text>
+            <Text style={styles.heroSource}>{muezzinMosqueName ?? 'Your mosque'}</Text>
+            <Text style={styles.cardSubtitle}>No adhans scheduled for you today.</Text>
           </>
         ) : (
-          <Text style={styles.cardSubtitle}>No upcoming adhans for today.</Text>
+          <>
+            <Text style={styles.heroSource}>{muezzinMosqueName ?? 'Your mosque'}</Text>
+            <Text style={styles.livePrayer}>{labelForPrayer(nextAssignedSlot.prayerName as PrayerName)}</Text>
+            <Text style={styles.liveTime}>{nextTimeLabel ?? '--:--'}</Text>
+            <Text style={styles.liveCountdown}>{nextCountdown ?? 'Starting soon'}</Text>
+            <View style={[styles.assignedBadgeSoft, { alignSelf: 'flex-start' }]}>
+              <Text style={styles.assignedBadgeText}>Assigned to you</Text>
+            </View>
+          </>
         )}
         <Pressable
-          onPress={() =>
-            router.push({
-              pathname: '/(muezzin)/muezzin-live',
-              params: {
-                mosqueId: muezzinSchedule.mosqueId ?? '',
-                mosqueName: muezzinSchedule.mosqueName ?? 'Your mosque',
-                prayerName: (nextScheduledAdhan?.prayer ?? 'Adhan').toString(),
-                scheduledTime: nextScheduledAdhan?.scheduled_at ?? '',
-                adhanId: nextScheduledAdhan?.id ?? '',
-              },
-            })
-          }
-          disabled={!muezzinSchedule.mosqueId}
+          onPress={handleManagePress}
+          disabled={!muezzinMosqueId}
           style={({ pressed }) => [
             styles.primaryCta,
             liveEngine.isLive ? styles.primaryCtaLive : null,
-            { opacity: (!muezzinSchedule.mosqueId ? 0.6 : pressed ? 0.9 : 1) },
+            { opacity: (!muezzinMosqueId ? 0.6 : pressed ? 0.9 : 1) },
           ]}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
@@ -477,74 +542,81 @@ export default function MuezzinUserHomeScreen() {
             <Text style={styles.primaryCtaText}>{liveEngine.isLive ? 'Manage Live Broadcast' : 'Manage Live Broadcast'}</Text>
           </View>
         </Pressable>
+        {muezzinScheduleError ? <Text style={styles.errorText}>{muezzinScheduleError}</Text> : null}
         {liveEngine.errorMessage ? <Text style={styles.errorText}>{liveEngine.errorMessage}</Text> : null}
       </View>
     );
   };
-
   const TodaysAdhans = () => (
     <View style={[styles.cardContainer, styles.shadow]}>
       <View style={styles.sectionHeader}>
         <Text style={styles.cardTitle}>Today's Adhans</Text>
-        {muezzinSchedule.mosqueName ? <Text style={styles.cardSubtitle}>Based on {muezzinSchedule.mosqueName}</Text> : null}
+        {muezzinMosqueName ? <Text style={styles.cardSubtitle}>Based on {muezzinMosqueName}</Text> : null}
       </View>
-      {muezzinSchedule.loading ? (
+      {muezzinScheduleLoading ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
           <ActivityIndicator color="#0EA5E9" />
           <Text style={styles.cardSubtitle}>Loading</Text>
         </View>
       ) : todayScheduleRows.length ? (
         <View style={{ marginTop: 10, gap: 10 }}>
-          {todayScheduleRows.map((row) => (
-            <View
-              key={row.id}
-              style={[
-                styles.prayerRowWrap,
-                row.assigned ? styles.assignedRow : null,
-              ]}
-            >
-              <View>
-                <Text style={styles.prayerName}>{labelForPrayer(row.prayer as PrayerName)}</Text>
-                <Text style={styles.heroMuted}>{row.time}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {row.assigned ? (
-                  <View style={styles.assignedBadgeSoft}>
-                    <Text style={styles.assignedBadgeText}>Assigned to You</Text>
+          {todayScheduleRows.map((row) => {
+            const statusText = row.assigned
+              ? 'Assigned to you'
+              : row.assignedTo
+              ? `Assigned to ${row.assignedTo}`
+              : row.status === 'assigned'
+              ? 'Assigned'
+              : 'Not assigned';
+            return (
+              <View
+                key={row.id}
+                style={[
+                  styles.prayerRowWrap,
+                  row.assigned ? styles.assignedRow : null,
+                ]}
+              >
+                <View>
+                  <Text style={styles.prayerName}>{labelForPrayer(row.prayer as PrayerName)}</Text>
+                  <Text style={styles.heroMuted}>{row.time}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={[styles.statusPill, row.assigned ? styles.liveStatusReady : styles.statusPillMuted]}>
+                    <Text style={styles.statusPillText}>{statusText}</Text>
                   </View>
-                ) : null}
-                <View style={[styles.statusPill, styles.statusPillMuted]}>
-                  <Text style={styles.statusPillText}>{row.status?.toUpperCase?.() ?? 'SCHEDULED'}</Text>
                 </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       ) : (
         <Text style={styles.cardSubtitle}>No adhans scheduled for today.</Text>
       )}
     </View>
   );
-
   const primaryLive = primaryMosque ? liveStreams[primaryMosque.id] : null;
   const otherLive = Object.entries(liveStreams).filter(
     ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
   );
-  const nextScheduledAdhan = muezzinSchedule.nextAdhan;
-  const nextScheduledLabel = nextScheduledAdhan
-    ? new Date(nextScheduledAdhan.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : null;
-  const todayScheduleRows = muezzinSchedule.todayAdhans.map((row) => ({
-    id: row.id,
-    prayer: row.prayer,
-    time: new Date(row.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    status: (row.status ?? 'scheduled') as string,
-    assigned: muezzinSchedule.assignedPrayers[(row.prayer as PrayerName) ?? 'fajr'],
+  const todayScheduleRows = (muezzinSchedule?.slots ?? []).map((slot) => ({
+    id: slot.prayerName,
+    prayer: slot.prayerName,
+    time: (() => {
+      const d = slotAdhanDate(slot);
+      return d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+    })(),
+    status: slot.isAssignedToMe ? 'assigned' : slot.assignedMuezzinUserId ? 'assigned' : 'scheduled',
+    assigned: slot.isAssignedToMe,
+    assignedTo: slot.assignedMuezzinName ?? null,
   }));
-
   const muezzinBody = (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}
+        refreshControl={
+          <RefreshControl refreshing={muezzinScheduleLoading} onRefresh={refreshMuezzinSchedule} />
+        }
+      >
         <View style={styles.headerRow}>
           <AppLogo size={30} />
           <Text style={styles.appTitle}>Adhan Connect</Text>
@@ -559,7 +631,17 @@ export default function MuezzinUserHomeScreen() {
 
   const userBody = (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing || muezzinScheduleLoading}
+            onRefresh={handleRefresh}
+            tintColor="#0EA5E9"
+            colors={['#0EA5E9']}
+          />
+        }
+      >
         <View style={styles.headerRow}>
           <AppLogo size={30} />
           <Text style={styles.appTitle}>Adhan Connect</Text>
@@ -844,3 +926,11 @@ const styles = StyleSheet.create({
   assignedBadgeSoft: { backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   assignedBadgeText: { color: '#0369A1', fontWeight: '800', fontSize: 11 },
 });
+
+
+
+
+
+
+
+

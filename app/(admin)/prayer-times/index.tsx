@@ -155,12 +155,16 @@ export default function PrayerTimesAdminScreen() {
     setTempValue(null);
   };
 
-  const pickerValue =
-    tempValue && !isNaN(tempValue.getTime())
-      ? tempValue
-      : pickerState
-      ? buildPickerValue(form[pickerState.prayer][pickerState.field], selectedDate)
-      : null;
+  const pickerValue = (() => {
+    const candidate =
+      tempValue && !isNaN(tempValue.getTime())
+        ? tempValue
+        : pickerState
+        ? buildPickerValue(form[pickerState.prayer][pickerState.field], selectedDate)
+        : null;
+    if (candidate && !isNaN(candidate.getTime())) return candidate;
+    return new Date(selectedDate);
+  })();
 
   if (roleLoading || mosqueLoading) {
     return (
