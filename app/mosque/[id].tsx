@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { labelForPrayer, PrayerName } from '../../lib/adhans';
 import { supabase } from '../../lib/supabase';
+import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 
 type Mosque = {
   id: string;
@@ -46,6 +47,16 @@ const fallbackTimes: Record<PrayerName, string> = {
   asr: '15:27',
   maghrib: '17:42',
   isha: '19:05',
+};
+
+const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
+  if (!normalized) return null;
+  const toHm = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null);
+  const mapped: PrayerTimes = {};
+  (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
+    mapped[name] = toHm(normalized?.[name]?.adhan ?? null);
+  });
+  return mapped;
 };
 
 export default function MosquePage() {
@@ -105,7 +116,8 @@ export default function MosquePage() {
           base = data ?? null;
         }
 
-        const today = new Date().toISOString().slice(0, 10);
+        const today = new Date();
+        const todayIso = today.toISOString().slice(0, 10);
         const actualId = base?.id || (id && isUuid(id) ? id : null);
 
         if (!actualId) {
@@ -144,14 +156,8 @@ export default function MosquePage() {
         );
         setResolvedId(actualId);
 
-        const [{ data: streamData }, { data: prayerData }, { data: recordingData }, { data: subData }, announcementsRes, subCountRes] = await Promise.all([
+        const [{ data: streamData }, { data: recordingData }, { data: subData }, announcementsRes, subCountRes] = await Promise.all([
           supabase.from('streams').select('is_live,status').eq('mosque_id', actualId).maybeSingle(),
-          supabase
-            .from('mosque_prayer_times')
-            .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-            .eq('mosque_id', actualId)
-            .eq('prayer_date', today)
-            .maybeSingle(),
           supabase
             .from('adhan_broadcasts')
             .select('id,prayer,scheduled_for,started_at,ended_at')
@@ -230,30 +236,43 @@ export default function MosquePage() {
         }
 
         setLive(!!streamData?.is_live);
-        let usePrayer = prayerData ?? null;
-        if (!usePrayer) {
-          const { data: nextPrayer } = await supabase
-            .from('mosque_prayer_times')
-            .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
+        const fetchNormalizedPrayerTimes = async () => {
+          const normalizedToday = await getDailyPrayerTimes(actualId, today);
+          if (normalizedToday) return normalizedToday;
+
+          const { data: nextPt } = await supabase
+            .from('prayer_times')
+            .select('date')
             .eq('mosque_id', actualId)
-            .gte('prayer_date', today)
-            .order('prayer_date', { ascending: true })
+            .gte('date', todayIso)
+            .order('date', { ascending: true })
             .limit(1)
             .maybeSingle();
-          usePrayer = nextPrayer ?? null;
-        }
-        if (!usePrayer) {
-          const { data: prevPrayer } = await supabase
-            .from('mosque_prayer_times')
-            .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
+          if (nextPt?.date) {
+            const d = new Date(nextPt.date as string);
+            const normalized = await getDailyPrayerTimes(actualId, d);
+            if (normalized) return normalized;
+          }
+
+          const { data: prevPt } = await supabase
+            .from('prayer_times')
+            .select('date')
             .eq('mosque_id', actualId)
-            .lte('prayer_date', today)
-            .order('prayer_date', { ascending: false })
+            .lte('date', todayIso)
+            .order('date', { ascending: false })
             .limit(1)
             .maybeSingle();
-          usePrayer = prevPrayer ?? null;
-        }
-        setPrayers(usePrayer);
+          if (prevPt?.date) {
+            const d = new Date(prevPt.date as string);
+            const normalized = await getDailyPrayerTimes(actualId, d);
+            if (normalized) return normalized;
+          }
+
+          return null;
+        };
+
+        const normalizedPrayer = await fetchNormalizedPrayerTimes();
+        setPrayers(mapNormalizedPrayerTimes(normalizedPrayer));
         setRecordings((recordingData as BroadcastRow[]) ?? []);
         setFollowing(!!subData);
         setEvents(eventsArr);

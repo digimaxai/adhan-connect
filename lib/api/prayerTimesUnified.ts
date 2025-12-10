@@ -84,6 +84,8 @@ export function convertLegacyTimesToDate(prayerDate: string | Date, time?: strin
 }
 
 export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise<NormalizedPrayerTimes | null> {
+  // NOTE: prayer_times is the canonical source; if a row exists for (mosque_id, date) it fully overrides mosque_prayer_times for that day. mosque_prayer_times is fallback only.
+  // Example: for Harrow on 2025-12-09, if prayer_times has edited times and mosque_prayer_times still holds imported ones, this helper returns the prayer_times values for all prayers.
   const dateIso = formatLocalDate(date);
 
   const { data: primary, error: primaryErr } = await supabase

@@ -6,6 +6,7 @@ import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
 import { getPrayerTimesByDate } from '../../lib/api/admin/prayerTimes';
 import { getMuezzinsForMosque, getStaffRotaByDate, StaffRotaRow, upsertStaffRotaForDate } from '../../lib/api/admin/staffRota';
+import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 
 type Assignment = {
   prayer: string;
@@ -68,17 +69,36 @@ export default function StaffRotaScreen() {
           getMuezzinsForMosque(mosqueId),
         ]);
         setMuezzins(mz);
-        if (!times) {
+        let timesRow: any = times;
+        if (!timesRow) {
+          const normalized = await getDailyPrayerTimes(mosqueId, selectedDate);
+          if (normalized) {
+            timesRow = {
+              fajr_adhan_time: normalized.fajr?.adhan ?? null,
+              fajr_iqama_time: normalized.fajr?.iqama ?? null,
+              dhuhr_adhan_time: normalized.dhuhr?.adhan ?? null,
+              dhuhr_iqama_time: normalized.dhuhr?.iqama ?? null,
+              asr_adhan_time: normalized.asr?.adhan ?? null,
+              asr_iqama_time: normalized.asr?.iqama ?? null,
+              maghrib_adhan_time: normalized.maghrib?.adhan ?? null,
+              maghrib_iqama_time: normalized.maghrib?.iqama ?? null,
+              isha_adhan_time: normalized.isha?.adhan ?? null,
+              isha_iqama_time: normalized.isha?.iqama ?? null,
+            };
+          }
+        }
+        if (!timesRow) {
           setAssignments({});
           setError('Please create prayer times for this date before assigning staff.');
           return;
         }
+        setError(null);
         const base: Record<string, Assignment> = {};
         prayers.forEach((p) => {
           base[p] = {
             prayer: p,
-            adhan_time: (times as any)[`${p}_adhan_time`] ?? null,
-            iqama_time: (times as any)[`${p}_iqama_time`] ?? null,
+            adhan_time: (timesRow as any)[`${p}_adhan_time`] ?? null,
+            iqama_time: (timesRow as any)[`${p}_iqama_time`] ?? null,
             muezzin_user_id: null,
             notes: '',
           };

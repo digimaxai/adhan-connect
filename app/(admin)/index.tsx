@@ -92,6 +92,14 @@ export default function AdminDashboard() {
         disabled={disableActions}
       />
 
+      <AdminCard
+        router={router}
+        title="Admin Settings"
+        description="Set your default admin mosque and manage your account."
+        href="/(admin)/settings"
+        disabled={false}
+      />
+
       <View style={styles.debugCard}>
         <Text style={styles.debugTitle}>Debug info</Text>
         <Text style={styles.debugLine}>User ID: {session?.user?.id ?? 'unknown'}</Text>

@@ -36,6 +36,7 @@ export default function AdminStack() {
       <Stack.Screen name="broadcast" />
       <Stack.Screen name="campaign" />
       <Stack.Screen name="event" />
+      <Stack.Screen name="settings" />
     </Stack>
   );
 }

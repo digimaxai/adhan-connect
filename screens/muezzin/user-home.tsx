@@ -20,6 +20,7 @@ import { supabase } from '../../lib/supabase';
 import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
 import { useLiveBroadcastEngine } from '../../lib/hooks/useLiveBroadcastEngine';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
+import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
 type Subscription = { mosque_id: string };
@@ -27,11 +28,21 @@ type StreamRow = { mosque_id: string; type?: string | null; is_live: boolean; st
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
 
 const fallbackTimes: Record<PrayerName, string> = {
-  fajr: '05:18',
-  dhuhr: '12:58',
-  asr: '15:27',
-  maghrib: '17:42',
-  isha: '19:05',
+  fajr: '--:--',
+  dhuhr: '--:--',
+  asr: '--:--',
+  maghrib: '--:--',
+  isha: '--:--',
+};
+
+const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
+  if (!normalized) return null;
+  const toHm = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null);
+  const mapped: PrayerTimes = {};
+  (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
+    mapped[name] = toHm(normalized?.[name]?.adhan ?? null);
+  });
+  return mapped;
 };
 
 const safeStorage = (() => {
@@ -100,12 +111,12 @@ export default function MuezzinUserHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const primaryMosque = useMemo(() => {
-    const preferredId = defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
+    const preferredId = muezzinMosqueId ?? defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
     const found = mosques.find((m) => m.id === preferredId);
     if (found) return found;
     const altId = subs[0]?.mosque_id ?? mosques[0]?.id;
     return mosques.find((m) => m.id === altId) ?? null;
-  }, [subs, mosques, defaultMosqueId]);
+  }, [subs, mosques, defaultMosqueId, muezzinMosqueId]);
 
   const subscribedIds = useMemo(() => new Set(subs.map((s) => s.mosque_id)), [subs]);
 
@@ -215,32 +226,8 @@ export default function MuezzinUserHomeScreen() {
   }, [roles.isMuezzin]);
 
   const fetchPrayerTimes = async (mosqueId: string) => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const { data: todayData } = await supabase
-      .from('mosque_prayer_times')
-      .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-      .eq('mosque_id', mosqueId)
-      .eq('prayer_date', todayStr)
-      .maybeSingle();
-    if (todayData) return { data: todayData, error: null };
-    const { data: nextData, error: nextErr } = await supabase
-      .from('mosque_prayer_times')
-      .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-      .eq('mosque_id', mosqueId)
-      .gte('prayer_date', todayStr)
-      .order('prayer_date', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (nextData) return { data: nextData, error: null };
-    const { data: prevData, error: prevErr } = await supabase
-      .from('mosque_prayer_times')
-      .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-      .eq('mosque_id', mosqueId)
-      .lte('prayer_date', todayStr)
-      .order('prayer_date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return { data: prevData ?? null, error: nextErr ?? prevErr };
+    const normalized = await getDailyPrayerTimes(mosqueId, new Date());
+    return { data: mapNormalizedPrayerTimes(normalized), error: null };
   };
 
   useEffect(() => {
@@ -265,9 +252,9 @@ export default function MuezzinUserHomeScreen() {
 
   const computeNextPrayer = (times: PrayerTimes | null) => {
     const nowDate = new Date();
-    const entries: Array<{ name: PrayerName; time: string }> = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
-      .map((name) => ({ name, time: (times?.[name] as string) ?? fallbackTimes[name] }))
-      .filter((p) => p.time);
+  const entries: Array<{ name: PrayerName; time: string }> = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
+      .map((name) => ({ name, time: (times?.[name] as string) ?? null }))
+      .filter((p): p is { name: PrayerName; time: string } => !!p.time);
 
     const toDate = (timeStr: string, carryNextDay = false) => {
       const [h, m] = timeStr.split(':').map((t) => parseInt(t, 10));
@@ -671,11 +658,11 @@ export default function MuezzinUserHomeScreen() {
             {primaryMosque?.name ? <Text style={styles.heroSource}>{primaryMosque.name}</Text> : null}
           </View>
           <View style={{ gap: 6, marginTop: 10 }}>
-            <Text style={styles.nextTime}>{nextPrayer?.label ?? '05:18'}</Text>
+            <Text style={styles.nextTime}>{nextPrayer?.label ?? '--:--'}</Text>
             <Text style={styles.nextName}>
-              {nextPrayer?.name ? nextPrayer.name.charAt(0).toUpperCase() + nextPrayer.name.slice(1) : 'Fajr'}
+              {nextPrayer?.name ? nextPrayer.name.charAt(0).toUpperCase() + nextPrayer.name.slice(1) : 'Next prayer'}
             </Text>
-            <Text style={styles.nextEta}>{nextPrayer?.remaining ? `In ${nextPrayer.remaining}` : 'In 06:49'}</Text>
+            <Text style={styles.nextEta}>{nextPrayer?.remaining ? `In ${nextPrayer.remaining}` : 'In --:--'}</Text>
           </View>
           <View style={{ marginTop: 12 }}>
             {liveInfo.isLive ? (

@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth';
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
 import { getPrayerTimesByDate, PrayerTimesRow, upsertPrayerTimes } from '../../lib/api/admin/prayerTimes';
+import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 import DateSelector from '../../components/admin/DateSelector';
 
 const prayers: Array<{ key: keyof PrayerTimeForm; label: string }> = [
@@ -82,13 +83,18 @@ export default function PrayerTimesAdminScreen() {
         if (row) {
           setForm(mapRowToForm(row));
         } else {
-          setForm({
-            fajr: emptyPair,
-            dhuhr: emptyPair,
-            asr: emptyPair,
-            maghrib: emptyPair,
-            isha: emptyPair,
-          });
+          const normalized = await getDailyPrayerTimes(mosqueId, selectedDate);
+          if (normalized) {
+            setForm(mapNormalizedToForm(normalized));
+          } else {
+            setForm({
+              fajr: emptyPair,
+              dhuhr: emptyPair,
+              asr: emptyPair,
+              maghrib: emptyPair,
+              isha: emptyPair,
+            });
+          }
         }
       } catch (e: any) {
         console.warn('load prayer times', e?.message ?? e);
@@ -167,6 +173,7 @@ export default function PrayerTimesAdminScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.heading}>Prayer Times</Text>
       <Text style={styles.subheading}>Manage adhan and iqama times</Text>
+      <Text style={styles.note}>These times are used across the app (listener & muezzin). Updating them will update the adhan schedule for this mosque.</Text>
       <View style={{ marginTop: 12 }}>
         <DateSelector date={selectedDate} onChange={setSelectedDate} />
       </View>
@@ -209,6 +216,22 @@ function mapRowToForm(row: PrayerTimesRow): PrayerTimeForm {
     asr: { adhan: toHm(row.asr_adhan_time), iqama: toHm(row.asr_iqama_time) },
     maghrib: { adhan: toHm(row.maghrib_adhan_time), iqama: toHm(row.maghrib_iqama_time) },
     isha: { adhan: toHm(row.isha_adhan_time), iqama: toHm(row.isha_iqama_time) },
+  };
+}
+
+function mapNormalizedToForm(normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimeForm {
+  const toHmDate = (d?: Date | null) => {
+    if (!d) return null;
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+  return {
+    fajr: { adhan: toHmDate(normalized?.fajr?.adhan ?? null), iqama: toHmDate(normalized?.fajr?.iqama ?? null) },
+    dhuhr: { adhan: toHmDate(normalized?.dhuhr?.adhan ?? null), iqama: toHmDate(normalized?.dhuhr?.iqama ?? null) },
+    asr: { adhan: toHmDate(normalized?.asr?.adhan ?? null), iqama: toHmDate(normalized?.asr?.iqama ?? null) },
+    maghrib: { adhan: toHmDate(normalized?.maghrib?.adhan ?? null), iqama: toHmDate(normalized?.maghrib?.iqama ?? null) },
+    isha: { adhan: toHmDate(normalized?.isha?.adhan ?? null), iqama: toHmDate(normalized?.isha?.iqama ?? null) },
   };
 }
 
@@ -255,6 +278,7 @@ const styles = StyleSheet.create({
   container: { padding: 16, gap: 12 },
   heading: { fontSize: 22, fontWeight: '800', color: '#0F172A' },
   subheading: { color: '#475569' },
+  note: { marginTop: 6, color: '#334155', fontSize: 12, lineHeight: 18 },
   mosqueLabel: { marginTop: 6, color: '#0F172A', fontWeight: '700' },
   loader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center' },
   card: {

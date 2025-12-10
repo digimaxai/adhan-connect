@@ -17,6 +17,7 @@ import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
 import AppLogo from '../../components/AppLogo';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
+import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
 type Subscription = { mosque_id: string };
@@ -172,33 +173,14 @@ export default function HomeScreen() {
     loadMuezzin();
   }, [roles.isMuezzin]);
 
-  const fetchPrayerTimes = async (mosqueId: string) => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const { data: todayData } = await supabase
-      .from('mosque_prayer_times')
-      .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-      .eq('mosque_id', mosqueId)
-      .eq('prayer_date', todayStr)
-      .maybeSingle();
-    if (todayData) return { data: todayData, error: null };
-    const { data: nextData, error: nextErr } = await supabase
-      .from('mosque_prayer_times')
-      .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-      .eq('mosque_id', mosqueId)
-      .gte('prayer_date', todayStr)
-      .order('prayer_date', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (nextData) return { data: nextData, error: null };
-    const { data: prevData, error: prevErr } = await supabase
-      .from('mosque_prayer_times')
-      .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-      .eq('mosque_id', mosqueId)
-      .lte('prayer_date', todayStr)
-      .order('prayer_date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return { data: prevData ?? null, error: nextErr ?? prevErr };
+  const mapNormalizedToLegacyShape = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
+    if (!normalized) return null;
+    const toHm = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null);
+    const mapped: PrayerTimes = {};
+    (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
+      mapped[name] = toHm(normalized?.[name]?.adhan ?? null);
+    });
+    return mapped;
   };
 
   useEffect(() => {
@@ -209,13 +191,13 @@ export default function HomeScreen() {
         setPrayerError(null);
         return;
       }
-      const { data, error } = await fetchPrayerTimes(primaryId);
-      if (error) {
+      try {
+        const normalized = await getDailyPrayerTimes(primaryId, new Date());
+        setPrayerError(null);
+        setPrayerTimes(mapNormalizedToLegacyShape(normalized));
+      } catch (error: any) {
         setPrayerError('Could not load prayer times.');
         setPrayerTimes(null);
-      } else {
-        setPrayerError(null);
-        setPrayerTimes(data ?? null);
       }
     };
     loadPrayerTimes();

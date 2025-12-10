@@ -10,6 +10,7 @@ import { Image } from 'expo-image';
 import AppLogo from '../../components/AppLogo';
 import { supabase } from '../../lib/supabase';
 import { PrayerName } from '../../lib/adhans';
+import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 
 type StreamRow = {
   id: string;
@@ -33,6 +34,16 @@ const fallbackTimes: Record<PrayerName, string> = {
 
 const heroPatternSvg = `<svg width="320" height="320" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="p" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M20 0 L30 10 L20 20 L10 10 Z M20 20 L30 30 L20 40 L10 30 Z" fill="none" stroke="white" stroke-width="1.2" opacity="0.45"/><circle cx="20" cy="20" r="3" fill="white" opacity="0.45"/></pattern></defs><rect width="320" height="320" fill="url(#p)"/></svg>`;
 const heroPatternUri = `data:image/svg+xml;utf8,${encodeURIComponent(heroPatternSvg)}`;
+
+const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
+  if (!normalized) return null;
+  const toHm = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null);
+  const mapped: PrayerTimes = {};
+  (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
+    mapped[name] = toHm(normalized?.[name]?.adhan ?? null);
+  });
+  return mapped;
+};
 
 export default function NowScreen() {
   const router = useRouter();
@@ -107,14 +118,12 @@ export default function NowScreen() {
         setPrayerTimes(null);
         return;
       }
-      const today = new Date().toISOString().slice(0, 10);
-      const { data } = await supabase
-        .from('mosque_prayer_times')
-        .select('prayer_date,fajr,dhuhr,asr,maghrib,isha')
-        .eq('mosque_id', mosqueId)
-        .eq('prayer_date', today)
-        .maybeSingle();
-      setPrayerTimes(data ?? null);
+      try {
+        const normalized = await getDailyPrayerTimes(mosqueId, new Date());
+        setPrayerTimes(mapNormalizedPrayerTimes(normalized));
+      } catch {
+        setPrayerTimes(null);
+      }
     };
     fetchPrayer();
   }, [current?.mosque_id]);
