@@ -314,7 +314,7 @@ export default function HomeScreen() {
                 <Text style={styles.heroButtonText}>{startable ? 'Go live' : 'View details'}</Text>
               </Pressable>
               <Pressable
-                onPress={() => router.push('/(tabs)/muezzin')}
+                onPress={() => router.push('/muezzin')}
                 style={({ pressed }) => [styles.heroButton, { backgroundColor: '#E0F2FE', opacity: pressed ? 0.85 : 1 }]}
               >
                 <Text style={[styles.heroButtonText, { color: '#0369A1' }]}>Schedule</Text>

@@ -242,7 +242,7 @@ export default function SettingsScreen() {
               <SettingsRow
                 title="Muezzin tools"
                 subtitle="My rota & adhan schedule"
-                href="/(tabs)/muezzin"
+                href="/muezzin"
               />
             )}
 

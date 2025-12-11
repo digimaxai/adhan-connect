@@ -9,6 +9,7 @@ import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
 import { useMosquePrayerTimes } from '../shared/hooks/useMosquePrayerTimes';
 
 type Params = {
+  slotId?: string;
   mosqueId?: string;
   mosqueName?: string;
   prayerName?: string;
@@ -33,8 +34,14 @@ export default function MuezzinLiveScreen() {
   const { schedule, nextAssignedSlot } = useMuezzinSchedule();
   const paramsMosqueId = params.mosqueId ?? null;
   const resolvedMosqueId = paramsMosqueId ?? schedule?.mosqueId ?? '';
-  const mosqueName = params.mosqueName ?? schedule?.mosqueName ?? 'Mosque';
-  const prayerName = params.prayerName ?? (nextAssignedSlot?.prayerName as string) ?? 'Adhan';
+  const selectedSlot = useMemo(() => {
+    if (params.slotId) {
+      return schedule?.slots?.find((slot) => slot.id === params.slotId) ?? null;
+    }
+    return nextAssignedSlot ?? null;
+  }, [nextAssignedSlot, params.slotId, schedule?.slots]);
+  const mosqueName = params.mosqueName ?? selectedSlot?.mosqueName ?? schedule?.mosqueName ?? 'Mosque';
+  const prayerName = params.prayerName ?? (selectedSlot?.prayerName as string) ?? (nextAssignedSlot?.prayerName as string) ?? 'Adhan';
   const prayerKey = (prayerName ?? '').toString().toLowerCase() as PrayerName;
   const mode = params.mode === 'test' ? 'test' : 'normal';
 
@@ -46,21 +53,34 @@ export default function MuezzinLiveScreen() {
     const scheduledTime = (params.adhanTime as string | undefined) ?? params.scheduledTime;
     if (!scheduledTime) return null;
     return {
-      id: params.adhanId ?? 'pending',
+      id: params.adhanId ?? params.slotId ?? 'pending',
       mosque_id: resolvedMosqueId,
-      prayer: prayerName,
+      prayer: prayerKey,
       scheduled_at: scheduledTime,
       status: 'scheduled',
     };
-  }, [params.adhanId, params.adhanTime, params.scheduledTime, prayerName, resolvedMosqueId]);
+  }, [params.adhanId, params.adhanTime, params.scheduledTime, params.slotId, prayerKey, resolvedMosqueId]);
+
+  const adhanFromSlot = useMemo(() => {
+    if (!selectedSlot?.adhanTime) return null;
+    return {
+      id: selectedSlot.id,
+      mosque_id: resolvedMosqueId,
+      prayer: selectedSlot.prayerName.toLowerCase(),
+      scheduled_at: selectedSlot.adhanTime.toISOString(),
+      status: selectedSlot.status ?? 'scheduled',
+    };
+  }, [resolvedMosqueId, selectedSlot?.adhanTime, selectedSlot?.id, selectedSlot?.prayerName, selectedSlot?.status]);
 
   const activeAdhan = useMemo(() => {
     if (adhanFromParams) return adhanFromParams;
+    if (adhanFromSlot) return adhanFromSlot;
     if (nextAssignedSlot?.adhanTime) {
+      const assignedPrayerKey = nextAssignedSlot.prayerName.toLowerCase();
       return {
         id: `assigned-${nextAssignedSlot.prayerName}`,
         mosque_id: resolvedMosqueId,
-        prayer: nextAssignedSlot.prayerName,
+        prayer: assignedPrayerKey,
         scheduled_at: nextAssignedSlot.adhanTime.toISOString(),
         status: 'scheduled',
       };
@@ -74,13 +94,13 @@ export default function MuezzinLiveScreen() {
       return {
         id: 'fallback',
         mosque_id: resolvedMosqueId,
-        prayer: prayerName,
+        prayer: prayerKey,
         scheduled_at: d.toISOString(),
         status: 'scheduled',
       };
     }
     return null;
-  }, [adhanFromParams, nextAssignedSlot?.adhanTime, prayerTimes.times, prayerKey, prayerName, resolvedMosqueId]);
+  }, [adhanFromParams, adhanFromSlot, nextAssignedSlot?.adhanTime, prayerTimes.times, prayerKey, prayerName, resolvedMosqueId]);
 
   const scheduledDate = useMemo(() => {
     if (activeAdhan?.scheduled_at) return new Date(activeAdhan.scheduled_at);
@@ -129,9 +149,9 @@ export default function MuezzinLiveScreen() {
   })();
 
   const isAssigned =
-    schedule?.slots?.some((slot) => slot.prayerName === prayerKey && slot.isAssignedToMe) ?? false;
+    schedule?.slots?.some((slot) => slot.prayerName.toLowerCase() === prayerKey && slot.isAssignedToMe) ?? false;
 
-  const connectionStatus = engine.isLive ? 'Stream connected' : engine.loading ? 'Connecting…' : 'Ready to connect';
+  const connectionStatus = engine.isLive ? 'Stream connected' : engine.loading ? 'Connecting...' : 'Ready to connect';
 
   const handlePrimaryPress = async () => {
     setBanner(null);
@@ -332,11 +352,17 @@ const styles = StyleSheet.create({
   metaCard: {
     marginTop: 10,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     gap: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   metaHeading: { color: '#0F172A', fontWeight: '800', fontSize: 14 },
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

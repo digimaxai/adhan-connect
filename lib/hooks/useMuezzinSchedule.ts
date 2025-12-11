@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getMuezzinScheduleForToday, MuezzinPrayerSlot, MuezzinScheduleForDay } from '../api/muezzin/schedule';
+import { getMuezzinScheduleForToday } from '../api/muezzin/schedule';
+import { MuezzinSchedule, MuezzinSlot, PrayerName } from '../types/muezzin';
 
 export type MuezzinScheduleEntry = {
   id?: string;
@@ -11,15 +12,15 @@ export type MuezzinScheduleEntry = {
 };
 
 export function useMuezzinSchedule() {
-  const [schedule, setSchedule] = useState<MuezzinScheduleForDay | null>(null);
-  const [nextAssignedSlot, setNextAssignedSlot] = useState<MuezzinPrayerSlot | null>(null);
+  const [schedule, setSchedule] = useState<MuezzinSchedule | null>(null);
+  const [nextAssignedSlot, setNextAssignedSlot] = useState<MuezzinSlot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const PRAYER_ORDER: MuezzinPrayerSlot['prayerName'][] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  const PRAYER_ORDER: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
   const cancelledRef = useRef(false);
 
-  const slotTimeMs = (slot: MuezzinPrayerSlot) => (slot.adhanTime ? slot.adhanTime.getTime() : Number.MAX_SAFE_INTEGER);
+  const slotTimeMs = (slot: MuezzinSlot) => (slot.adhanTime ? slot.adhanTime.getTime() : Number.MAX_SAFE_INTEGER);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +34,7 @@ export function useMuezzinSchedule() {
         setError(apiError.message ?? 'Unable to load schedule');
       } else {
         setSchedule(data);
+        setNextAssignedSlot(data?.nextAssignedSlot ?? null);
         setError(null);
       }
     } catch (err: any) {
@@ -57,6 +59,10 @@ export function useMuezzinSchedule() {
   useEffect(() => {
     if (!schedule?.slots?.length) {
       setNextAssignedSlot(null);
+      return;
+    }
+    if (schedule.nextAssignedSlot) {
+      setNextAssignedSlot(schedule.nextAssignedSlot);
       return;
     }
     const now = Date.now();
