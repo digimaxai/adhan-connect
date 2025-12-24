@@ -46,6 +46,8 @@ export default function AuthCallback() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>('idle');
   const [err, setErr] = useState<string | null>(null);
+  const [debugUrl, setDebugUrl] = useState<string | null>(null);
+  const [debugParams, setDebugParams] = useState<Record<string, string | undefined> | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -53,9 +55,11 @@ export default function AuthCallback() {
     async function handleUrl(url: string | null) {
       if (!mounted || !url) return;
       setStatus('working');
+      setDebugUrl(url);
 
       try {
         const params = getParams(url);
+        setDebugParams(params);
 
         const code = params.code; // PKCE / OAuth
         const token_hash = params.token_hash || params.token; // OTP links (incl. recovery)
@@ -67,9 +71,13 @@ export default function AuthCallback() {
           | 'invite'
           | '';
         const type = rawType.toLowerCase();
+        const isRecovery = type === 'recovery';
 
         const access_token = params.access_token;
         const refresh_token = params.refresh_token;
+        // Some Supabase flows supply a short-lived recovery access token in the fragment; if present, prefer it.
+        const otpAccessToken = params.access_token ?? params?.access_token;
+        const otpRefreshToken = params.refresh_token ?? params?.refresh_token;
 
         const error = params.error;
         const error_description = params.error_description;
@@ -90,10 +98,10 @@ export default function AuthCallback() {
         } else if (token_hash && type) {
           const { error: otpErr } = await supabase.auth.verifyOtp({ token_hash, type: rawType as any });
           if (otpErr) throw otpErr;
-        } else if (access_token && refresh_token) {
+        } else if ((access_token && refresh_token) || (otpAccessToken && otpRefreshToken)) {
           const { error: sessErr } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
+            access_token: access_token ?? otpAccessToken!,
+            refresh_token: refresh_token ?? otpRefreshToken!,
           });
           if (sessErr) throw sessErr;
         } else if (type === 'signup') {
@@ -111,7 +119,7 @@ export default function AuthCallback() {
         setStatus('done');
 
         // Route based on recovery vs normal auth
-        if (type === 'recovery') {
+        if (isRecovery) {
           router.replace('/new-password' as any);
         } else {
           router.replace('/(tabs)' as any);
@@ -144,6 +152,16 @@ export default function AuthCallback() {
             {status === 'idle' && 'Waiting for callback...'}
             {status === 'done' && 'Signed in. Redirecting...'}
           </Text>
+          {__DEV__ && (
+            <View style={{ marginTop: 12 }}>
+              <Text selectable style={{ fontSize: 12, color: '#0f172a' }}>
+                Raw URL: {debugUrl ?? 'none'}
+              </Text>
+              <Text selectable style={{ fontSize: 12, color: '#0f172a', marginTop: 4 }}>
+                Params: {JSON.stringify(debugParams ?? {})}
+              </Text>
+            </View>
+          )}
         </>
       ) : (
         <Text style={{ color: 'red', textAlign: 'center' }}>{err}</Text>

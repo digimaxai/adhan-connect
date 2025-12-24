@@ -28,9 +28,12 @@ function RootNavigator() {
   const navigationState = useRootNavigationState();
 
   const inAuthGroup = segments[0] === '(auth)';
+  const inRecoveryFlow =
+    segments.includes('(auth)') && (segments.includes('callback') || segments.includes('new-password'));
   const isAdmin = roles.isAdmin || roles.isLocalAdmin;
   const isMuezzin = roles.isMuezzin;
-  const targetStack = isMuezzin ? '/(muezzin)' : isAdmin ? '/(admin)' : '/(user)';
+  const isMainAdmin = roles.isMainAdmin;
+  const targetStack = isMuezzin ? '/(muezzin)' : isMainAdmin ? '/admin' : isAdmin ? '/(admin)' : '/(user)';
 
   useEffect(() => {
     if (!navigationState?.key || loading || roles.loading) return;
@@ -41,11 +44,14 @@ function RootNavigator() {
       return;
     }
 
+    // During recovery/password reset, stay in auth stack.
+    if (inRecoveryFlow) return;
+
     // Always prioritize muezzin stack if muezzin flag is true, regardless of admin role.
     if (currentRoot !== targetStack) {
       router.replace(targetStack);
     }
-  }, [session, loading, roles.loading, targetStack, inAuthGroup, navigationState?.key, router, segments]);
+  }, [session, loading, roles.loading, targetStack, inAuthGroup, inRecoveryFlow, navigationState?.key, router, segments]);
 
   if (loading || roles.loading || !navigationState?.key) {
     return (
@@ -61,6 +67,7 @@ function RootNavigator() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(user)" />
       <Stack.Screen name="(admin)" />
+      <Stack.Screen name="admin" />
       <Stack.Screen name="(muezzin)" />
       <Stack.Screen
         name="modal"

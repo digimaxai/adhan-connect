@@ -1,11 +1,20 @@
 // lib/auth.tsx
 import type { Session, User } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
 
 export const getAuthRedirectUrl = () => {
   const envUrl = process.env.EXPO_PUBLIC_SUPABASE_REDIRECT_URL?.trim();
+  // Prefer web-specific redirect when running on web; keep mobile deep link otherwise.
+  if (Platform.OS === 'web') {
+    if (envUrl) return envUrl;
+    return typeof window !== 'undefined'
+      ? `${window.location.origin}/callback`
+      : 'http://localhost:8081/callback';
+  }
+  // Native/mobile: use env if provided, else fall back to app scheme.
   if (envUrl) return envUrl;
   return Linking.createURL('/callback', { scheme: 'adhanconnect' });
 };
@@ -223,8 +232,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
+      const dynamicRedirect =
+        typeof window !== 'undefined' && Platform.OS === 'web'
+          ? `${window.location.origin}/callback`
+          : undefined;
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo,
+        redirectTo: dynamicRedirect ?? redirectTo,
       });
       if (error) return { error: error.message };
       return {};
@@ -255,6 +268,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    Hook
 ------------------------------------------------------------------- */
 export const useAuth = () => useContext(AuthContext);
-
-
-
