@@ -14,6 +14,7 @@ import {
   statusBadge,
 } from '../../lib/adhans';
 import { useRoleFlags } from '../../lib/roles';
+import { persistentStorage } from '../../lib/persistentStorage';
 import { supabase } from '../../lib/supabase';
 import AppLogo from '../../components/AppLogo';
 import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
@@ -40,27 +41,6 @@ const mapNormalizedToLegacyShape = (normalized: Awaited<ReturnType<typeof getDai
   });
   return mapped;
 };
-
-// Safe storage wrapper (falls back to in-memory if AsyncStorage is unavailable)
-const safeStorage = (() => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@react-native-async-storage/async-storage');
-    return mod.default ?? mod;
-  } catch {
-    const globalKey = '__ac_default_mosque_store__';
-    const memory: Record<string, string> = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {});
-    return {
-      getItem: async (key: string) => memory[key] ?? null,
-      setItem: async (key: string, val: string) => {
-        memory[key] = val;
-      },
-      removeItem: async (key: string) => {
-        delete memory[key];
-      },
-    };
-  }
-})();
 
 const formatHm = (val?: string | null) => {
   if (!val) return '--:--';
@@ -97,7 +77,7 @@ export default function HomeScreen() {
 
   const loadDefault = React.useCallback(async () => {
     try {
-      const stored = await safeStorage.getItem('default_mosque_id');
+      const stored = await persistentStorage.getItem('default_mosque_id');
       setDefaultMosqueId(stored ?? null);
     } catch {
       setDefaultMosqueId(null);

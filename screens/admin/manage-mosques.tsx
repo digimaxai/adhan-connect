@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
+import { persistentStorage } from '../../lib/persistentStorage';
 import { supabase } from '../../lib/supabase';
 
 type FollowedMosque = {
@@ -15,26 +16,6 @@ type FollowedMosque = {
 };
 
 // Lightweight storage wrapper (falls back to in-memory if AsyncStorage is absent)
-const safeStorage = (() => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@react-native-async-storage/async-storage');
-    return mod.default ?? mod;
-  } catch {
-    const globalKey = '__ac_default_mosque_store__';
-    const memory: Record<string, string> = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {});
-    return {
-      getItem: async (key: string) => memory[key] ?? null,
-      setItem: async (key: string, val: string) => {
-        memory[key] = val;
-      },
-      removeItem: async (key: string) => {
-        delete memory[key];
-      },
-    };
-  }
-})();
-
 export default function ManageMosques() {
   const router = useRouter();
   const { session } = useAuth();
@@ -52,12 +33,15 @@ export default function ManageMosques() {
     try {
       const { data } = await supabase.from('subscriptions').select('mosque_id, mosques(name,city,country)').eq('user_id', userId);
       if (Array.isArray(data)) {
-        const mapped: FollowedMosque[] = data.map((row) => ({
-          mosque_id: row.mosque_id,
-          name: row.mosques?.name ?? 'Mosque',
-          city: row.mosques?.city,
-          country: row.mosques?.country,
-        }));
+        const mapped: FollowedMosque[] = data.map((row: any) => {
+          const mosque = Array.isArray(row.mosques) ? row.mosques[0] : row.mosques;
+          return {
+            mosque_id: row.mosque_id,
+            name: mosque?.name ?? 'Mosque',
+            city: mosque?.city,
+            country: mosque?.country,
+          };
+        });
         setItems(mapped);
       }
     } finally {
@@ -72,7 +56,7 @@ export default function ManageMosques() {
   useEffect(() => {
     const getDefault = async () => {
       try {
-        const stored = await safeStorage.getItem('default_mosque_id');
+        const stored = await persistentStorage.getItem('default_mosque_id');
         if (stored) setDefaultId(stored);
       } catch {}
     };
@@ -106,13 +90,13 @@ export default function ManageMosques() {
     setItems((prev) => prev.filter((i) => i.mosque_id !== mosqueId));
     if (defaultId === mosqueId) {
       setDefaultId(null);
-      await safeStorage.removeItem('default_mosque_id');
+      await persistentStorage.removeItem('default_mosque_id');
     }
   };
 
   const setDefault = async (mosqueId: string) => {
     try {
-      await safeStorage.setItem('default_mosque_id', mosqueId);
+      await persistentStorage.setItem('default_mosque_id', mosqueId);
       setDefaultId(mosqueId);
     } catch {
       setDefaultId(mosqueId);

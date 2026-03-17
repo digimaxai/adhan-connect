@@ -20,7 +20,7 @@ export default function LiveBroadcastScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Live broadcast', headerBackTitleVisible: false }} />
+      <Stack.Screen options={{ title: 'Live broadcast' }} />
       {!slot ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>No adhan slot found</Text>

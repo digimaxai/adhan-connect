@@ -2,18 +2,19 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { tokens } from '../../theme/tokens';
 
 export default function MuezzinTabs() {
   const pillIcon = (icon: keyof typeof Ionicons.glyphMap) =>
     ({ color, focused }: { color: string; focused: boolean }) => (
       <View
         style={{
-          padding: 8,
-          borderRadius: 12,
-          backgroundColor: focused ? '#E0F2FE' : 'transparent',
+          padding: tokens.spacing.xs,
+          borderRadius: tokens.radius.md,
+          backgroundColor: focused ? tokens.color.bg.tintSoft : 'transparent',
         }}
       >
-        <Ionicons name={icon} size={22} color={focused ? '#0EA5E9' : color} />
+        <Ionicons name={icon} size={tokens.icon.md} color={focused ? tokens.color.text.accent : color} />
       </View>
     );
 
@@ -23,23 +24,23 @@ export default function MuezzinTabs() {
       screenOptions={{
         headerShown: false,
         lazy: true,
-        tabBarActiveTintColor: '#0F172A',
-        tabBarInactiveTintColor: '#94A3B8',
+        tabBarActiveTintColor: tokens.color.text.primary,
+        tabBarInactiveTintColor: tokens.color.text.muted,
         tabBarHideOnKeyboard: true,
-        tabBarLabelStyle: { fontWeight: '800', fontSize: 13, marginTop: 4 },
+        tabBarLabelStyle: {
+          fontWeight: tokens.typography.weight.extrabold,
+          fontSize: tokens.typography.size.sm,
+          marginTop: tokens.spacing.xxs,
+        },
         tabBarItemStyle: { paddingVertical: 6 },
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopColor: 'transparent',
-          height: 82,
+          backgroundColor: tokens.color.bg.surface,
+          borderTopColor: tokens.color.border.transparent,
+          height: tokens.tabBar.muezzinHeight,
           paddingBottom: 12,
           paddingTop: 10,
           paddingHorizontal: 18,
-          shadowColor: '#0F172A',
-          shadowOpacity: 0.08,
-          shadowRadius: 18,
-          shadowOffset: { width: 0, height: 8 },
-          elevation: 8,
+          ...tokens.shadow.card,
         },
       }}
     >

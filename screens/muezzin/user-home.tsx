@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, View, Text, Pressable, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, Pressable, StyleSheet, RefreshControl } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
 import type { MuezzinSchedule, MuezzinSlot } from '../../lib/types/muezzin';
+import { AppButton } from '../../components/ui/app-button';
+import { AppCard } from '../../components/ui/app-card';
+import { ScreenContainer } from '../../components/ui/screen-container';
+import { AppText } from '../../components/ui/app-text';
+import { tokens } from '../../theme/tokens';
 
 const PAGE_PADDING = 14;
 const WINDOW_START_MS = 3 * 60 * 1000;
@@ -60,24 +64,20 @@ export default function MuezzinToolsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ paddingHorizontal: PAGE_PADDING, paddingTop: PAGE_PADDING, paddingBottom: 12 }}
+    <ScreenContainer
+      style={styles.container}
+      contentStyle={{ paddingHorizontal: PAGE_PADDING, paddingTop: PAGE_PADDING, paddingBottom: 12 }}
         refreshControl={<RefreshControl refreshing={!!loading} onRefresh={refresh} />}
       >
-        <Text style={styles.title}>Muezzin Home</Text>
-        <Text style={styles.subtitle}>Review your next adhan and start live when the time comes.</Text>
+        <AppText variant="title" style={styles.title}>Muezzin Home</AppText>
+        <AppText variant="caption" style={styles.subtitle}>Review your next adhan and start live when the time comes.</AppText>
 
         <NextAdhanCard slot={nextAssignedSlot} onPressStatusStrip={handleOpenLiveBroadcast} />
 
         <TodaysAdhansCard schedule={resolvedSchedule} />
 
-        <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]} onPress={handleManageLivePress}>
-          <Text style={styles.primaryButtonText}>Manage Live Broadcast</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
+        <AppButton title="Manage Live Broadcast" onPress={handleManageLivePress} style={styles.primaryButton} />
+    </ScreenContainer>
   );
 }
 
@@ -89,10 +89,9 @@ interface NextAdhanCardProps {
 const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip }) => {
   const router = useRouter();
   const [now, setNow] = useState(() => new Date());
-  const countdownText = useCountdown(slot?.adhanTime ?? null);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 15000);
+    const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -101,6 +100,8 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip 
   const isLiveWindowOpen = !!liveWindowStart && !!liveWindowEnd && now >= liveWindowStart && now <= liveWindowEnd;
   const isAfterWindow = !!liveWindowEnd && now > liveWindowEnd;
   const liveOpensIn = liveWindowStart ? formatDuration(liveWindowStart, now) : null;
+  const countdownText = getNextAdhanCountdown(slot, now, liveWindowEnd);
+  const slotIsTomorrow = isTomorrow(slot?.adhanTime ?? null, now);
 
   const canManageLive = !!slot && (isLiveWindowOpen || slot.status === 'ready' || slot.status === 'live');
 
@@ -133,42 +134,45 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip 
   };
 
   return (
-    <View style={styles.heroCard}>
+    <AppCard padded={false} style={styles.heroCard}>
       <View style={styles.heroHeaderRow}>
-        <Text style={styles.heroContextText}>Muezzin - {slot?.mosqueName ?? 'Mosque'}</Text>
-        {slot ? (
-          <View style={[styles.statusPill, statusPillStyle]}>
-            <Text style={styles.statusPillText}>{statusLabel}</Text>
-          </View>
-        ) : null}
+        <AppText variant="caption" style={styles.heroContextText}>Muezzin - {slot?.mosqueName ?? 'Mosque'}</AppText>
+        <View style={styles.heroMetaRow}>
+          {slotIsTomorrow ? (
+            <View style={[styles.statusPill, styles.statusPillTomorrow]}>
+              <AppText variant="caption" style={styles.statusPillTomorrowText}>Tomorrow</AppText>
+            </View>
+          ) : null}
+          {slot ? (
+            <View style={[styles.statusPill, statusPillStyle]}>
+              <AppText variant="caption" style={styles.statusPillText}>{statusLabel}</AppText>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.heroMain}>
-        <Text style={styles.heroLabel}>Next adhan</Text>
-        <Text style={styles.heroTime}>{slot ? `${slot.prayerName} - ${formatTime(slot.adhanTime)}` : 'No adhans remaining today.'}</Text>
-        {!!countdownText && slot && <Text style={styles.heroCountdown}>{countdownText}</Text>}
+        <AppText variant="caption" style={styles.heroLabel}>Next adhan</AppText>
+        <AppText variant="hero" style={styles.heroTime}>{slot ? `${slot.prayerName} - ${formatTime(slot.adhanTime)}` : 'No adhans remaining today.'}</AppText>
+        {!!countdownText && slot && <AppText variant="body" style={styles.heroCountdown}>{countdownText}</AppText>}
       </View>
 
       {!slot ? (
-        <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]} onPress={handleStartTest}>
-          <Text style={styles.primaryButtonText}>Start test live adhan</Text>
-        </Pressable>
+        <AppButton title="Start test live adhan" onPress={handleStartTest} style={styles.primaryButton} />
       ) : canManageLive ? (
-        <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]} onPress={handleManage}>
-          <Text style={styles.primaryButtonText}>Manage Live Broadcast</Text>
-        </Pressable>
+        <AppButton title="Manage Live Broadcast" onPress={handleManage} style={styles.primaryButton} />
       ) : isAfterWindow ? (
         <View style={[styles.heroStrip, styles.heroStripDisabled]}>
-          <Text style={styles.heroStripText}>Adhan window ended</Text>
+          <AppText variant="body" color={tokens.color.text.inverse} style={styles.heroStripText}>Adhan window ended</AppText>
         </View>
       ) : (
         <View style={[styles.heroStrip, styles.heroStripDisabled]}>
-          <Text style={styles.heroStripText}>
+          <AppText variant="body" color={tokens.color.text.inverse} style={styles.heroStripText}>
             {liveOpensIn ? `Live broadcast opens in ${liveOpensIn}` : 'Live broadcast opens soon'}
-          </Text>
+          </AppText>
         </View>
       )}
-    </View>
+    </AppCard>
   );
 };
 
@@ -180,9 +184,9 @@ const TodaysAdhansCard: React.FC<TodaysAdhansCardProps> = ({ schedule }) => {
   if (!schedule.slots.length) return null;
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Today&apos;s Adhans</Text>
-      {!!schedule.mosqueName && <Text style={styles.cardSubtitle}>{schedule.mosqueName}</Text>}
+    <AppCard style={styles.card}>
+      <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Adhans</AppText>
+      {!!schedule.mosqueName && <AppText variant="caption" style={styles.cardSubtitle}>{schedule.mosqueName}</AppText>}
 
       <View style={{ marginTop: 12 }}>
         {schedule.slots.map((slot, index) => {
@@ -190,28 +194,28 @@ const TodaysAdhansCard: React.FC<TodaysAdhansCardProps> = ({ schedule }) => {
           return (
             <View key={slot.id} style={[styles.adahnRow, !isLast && styles.adahnRowDivider]}>
               <View style={styles.adahnLeft}>
-                <Text style={styles.adahnName}>{slot.prayerName}</Text>
+                <AppText style={styles.adahnName}>{slot.prayerName}</AppText>
               </View>
               <View style={styles.adahnMiddle}>
-                <Text style={styles.adahnTime}>{formatTime(slot.adhanTime)}</Text>
+                <AppText style={styles.adahnTime}>{formatTime(slot.adhanTime)}</AppText>
               </View>
               <View style={styles.adahnRight}>
                 {slot.isAssignedToMe ? (
                   <View style={styles.youPill}>
                     <Ionicons name="mic-outline" size={14} color="#0B7A30" style={{ marginRight: 4 }} />
-                    <Text style={styles.youPillText}>You</Text>
+                    <AppText variant="caption" style={styles.youPillText}>You</AppText>
                   </View>
                 ) : slot.assignedMuezzinName ? (
-                  <Text style={styles.assignedOtherText}>{slot.assignedMuezzinName}</Text>
+                  <AppText variant="caption" style={styles.assignedOtherText}>{slot.assignedMuezzinName}</AppText>
                 ) : (
-                  <Text style={styles.unassignedText}>Unassigned</Text>
+                  <AppText variant="caption" style={styles.unassignedText}>Unassigned</AppText>
                 )}
               </View>
             </View>
           );
         })}
       </View>
-    </View>
+    </AppCard>
   );
 };
 
@@ -222,36 +226,36 @@ function formatTime(date: Date | null): string {
 
 function formatDuration(target: Date, now: Date): string {
   const diff = Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
-  const mins = Math.floor(diff / 60)
+  const hours = Math.floor(diff / 3600)
     .toString()
     .padStart(2, '0');
+  const mins = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
   const secs = (diff % 60).toString().padStart(2, '0');
-  return `${mins}:${secs}`;
+  return `${hours}:${mins}:${secs}`;
 }
 
-function useCountdown(target: Date | null) {
-  const [text, setText] = useState('');
+function getNextAdhanCountdown(slot: MuezzinSlot | null, now: Date, liveWindowEnd: Date | null) {
+  if (!slot?.adhanTime) return '';
+  const adhanDiffMs = slot.adhanTime.getTime() - now.getTime();
+  if (adhanDiffMs > 0) {
+    return `In ${formatDuration(slot.adhanTime, now)}`;
+  }
+  if (liveWindowEnd && liveWindowEnd.getTime() > now.getTime()) {
+    return `Window closes in ${formatDuration(liveWindowEnd, now)}`;
+  }
+  return '';
+}
 
-  useEffect(() => {
-    if (!target) {
-      setText('');
-      return;
-    }
-    const tick = () => {
-      const now = Date.now();
-      const diff = Math.max(0, Math.floor((target.getTime() - now) / 1000));
-      const mins = Math.floor(diff / 60)
-        .toString()
-        .padStart(2, '0');
-      const secs = (diff % 60).toString().padStart(2, '0');
-      setText(`In ${mins}:${secs}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [target]);
-
-  return text;
+function isTomorrow(date: Date | null, now: Date) {
+  if (!date) return false;
+  const tomorrow = new Date(now);
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return (
+    date.getFullYear() === tomorrow.getFullYear() &&
+    date.getMonth() === tomorrow.getMonth() &&
+    date.getDate() === tomorrow.getDate()
+  );
 }
 
 const styles = StyleSheet.create({
@@ -303,6 +307,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  heroMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   heroContextText: {
     fontSize: 12,
     color: '#52a6ff',
@@ -321,10 +330,18 @@ const styles = StyleSheet.create({
   statusPillLive: {
     backgroundColor: '#fee2e2',
   },
+  statusPillTomorrow: {
+    backgroundColor: '#E0F2FE',
+  },
   statusPillText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#111827',
+  },
+  statusPillTomorrowText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0369A1',
   },
   heroMain: {
     marginBottom: 8,
@@ -435,11 +452,6 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     width: '100%',
-    backgroundColor: '#0EA5E9',
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: 8,
   },
   primaryButtonPressed: {

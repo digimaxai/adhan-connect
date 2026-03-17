@@ -36,7 +36,8 @@ export default function MuezzinLiveScreen() {
   const resolvedMosqueId = paramsMosqueId ?? schedule?.mosqueId ?? '';
   const selectedSlot = useMemo(() => {
     if (params.slotId) {
-      return schedule?.slots?.find((slot) => slot.id === params.slotId) ?? null;
+      const found = schedule?.slots?.find((slot) => slot.id === params.slotId);
+      if (found) return found;
     }
     return nextAssignedSlot ?? null;
   }, [nextAssignedSlot, params.slotId, schedule?.slots]);

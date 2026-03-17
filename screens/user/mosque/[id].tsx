@@ -131,7 +131,6 @@ export default function MosquePage() {
             }
           );
           setResolvedId('');
-          setLive(false);
           setPrayers(null);
           setRecordings([]);
           setEvents([]);

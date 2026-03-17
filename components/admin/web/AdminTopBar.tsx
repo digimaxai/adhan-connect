@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { useAdminContext } from '../lib/adminContext';
+import { useAdminContext } from '../../../lib/admin-web/adminContext';
 
 export type MosqueOption = {
   id: string;
@@ -13,17 +13,11 @@ export type MosqueOption = {
 
 type Props = {
   mosques: MosqueOption[];
-  onSearch?: (term: string) => void; // optional hook for wiring real search
+  onSearch?: (term: string) => void;
+  onOpenCommandPalette?: () => void;
 };
 
-/**
- * AdminTopBar
- * - Global search (stubbed: calls onSearch or logs to console)
- * - Mosque selector for impersonation mode
- * - Shows yellow badge when a mosque is selected
- * - Provides an "Exit mosque mode" control
- */
-export default function AdminTopBar({ mosques, onSearch }: Props) {
+export default function AdminTopBar({ mosques, onSearch, onOpenCommandPalette }: Props) {
   const { selectedMosqueId, setSelectedMosqueId, isMosqueMode } = useAdminContext();
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -31,7 +25,7 @@ export default function AdminTopBar({ mosques, onSearch }: Props) {
     () =>
       mosques.map((m) => ({
         value: m.id,
-        label: `${m.name}${m.city ? ` — ${m.city}${m.country ? `, ${m.country}` : ''}` : ''}`,
+        label: `${m.name}${m.city ? ` - ${m.city}${m.country ? `, ${m.country}` : ''}` : ''}`,
         status: m.status ?? null,
       })),
     [mosques]
@@ -39,11 +33,8 @@ export default function AdminTopBar({ mosques, onSearch }: Props) {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (onSearch) {
-      onSearch(searchTerm.trim());
-    } else {
-      console.log('[AdminTopBar] search', searchTerm.trim());
-    }
+    if (!onSearch) return;
+    onSearch(searchTerm.trim());
   };
 
   const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -53,15 +44,9 @@ export default function AdminTopBar({ mosques, onSearch }: Props) {
         typeof window !== 'undefined'
           ? window.confirm('You are switching mosque context. All actions will now affect a different mosque. Continue?')
           : true;
-      if (!confirmed) {
-        return;
-      }
+      if (!confirmed) return;
     }
     setSelectedMosqueId(val);
-  };
-
-  const handleExitMosque = () => {
-    setSelectedMosqueId(null);
   };
 
   const selectedLabel =
@@ -85,6 +70,10 @@ export default function AdminTopBar({ mosques, onSearch }: Props) {
       </div>
 
       <div style={styles.right}>
+        <button type="button" style={styles.commandButton} onClick={onOpenCommandPalette}>
+          Quick actions
+          <span style={styles.commandHint}>Ctrl K</span>
+        </button>
         <div style={styles.selectorWrap}>
           <label htmlFor="mosque-selector" style={styles.selectorLabel}>
             Mosque Context
@@ -104,7 +93,7 @@ export default function AdminTopBar({ mosques, onSearch }: Props) {
               ))}
             </select>
             {isMosqueMode ? (
-              <button type="button" style={styles.exitButton} onClick={handleExitMosque}>
+              <button type="button" style={styles.exitButton} onClick={() => setSelectedMosqueId(null)}>
                 Exit mosque mode
               </button>
             ) : null}
@@ -114,7 +103,7 @@ export default function AdminTopBar({ mosques, onSearch }: Props) {
 
         {isMosqueMode ? (
           <div style={styles.badge} title="Impersonation mode active">
-            🟡 Viewing as Local Admin — {selectedLabel}
+            Viewing as Local Admin - {selectedLabel}
           </div>
         ) : null}
       </div>
@@ -162,6 +151,27 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
     minWidth: 320,
     justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+  },
+  commandButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '10px 12px',
+    borderRadius: 12,
+    border: '1px solid #dbe4ec',
+    backgroundColor: '#f8fbff',
+    color: '#0f172a',
+    fontWeight: 800,
+    cursor: 'pointer',
+  },
+  commandHint: {
+    padding: '4px 8px',
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: 900,
   },
   selectorWrap: {
     display: 'flex',

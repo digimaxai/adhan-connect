@@ -37,6 +37,7 @@ export default function AdminStack() {
       <Stack.Screen name="campaign" />
       <Stack.Screen name="event" />
       <Stack.Screen name="settings" />
+      <Stack.Screen name="mosque-onboarding" />
     </Stack>
   );
 }

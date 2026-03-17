@@ -1,16 +1,23 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../lib/supabaseClient';
-import { RequireMainAdmin } from '../components/RequireMainAdmin';
-import { AdminContextProvider } from '../lib/adminContext';
-import AdminTopBar, { MosqueOption } from '../components/AdminTopBar';
-import AdminSidebar from '../components/AdminSidebar';
+import { RequireMainAdmin } from '../../../components/admin/web/RequireMainAdmin';
+import { AdminContextProvider } from '../../../lib/admin-web/adminContext';
+import { AdminFeedbackProvider, useAdminFeedback } from '../../../lib/admin-web/adminFeedback';
+import type { MosqueOption } from '../../../components/admin/web/AdminTopBar';
+import AdminShell from '../../../components/admin/web/AdminShell';
+import { AdminMetricCard, AdminPanel } from '../../../components/admin/web/AdminPrimitives';
+import AdminDataTable from '../../../components/admin/web/AdminDataTable';
+import AdminFilterPills from '../../../components/admin/web/AdminFilterPills';
+
+type UserRole = 'user' | 'local_admin' | 'main_admin' | 'muezzin';
 
 type UserRow = {
   id: string;
   email: string | null;
-  role: 'user' | 'local_admin' | 'main_admin' | 'muezzin';
+  role: UserRole;
   created_at: string | null;
 };
 
@@ -28,23 +35,38 @@ type MosqueRow = {
 };
 
 const PAGE_SIZE = 20;
+const USER_TABLE_COLUMNS = [
+  { key: 'email', label: 'Email', width: '18%' },
+  { key: 'role', label: 'Role', width: '12%' },
+  { key: 'local_admins', label: 'Local Admin Of', width: '23%' },
+  { key: 'muezzins', label: 'Muezzin Of', width: '23%' },
+  { key: 'created', label: 'Created', width: '12%' },
+  { key: 'actions', label: 'Actions', width: '12%' },
+];
 
 export default function UsersPage() {
   return (
     <RequireMainAdmin>
       <AdminContextProvider>
-        <UsersShell />
+        <AdminFeedbackProvider>
+          <UsersShell />
+        </AdminFeedbackProvider>
       </AdminContextProvider>
     </RequireMainAdmin>
   );
 }
 
 function UsersShell() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ search?: string }>();
+  const { notifyError, notifyInfo, notifySuccess } = useAdminFeedback();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [search, setSearch] = useState(typeof params.search === 'string' ? params.search : '');
+  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
 
   const [mosques, setMosques] = useState<MosqueRow[]>([]);
   const [adminAssignments, setAdminAssignments] = useState<Record<string, string[]>>({});
@@ -53,7 +75,14 @@ function UsersShell() {
   const [selectedAdminMosque, setSelectedAdminMosque] = useState<Record<string, string>>({});
   const [selectedMuezzinMosque, setSelectedMuezzinMosque] = useState<Record<string, string>>({});
 
-  // Fetch mosques once
+  useEffect(() => {
+    if (typeof params.search === 'string') {
+      setSearch(params.search);
+      return;
+    }
+    setSearch('');
+  }, [params.search]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -66,7 +95,9 @@ function UsersShell() {
         if (mosquesRes.error) {
           console.error('mosques fetch error', mosquesRes.error);
           if (!cancelled) setErrorBanner('Some data failed to load. Check console logs.');
-        } else if (!cancelled) {
+          return;
+        }
+        if (!cancelled) {
           setMosques(mosquesRes.data ?? []);
         }
       } catch (e) {
@@ -79,7 +110,6 @@ function UsersShell() {
     };
   }, []);
 
-  // Fetch users + assignments on page change
   useEffect(() => {
     let cancelled = false;
 
@@ -89,18 +119,25 @@ function UsersShell() {
       try {
         const from = page * PAGE_SIZE;
         const to = from + PAGE_SIZE - 1;
-        const usersRes = await supabase
+        let query = supabase
           .from('users')
           .select('id, email, role, created_at', { count: 'exact' })
-          .order('created_at', { ascending: false })
-          .range(from, to);
+          .ilike('email', search ? `%${search}%` : '%');
+
+        if (roleFilter !== 'all') {
+          query = query.eq('role', roleFilter);
+        }
+
+        const usersRes = await query.order('created_at', { ascending: false }).range(from, to);
 
         if (usersRes.error) {
           console.error('users fetch error', usersRes.error);
-          if (!cancelled) setErrorBanner('Some data failed to load. Check console logs.');
           if (!cancelled) {
+            setErrorBanner('Some data failed to load. Check console logs.');
             setUsers([]);
             setTotalCount(0);
+            setAdminAssignments({});
+            setMuezzinAssignments({});
           }
           return;
         }
@@ -113,7 +150,13 @@ function UsersShell() {
           setTotalCount(usersRes.count ?? 0);
         }
 
-        if (!ids.length) return;
+        if (!ids.length) {
+          if (!cancelled) {
+            setAdminAssignments({});
+            setMuezzinAssignments({});
+          }
+          return;
+        }
 
         const adminRes = await supabase.from('mosque_admins').select('user_id, mosque_id').in('user_id', ids);
         if (adminRes.error) {
@@ -152,7 +195,7 @@ function UsersShell() {
     return () => {
       cancelled = true;
     };
-  }, [page]);
+  }, [page, roleFilter, search]);
 
   const mosqueOptions = useMemo<MosqueOption[]>(
     () =>
@@ -174,13 +217,72 @@ function UsersShell() {
     return map;
   }, [mosques]);
 
-  const totalPages = Math.max(1, Math.ceil((totalCount || 0) / PAGE_SIZE));
+  const activeFilters = useMemo(() => {
+    const filters: { key: string; label: string; value: string }[] = [];
+    if (search.trim()) {
+      filters.push({ key: 'search', label: 'Search', value: search.trim() });
+    }
+    if (roleFilter !== 'all') {
+      filters.push({ key: 'role', label: 'Role', value: roleFilter.replace('_', ' ') });
+    }
+    return filters;
+  }, [roleFilter, search]);
 
-  const setRole = async (userId: string, role: UserRow['role']) => {
+  const visibleAssignmentCount = useMemo(
+    () =>
+      users.reduce(
+        (count, user) =>
+          count + (adminAssignments[user.id] ?? []).length + (muezzinAssignments[user.id] ?? []).length,
+        0
+      ),
+    [adminAssignments, muezzinAssignments, users]
+  );
+
+  const totalPages = Math.max(1, Math.ceil((totalCount || 0) / PAGE_SIZE));
+  const canPrev = page > 0;
+  const canNext = page + 1 < totalPages;
+  const rowStart = totalCount ? page * PAGE_SIZE + 1 : 0;
+  const rowEnd = Math.min(totalCount, (page + 1) * PAGE_SIZE);
+
+  const handleSearch = (term: string) => {
+    const next = term.trim();
+    setPage(0);
+    setSearch(next);
+    router.replace((next ? `/admin/users?search=${encodeURIComponent(next)}` : '/admin/users') as any);
+  };
+
+  const clearFilter = (key: string) => {
+    if (key === 'search') {
+      handleSearch('');
+      return;
+    }
+    if (key === 'role') {
+      setRoleFilter('all');
+      setPage(0);
+    }
+  };
+
+  const clearAllFilters = () => {
+    setRoleFilter('all');
+    setPage(0);
+    if (search) {
+      handleSearch('');
+      return;
+    }
+    setSearch('');
+  };
+
+  const setRole = async (userId: string, role: UserRole) => {
     const prev = users.find((u) => u.id === userId)?.role;
+    const hasAssignments =
+      (adminAssignments[userId] ?? []).length > 0 || (muezzinAssignments[userId] ?? []).length > 0;
+    if (role === 'user' && hasAssignments) {
+      notifyError('Remove mosque assignments before demoting this user.');
+      return;
+    }
     const confirmText =
       role === 'user'
-        ? 'Demote this user to basic listener? Existing mosque assignments will NOT be removed.'
+        ? 'Demote this user to basic listener?'
         : `Change role to ${role}?`;
     const confirmed = typeof window !== 'undefined' ? window.confirm(confirmText) : true;
     if (!confirmed) return;
@@ -189,7 +291,7 @@ function UsersShell() {
       const { error } = await supabase.from('users').update({ role }).eq('id', userId);
       if (error) {
         console.error('set role error', error);
-        setErrorBanner('Action failed. Check console logs.');
+        notifyError('Role update failed.', 'Check console logs for the Supabase error details.');
       } else {
         console.log('[ADMIN_ACTION]', {
           action: 'set_user_role',
@@ -199,15 +301,21 @@ function UsersShell() {
           timestamp: new Date().toISOString(),
         });
         setUsers((prevList) => prevList.map((u) => (u.id === userId ? { ...u, role } : u)));
+        notifySuccess('User role updated.', `The selected account is now set to ${role}.`);
       }
     } catch (e) {
       console.error('set role exception', e);
-      setErrorBanner('Action failed. Check console logs.');
+      notifyError('Role update failed.', 'The request did not complete cleanly.');
     }
   };
 
   const assignLocalAdmin = async (userId: string, mosqueId: string | undefined) => {
     if (!mosqueId) return;
+    const currentRole = users.find((u) => u.id === userId)?.role;
+    if (currentRole !== 'local_admin' && currentRole !== 'main_admin') {
+      notifyError('Set this user to Local Admin before assigning mosque access.');
+      return;
+    }
     const already = (adminAssignments[userId] ?? []).includes(mosqueId);
     if (already) return;
     try {
@@ -215,10 +323,10 @@ function UsersShell() {
       if (error) {
         const msg = (error.message || '').toLowerCase();
         if (error.code === '23505' || msg.includes('duplicate')) {
-          setErrorBanner('Already assigned.');
+          notifyInfo('That user already has local-admin access to this mosque.');
         } else {
           console.error('assign local admin error', error);
-          setErrorBanner('Action failed. Check console logs.');
+          notifyError('Local-admin assignment failed.', 'Check console logs for the Supabase error details.');
         }
       } else {
         console.log('[ADMIN_ACTION]', {
@@ -232,10 +340,12 @@ function UsersShell() {
           next[userId] = [...(next[userId] ?? []), mosqueId];
           return next;
         });
+        setSelectedAdminMosque((prev) => ({ ...prev, [userId]: '' }));
+        notifySuccess('Local admin assigned.', 'The user now has access to the chosen mosque.');
       }
     } catch (e) {
       console.error('assign local admin exception', e);
-      setErrorBanner('Action failed. Check console logs.');
+      notifyError('Local-admin assignment failed.', 'The request did not complete cleanly.');
     }
   };
 
@@ -252,7 +362,7 @@ function UsersShell() {
         .eq('mosque_id', mosqueId);
       if (error) {
         console.error('remove local admin error', error);
-        setErrorBanner('Action failed. Check console logs.');
+        notifyError('Removing local-admin access failed.', 'Check console logs for the Supabase error details.');
       } else {
         console.log('[ADMIN_ACTION]', {
           action: 'remove_local_admin',
@@ -265,15 +375,21 @@ function UsersShell() {
           next[userId] = (next[userId] ?? []).filter((m) => m !== mosqueId);
           return next;
         });
+        notifySuccess('Local admin removed.', 'Mosque-scoped admin access has been removed.');
       }
     } catch (e) {
       console.error('remove local admin exception', e);
-      setErrorBanner('Action failed. Check console logs.');
+      notifyError('Removing local-admin access failed.', 'The request did not complete cleanly.');
     }
   };
 
   const assignMuezzin = async (userId: string, mosqueId: string | undefined) => {
     if (!mosqueId) return;
+    const currentRole = users.find((u) => u.id === userId)?.role;
+    if (currentRole !== 'muezzin') {
+      notifyError('Set this user to Muezzin before assigning mosque access.');
+      return;
+    }
     const already = (muezzinAssignments[userId] ?? []).includes(mosqueId);
     if (already) return;
     try {
@@ -283,10 +399,10 @@ function UsersShell() {
       if (error) {
         const msg = (error.message || '').toLowerCase();
         if (error.code === '23505' || msg.includes('duplicate')) {
-          setErrorBanner('Already assigned.');
+          notifyInfo('That user already has muezzin access to this mosque.');
         } else {
           console.error('assign muezzin error', error);
-          setErrorBanner('Action failed. Check console logs.');
+          notifyError('Muezzin assignment failed.', 'Check console logs for the Supabase error details.');
         }
       } else {
         console.log('[ADMIN_ACTION]', {
@@ -300,10 +416,12 @@ function UsersShell() {
           next[userId] = [...(next[userId] ?? []), mosqueId];
           return next;
         });
+        setSelectedMuezzinMosque((prev) => ({ ...prev, [userId]: '' }));
+        notifySuccess('Muezzin assigned.', 'The user now has muezzin access to the chosen mosque.');
       }
     } catch (e) {
       console.error('assign muezzin exception', e);
-      setErrorBanner('Action failed. Check console logs.');
+      notifyError('Muezzin assignment failed.', 'The request did not complete cleanly.');
     }
   };
 
@@ -320,7 +438,7 @@ function UsersShell() {
         .eq('mosque_id', mosqueId);
       if (error) {
         console.error('remove muezzin error', error);
-        setErrorBanner('Action failed. Check console logs.');
+        notifyError('Removing muezzin access failed.', 'Check console logs for the Supabase error details.');
       } else {
         console.log('[ADMIN_ACTION]', {
           action: 'remove_muezzin',
@@ -333,184 +451,281 @@ function UsersShell() {
           next[userId] = (next[userId] ?? []).filter((m) => m !== mosqueId);
           return next;
         });
+        notifySuccess('Muezzin removed.', 'Mosque-scoped muezzin access has been removed.');
       }
     } catch (e) {
       console.error('remove muezzin exception', e);
-      setErrorBanner('Action failed. Check console logs.');
+      notifyError('Removing muezzin access failed.', 'The request did not complete cleanly.');
     }
   };
 
-  const canPrev = page > 0;
-  const canNext = page + 1 < totalPages;
+  const commandActions = [
+    {
+      key: 'users-clear-filters',
+      label: 'Clear user filters',
+      description: 'Reset the current search and role focus.',
+      keywords: ['reset', 'filters', 'users'],
+      onSelect: clearAllFilters,
+    },
+    {
+      key: 'users-filter-local-admins',
+      label: 'Show local admins',
+      description: 'Filter the access matrix to local-admin accounts.',
+      keywords: ['local admin', 'filter'],
+      onSelect: () => {
+        setRoleFilter('local_admin');
+        setPage(0);
+      },
+    },
+    {
+      key: 'users-filter-muezzins',
+      label: 'Show muezzins',
+      description: 'Filter the access matrix to muezzin-role accounts.',
+      keywords: ['muezzin', 'filter'],
+      onSelect: () => {
+        setRoleFilter('muezzin');
+        setPage(0);
+      },
+    },
+  ];
 
   return (
-    <div style={styles.layout}>
-      <AdminSidebar />
-      <main style={styles.main}>
-        <AdminTopBar mosques={mosqueOptions} />
-        <div style={styles.content}>
+    <AdminShell
+      title="User access and role control"
+      eyebrow="Identity & Permissions"
+      description="Review role posture, manage mosque assignments, and resolve access mismatches before they create operational drift."
+      mosques={mosqueOptions}
+      onSearch={handleSearch}
+      commandActions={commandActions}
+      notices={
+        <>
           {errorBanner ? <div style={styles.errorBanner}>{errorBanner}</div> : null}
+          {search ? <div style={styles.searchMeta}>Filtering users by &quot;{search}&quot;</div> : null}
+        </>
+      }
+    >
+      <div style={styles.metricGrid}>
+        <AdminMetricCard label="Visible users" value={users.length} detail="Rows currently loaded in this view" />
+        <AdminMetricCard label="Total accounts" value={totalCount} detail="All user records matching the current filter" />
+        <AdminMetricCard
+          label="Assignments in view"
+          value={visibleAssignmentCount}
+          detail="Combined local-admin and muezzin mosque assignments in the current result set"
+        />
+      </div>
 
-          <h1 style={styles.pageTitle}>Users</h1>
-
-          <div style={styles.tableCard}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Email</th>
-                  <th style={styles.th}>Role</th>
-                  <th style={styles.th}>Local Admin Of</th>
-                  <th style={styles.th}>Muezzin Of</th>
-                  <th style={styles.th}>Created</th>
-                  <th style={styles.th}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => {
-                  const adminMosques = adminAssignments[u.id] ?? [];
-                  const muezzinMosques = muezzinAssignments[u.id] ?? [];
-                  return (
-                    <tr key={u.id}>
-                      <td style={styles.td}>{u.email ?? '—'}</td>
-                      <td style={styles.td}>{renderRoleBadge(u.role)}</td>
-                      <td style={styles.td}>
-                        <div style={styles.pillRow}>
-                          {adminMosques.map((mid) => (
-                            <span key={mid} style={styles.pill}>
-                              {mosqueNameMap[mid] ?? mid}
-                              <button
-                                style={styles.pillRemove}
-                                onClick={() => removeLocalAdmin(u.id, mid)}
-                                aria-label="Remove local admin assignment"
-                                disabled={loading}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                          <div style={styles.assignRow}>
-                            <select
-                              value={selectedAdminMosque[u.id] ?? ''}
-                              onChange={(e) =>
-                                setSelectedAdminMosque((prev) => ({ ...prev, [u.id]: e.target.value }))
-                              }
-                              style={styles.select}
-                            >
-                              <option value="">Select mosque</option>
-                              {mosques.map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              style={styles.assignButton}
-                              onClick={() => assignLocalAdmin(u.id, selectedAdminMosque[u.id])}
-                              disabled={!selectedAdminMosque[u.id] || loading}
-                            >
-                              Assign
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={styles.td}>
-                        <div style={styles.pillRow}>
-                          {muezzinMosques.map((mid) => (
-                            <span key={mid} style={styles.pillGreen}>
-                              {mosqueNameMap[mid] ?? mid}
-                              <button
-                                style={styles.pillRemove}
-                                onClick={() => removeMuezzin(u.id, mid)}
-                                aria-label="Remove muezzin assignment"
-                                disabled={loading}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                          <div style={styles.assignRow}>
-                            <select
-                              value={selectedMuezzinMosque[u.id] ?? ''}
-                              onChange={(e) =>
-                                setSelectedMuezzinMosque((prev) => ({ ...prev, [u.id]: e.target.value }))
-                              }
-                              style={styles.select}
-                            >
-                              <option value="">Select mosque</option>
-                              {mosques.map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              style={styles.assignButton}
-                              onClick={() => assignMuezzin(u.id, selectedMuezzinMosque[u.id])}
-                              disabled={!selectedMuezzinMosque[u.id] || loading}
-                            >
-                              Assign
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={styles.td}>{u.created_at ? new Date(u.created_at).toLocaleString() : '—'}</td>
-                      <td style={styles.td}>
-                        <div style={styles.actionRow}>
-                          <button
-                            style={styles.actionButton}
-                            onClick={() => setRole(u.id, 'local_admin')}
-                            disabled={u.role === 'local_admin' || loading}
-                          >
-                            Promote to Local Admin
-                          </button>
-                          <button
-                            style={styles.actionButton}
-                            onClick={() => setRole(u.id, 'muezzin')}
-                            disabled={u.role === 'muezzin' || loading}
-                          >
-                            Promote to Muezzin
-                          </button>
-                          <button
-                            style={styles.actionButtonSecondary}
-                            onClick={() => setRole(u.id, 'user')}
-                            disabled={u.role === 'user' || loading}
-                          >
-                            Demote to User
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {!users.length && (
-                  <tr>
-                    <td style={styles.td} colSpan={6}>
-                      {loading ? 'Loading…' : 'No users found.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+      <AdminPanel
+        title="Access matrix"
+        subtitle="Filter the operator list, validate role posture, then apply mosque-scoped access only where it is explicitly intended."
+      >
+        <div style={styles.toolbar}>
+          <div style={styles.filterControl}>
+            <label style={styles.filterLabel}>Role focus</label>
+            <select
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value as 'all' | UserRole);
+                setPage(0);
+              }}
+              style={styles.select}
+            >
+              <option value="all">All roles</option>
+              <option value="user">User</option>
+              <option value="local_admin">Local Admin</option>
+              <option value="main_admin">Main Admin</option>
+              <option value="muezzin">Muezzin</option>
+            </select>
           </div>
-
-          <div style={styles.pagination}>
-            <button style={styles.pageButton} onClick={() => canPrev && setPage((p) => p - 1)} disabled={!canPrev || loading}>
-              Previous
-            </button>
-            <span style={styles.pageInfo}>
-              Page {page + 1} of {totalPages}
-            </span>
-            <button style={styles.pageButton} onClick={() => canNext && setPage((p) => p + 1)} disabled={!canNext || loading}>
-              Next
-            </button>
+          <div style={styles.toolbarCopy}>
+            Search from the command bar above, then use this table to handle assignments and role cleanup with less scanning.
           </div>
         </div>
-      </main>
-    </div>
+
+        <AdminFilterPills items={activeFilters} onClear={clearFilter} onClearAll={clearAllFilters} />
+
+        <AdminDataTable
+          columns={USER_TABLE_COLUMNS}
+          loading={loading}
+          emptyMessage="No users match the current view."
+          rowCount={users.length}
+          footer={
+            <div style={styles.tableFooter}>
+              <div style={styles.pageInfo}>
+                {rowStart && rowEnd ? `Showing ${rowStart}-${rowEnd} of ${totalCount}` : 'No users to display'}
+              </div>
+              <div style={styles.footerActions}>
+                <button
+                  style={styles.pageButton}
+                  onClick={() => canPrev && setPage((p) => p - 1)}
+                  disabled={!canPrev || loading}
+                >
+                  Previous
+                </button>
+                <span style={styles.pageInfo}>
+                  Page {page + 1} of {totalPages}
+                </span>
+                <button
+                  style={styles.pageButton}
+                  onClick={() => canNext && setPage((p) => p + 1)}
+                  disabled={!canNext || loading}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          }
+        >
+          {users.map((u) => {
+            const adminMosques = adminAssignments[u.id] ?? [];
+            const muezzinMosques = muezzinAssignments[u.id] ?? [];
+            const availableAdminMosques = mosques.filter((m) => !adminMosques.includes(m.id));
+            const availableMuezzinMosques = mosques.filter((m) => !muezzinMosques.includes(m.id));
+
+            return (
+              <tr key={u.id}>
+                <td style={styles.td}>
+                  <div style={styles.emailCell}>
+                    <div style={styles.primaryText}>{u.email ?? '-'}</div>
+                    <div style={styles.secondaryText}>User ID: {u.id.slice(0, 8)}</div>
+                  </div>
+                </td>
+                <td style={styles.td}>{renderRoleBadge(u.role)}</td>
+                <td style={styles.td}>
+                  <div style={styles.assignmentStack}>
+                    <div style={styles.pillRow}>
+                      {adminMosques.length ? (
+                        adminMosques.map((mid) => (
+                          <span key={mid} style={styles.pill}>
+                            {mosqueNameMap[mid] ?? mid}
+                            <button
+                              type="button"
+                              style={styles.pillRemove}
+                              onClick={() => removeLocalAdmin(u.id, mid)}
+                              aria-label="Remove local admin assignment"
+                              disabled={loading}
+                            >
+                              x
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span style={styles.emptyText}>No local-admin assignments</span>
+                      )}
+                    </div>
+                    <div style={styles.assignRow}>
+                      <select
+                        value={selectedAdminMosque[u.id] ?? ''}
+                        onChange={(e) =>
+                          setSelectedAdminMosque((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        }
+                        style={styles.select}
+                      >
+                        <option value="">Select mosque</option>
+                        {availableAdminMosques.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        style={styles.assignButton}
+                        onClick={() => assignLocalAdmin(u.id, selectedAdminMosque[u.id])}
+                        disabled={
+                          !selectedAdminMosque[u.id] ||
+                          loading ||
+                          (u.role !== 'local_admin' && u.role !== 'main_admin')
+                        }
+                      >
+                        Assign
+                      </button>
+                    </div>
+                  </div>
+                </td>
+                <td style={styles.td}>
+                  <div style={styles.assignmentStack}>
+                    <div style={styles.pillRow}>
+                      {muezzinMosques.length ? (
+                        muezzinMosques.map((mid) => (
+                          <span key={mid} style={styles.pillGreen}>
+                            {mosqueNameMap[mid] ?? mid}
+                            <button
+                              type="button"
+                              style={styles.pillRemove}
+                              onClick={() => removeMuezzin(u.id, mid)}
+                              aria-label="Remove muezzin assignment"
+                              disabled={loading}
+                            >
+                              x
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span style={styles.emptyText}>No muezzin assignments</span>
+                      )}
+                    </div>
+                    <div style={styles.assignRow}>
+                      <select
+                        value={selectedMuezzinMosque[u.id] ?? ''}
+                        onChange={(e) =>
+                          setSelectedMuezzinMosque((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        }
+                        style={styles.select}
+                      >
+                        <option value="">Select mosque</option>
+                        {availableMuezzinMosques.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        style={styles.assignButton}
+                        onClick={() => assignMuezzin(u.id, selectedMuezzinMosque[u.id])}
+                        disabled={!selectedMuezzinMosque[u.id] || loading || u.role !== 'muezzin'}
+                      >
+                        Assign
+                      </button>
+                    </div>
+                  </div>
+                </td>
+                <td style={styles.td}>
+                  {u.created_at ? new Date(u.created_at).toLocaleString() : '-'}
+                </td>
+                <td style={styles.td}>
+                  <div style={styles.actionRow}>
+                    <button
+                      style={styles.actionButton}
+                      onClick={() => setRole(u.id, 'local_admin')}
+                      disabled={u.role === 'local_admin' || loading}
+                    >
+                      Make local admin
+                    </button>
+                    <button
+                      style={styles.actionButton}
+                      onClick={() => setRole(u.id, 'muezzin')}
+                      disabled={u.role === 'muezzin' || loading}
+                    >
+                      Make muezzin
+                    </button>
+                    <button
+                      style={styles.actionButtonSecondary}
+                      onClick={() => setRole(u.id, 'user')}
+                      disabled={u.role === 'user' || loading}
+                    >
+                      Demote
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </AdminDataTable>
+      </AdminPanel>
+    </AdminShell>
   );
 }
 
-function renderRoleBadge(role: UserRow['role']) {
+function renderRoleBadge(role: UserRole) {
   const style: React.CSSProperties = {
     display: 'inline-block',
     padding: '4px 8px',
@@ -532,22 +747,10 @@ function renderRoleBadge(role: UserRow['role']) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  layout: {
-    display: 'flex',
-    minHeight: '100vh',
-    backgroundColor: '#f8fafc',
-  },
-  main: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    minHeight: '100vh',
-  },
-  content: {
-    padding: '20px',
-    maxWidth: 1440,
-    width: '100%',
-    margin: '0 auto',
+  metricGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: 14,
   },
   errorBanner: {
     padding: '10px 12px',
@@ -558,35 +761,64 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     marginBottom: 12,
   },
-  pageTitle: {
-    fontSize: 26,
-    fontWeight: 800,
-    color: '#0f172a',
+  searchMeta: {
     marginBottom: 12,
-  },
-  tableCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    border: '1px solid #e2e8f0',
-    overflow: 'hidden',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-  },
-  th: {
-    textAlign: 'left',
-    padding: '10px 12px',
-    fontSize: 12,
+    fontSize: 13,
     color: '#475569',
-    borderBottom: '1px solid #e2e8f0',
+    fontWeight: 600,
+  },
+  toolbar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 12,
+    alignItems: 'flex-end',
+  },
+  filterControl: {
+    minWidth: 220,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: 800,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    color: '#475569',
+  },
+  toolbarCopy: {
+    flex: 1,
+    minWidth: 260,
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: '#475569',
+    fontWeight: 600,
   },
   td: {
-    padding: '10px 12px',
+    padding: '16px',
     fontSize: 14,
     color: '#0f172a',
     borderBottom: '1px solid #f1f5f9',
     verticalAlign: 'top',
+  },
+  emailCell: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  primaryText: {
+    fontWeight: 800,
+    color: '#0f172a',
+  },
+  secondaryText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: 600,
+  },
+  assignmentStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
   },
   pillRow: {
     display: 'flex',
@@ -619,9 +851,15 @@ const styles: Record<string, React.CSSProperties> = {
   pillRemove: {
     border: 'none',
     background: 'transparent',
-    color: '#0f172a',
+    color: 'inherit',
     fontWeight: 800,
     cursor: 'pointer',
+    padding: 0,
+  },
+  emptyText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: 700,
   },
   assignRow: {
     display: 'flex',
@@ -629,6 +867,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
   },
   select: {
+    minWidth: 170,
     padding: '8px 10px',
     borderRadius: 8,
     border: '1px solid #cbd5e1',
@@ -648,6 +887,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 8,
     flexWrap: 'wrap',
+    minWidth: 180,
   },
   actionButton: {
     padding: '8px 10px',
@@ -667,11 +907,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: 'pointer',
   },
-  pagination: {
-    marginTop: 14,
+  tableFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  footerActions: {
     display: 'flex',
     alignItems: 'center',
     gap: 12,
+    flexWrap: 'wrap',
   },
   pageButton: {
     padding: '8px 12px',
@@ -687,4 +934,3 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
 };
-

@@ -4,7 +4,8 @@ import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, SafeAreaView, StyleSheet, Text, View, Animated, Easing, ScrollView } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, Animated, Easing, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import AppLogo from '../../components/AppLogo';
@@ -61,9 +62,9 @@ export default function NowScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const [sliderWidth, setSliderWidth] = useState(1);
   const playScale = useRef(new Animated.Value(1)).current;
-  const liveInfo = useLiveStreamForMosque(current?.mosque_id);
 
   const current = useMemo(() => streams.find((s) => s.id === activeId) ?? streams[0] ?? null, [streams, activeId]);
+  const liveInfo = useLiveStreamForMosque(current?.mosque_id);
   const followedList = useMemo(() => streams.filter((s) => followedIds.has(s.mosque_id)).slice(0, 3), [streams, followedIds]);
 
   const load = useCallback(async () => {

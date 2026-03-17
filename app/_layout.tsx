@@ -24,7 +24,7 @@ function RootNavigator() {
   const { session, loading } = useAuth();
   const roles = useRoleFlags();
   const router = useRouter();
-  const segments = useSegments();
+  const segments = useSegments() as string[];
   const navigationState = useRootNavigationState();
 
   const inAuthGroup = segments[0] === '(auth)';
@@ -40,7 +40,7 @@ function RootNavigator() {
 
     const currentRoot = `/${segments[0] ?? ''}`;
     if (!session) {
-      if (!inAuthGroup) router.replace('/sign-in');
+      if (!inAuthGroup) router.replace('/sign-in' as any);
       return;
     }
 
@@ -49,7 +49,7 @@ function RootNavigator() {
 
     // Always prioritize muezzin stack if muezzin flag is true, regardless of admin role.
     if (currentRoot !== targetStack) {
-      router.replace(targetStack);
+      router.replace(targetStack as any);
     }
   }, [session, loading, roles.loading, targetStack, inAuthGroup, inRecoveryFlow, navigationState?.key, router, segments]);
 

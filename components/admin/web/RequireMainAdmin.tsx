@@ -57,7 +57,7 @@ export function RequireMainAdmin({ children, redirectTo }: Props) {
   useEffect(() => {
     if (loading) return;
     if (!isMainAdmin && redirectTo) {
-      router.replace(redirectTo);
+      router.replace(redirectTo as any);
     }
   }, [loading, isMainAdmin, redirectTo, router]);
 
@@ -75,12 +75,6 @@ export function RequireMainAdmin({ children, redirectTo }: Props) {
   }
 
   return <>{children}</>;
-}
-
-// Expo Router treats files under app/ as routes; provide a default
-// export to satisfy the router while keeping the named export for imports.
-export default function RequireMainAdminRouteShim() {
-  return null;
 }
 
 const styles: Record<string, React.CSSProperties> = {

@@ -16,6 +16,35 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
     }
     const userId = authData.user.id;
 
+    const { data: userRow, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle<{ role?: string | null }>();
+
+    if (!userError && userRow?.role === 'main_admin') {
+      const { data: mosquesData, error: mosquesError } = await supabase
+        .from('mosques')
+        .select('id, name, city, country')
+        .order('name', { ascending: true })
+        .limit(500);
+
+      console.log('[adminMosques] main admin mosqueRows', mosquesData, mosquesError);
+
+      if (mosquesError || !mosquesData) {
+        return { mosques: [], error: mosquesError?.message ?? null };
+      }
+
+      const mosques = mosquesData.map((m: any) => ({
+        mosqueId: m.id,
+        name: m.name ?? 'Mosque',
+        city: m.city ?? null,
+        country: m.country ?? null,
+      }));
+
+      return { mosques, error: null };
+    }
+
     // Step 1: fetch mosque_admins rows for this user (no role filter)
     const { data: adminRows, error: adminError } = await supabase
       .from('mosque_admins')

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
-/* Basic card wrapper */
 export const Card: React.FC<{ style?: React.CSSProperties; children: React.ReactNode }> = ({
   style,
   children,
@@ -48,7 +47,7 @@ export const Button: React.FC<
 };
 
 export const Pill: React.FC<{ status?: string | null }> = ({ status }) => {
-  const s = status ?? '—';
+  const s = status ?? '-';
   const colors =
     s === 'active'
       ? { bg: '#dcfce7', fg: '#166534' }

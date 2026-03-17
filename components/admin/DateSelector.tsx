@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { AppText } from '@/components/ui/app-text';
+import { tokens } from '@/theme/tokens';
 
 type Props = {
   date: Date;
   onChange: (d: Date) => void;
 };
 
-// Defensive date handling to avoid blank pickers.
 function normalizeDate(d?: Date | null) {
   if (!d) return new Date();
   const copy = new Date(d);
@@ -65,19 +66,40 @@ export function DateSelector({ date, onChange }: Props) {
 
   return (
     <View style={styles.container}>
-      <Pressable onPress={() => adjust(-1)} style={({ pressed }) => [styles.arrow, pressed && styles.pressed]}>
-        <Text style={styles.arrowText}>{'<'}</Text>
-      </Pressable>
       <View style={styles.dateWrap}>
-        <Text style={styles.dateText}>{formatted}</Text>
+        <AppText variant="caption" style={styles.dateLabel}>
+          Current date
+        </AppText>
+        <AppText variant="body" style={styles.dateText}>
+          {formatted}
+        </AppText>
       </View>
-      <Pressable onPress={() => adjust(1)} style={({ pressed }) => [styles.arrow, pressed && styles.pressed]}>
-        <Text style={styles.arrowText}>{'>'}</Text>
-      </Pressable>
-      <Pressable onPress={openPicker} style={({ pressed }) => [styles.calendarBtn, pressed && styles.pressed]}>
-        <Text style={styles.calendarText}>Pick</Text>
-      </Pressable>
-      {showPicker ? (
+      <View style={styles.controlsRow}>
+        <Pressable onPress={() => adjust(-1)} style={({ pressed }) => [styles.arrow, pressed && styles.pressed]}>
+          <AppText variant="title" style={styles.arrowText}>
+            {'<'}
+          </AppText>
+        </Pressable>
+        <Pressable onPress={openPicker} style={({ pressed }) => [styles.calendarBtn, pressed && styles.pressed]}>
+          <AppText variant="caption" style={styles.calendarText}>
+            Pick Date
+          </AppText>
+        </Pressable>
+        <Pressable onPress={() => adjust(1)} style={({ pressed }) => [styles.arrow, pressed && styles.pressed]}>
+          <AppText variant="title" style={styles.arrowText}>
+            {'>'}
+          </AppText>
+        </Pressable>
+      </View>
+      {showPicker && Platform.OS === 'android' ? (
+        <DateTimePicker
+          value={normalizeDate(tempDate ?? safeDate)}
+          onChange={handlePickerChange}
+          mode="date"
+          display="default"
+        />
+      ) : null}
+      {showPicker && Platform.OS === 'ios' ? (
         <Modal transparent animationType="fade" visible onRequestClose={handleCancel}>
           <Pressable style={styles.backdrop} onPress={handleCancel} />
           <View style={styles.pickerWrap}>
@@ -85,18 +107,24 @@ export function DateSelector({ date, onChange }: Props) {
               value={normalizeDate(tempDate ?? safeDate)}
               onChange={handlePickerChange}
               mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              display="spinner"
+              textColor="#0F172A"
+              themeVariant="light"
+              accentColor="#0EA5E9"
+              style={styles.iosPicker}
             />
-            {Platform.OS === 'ios' ? (
-              <View style={styles.actions}>
-                <Pressable onPress={handleCancel} style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}>
-                  <Text style={styles.actionText}>Cancel</Text>
-                </Pressable>
-                <Pressable onPress={handleConfirm} style={({ pressed }) => [styles.actionBtnPrimary, pressed && styles.pressed]}>
-                  <Text style={[styles.actionText, styles.actionTextPrimary]}>Done</Text>
-                </Pressable>
-              </View>
-            ) : null}
+            <View style={styles.actions}>
+              <Pressable onPress={handleCancel} style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}>
+                <AppText variant="body" style={styles.actionText}>
+                  Cancel
+                </AppText>
+              </Pressable>
+              <Pressable onPress={handleConfirm} style={({ pressed }) => [styles.actionBtnPrimary, pressed && styles.pressed]}>
+                <AppText variant="body" style={[styles.actionText, styles.actionTextPrimary]}>
+                  Done
+                </AppText>
+              </Pressable>
+            </View>
           </View>
         </Modal>
       ) : null}
@@ -106,62 +134,111 @@ export function DateSelector({ date, onChange }: Props) {
 
 const styles = StyleSheet.create({
   container: {
+    gap: tokens.spacing.xs,
+  },
+  controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: tokens.spacing.xs,
   },
   arrow: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#E2E8F0',
-  },
-  arrowText: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
-  dateWrap: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    flex: 0.8,
+    minHeight: 44,
+    borderRadius: tokens.radius.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  dateText: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
+  arrowText: {
+    lineHeight: 22,
+  },
+  dateWrap: {
+    minHeight: 68,
+    paddingVertical: 12,
+    paddingHorizontal: tokens.spacing.md,
+    borderRadius: tokens.radius.lg,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  dateLabel: {
+    color: tokens.color.text.secondary,
+  },
+  dateText: {
+    fontSize: 17,
+    lineHeight: 20,
+    fontWeight: tokens.typography.weight.bold,
+  },
   calendarBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#E2E8F0',
+    flex: 2.2,
+    minHeight: 44,
+    paddingHorizontal: tokens.spacing.sm,
+    borderRadius: tokens.radius.md,
+    backgroundColor: tokens.color.bg.tintSoft,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  calendarText: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
-  pressed: { opacity: 0.8 },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
+  calendarText: {
+    color: '#075985',
+    fontWeight: tokens.typography.weight.extrabold,
+    fontSize: 13,
+    lineHeight: 15,
+    letterSpacing: 0.2,
+  },
+  pressed: {
+    opacity: 0.8,
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
   pickerWrap: {
     position: 'absolute',
     left: 20,
     right: 20,
     top: '30%',
-    padding: 12,
-    borderRadius: 12,
+    padding: tokens.spacing.md,
+    borderRadius: tokens.radius.lg,
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOpacity: 0.1,
     shadowRadius: 10,
   },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 10 },
+  iosPicker: {
+    height: 220,
+    alignSelf: 'stretch',
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: tokens.spacing.sm,
+    marginTop: 10,
+  },
   actionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.xs,
+    borderRadius: tokens.radius.md,
     backgroundColor: '#E2E8F0',
   },
   actionBtnPrimary: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.xs,
+    borderRadius: tokens.radius.md,
     backgroundColor: '#0EA5E9',
   },
-  actionText: { fontWeight: '700', color: '#0F172A' },
-  actionTextPrimary: { color: '#FFFFFF' },
+  actionText: {
+    fontWeight: tokens.typography.weight.bold,
+    color: '#0F172A',
+  },
+  actionTextPrimary: {
+    color: '#FFFFFF',
+  },
 });
 
 export default DateSelector;

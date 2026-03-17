@@ -1,7 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, StyleSheet, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { AdminScreenShell } from '@/components/admin/AdminScreenShell';
+import { AdminBanner } from '@/components/admin/AdminBanner';
 import DateSelector from '@/components/admin/DateSelector';
+import { AppCard } from '@/components/ui/app-card';
+import { AppText } from '@/components/ui/app-text';
+import { AppButton } from '@/components/ui/app-button';
+import { tokens } from '@/theme/tokens';
 import { useRoleFlags } from '@/lib/roles';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { getPrayerTimesByDate } from '@/lib/api/admin/prayerTimes';
@@ -15,6 +21,7 @@ import {
 import { normalizePrayerTimes, NormalizedPrayerTimes } from '@/lib/api/prayerTimesUnified';
 import { PrayerName } from '@/lib/adhans';
 import { supabase } from '@/lib/supabase';
+import { persistentStorage } from '@/lib/persistentStorage';
 
 const prayers: Array<{ key: PrayerName; label: string }> = [
   { key: 'fajr', label: 'Fajr' },
@@ -24,25 +31,8 @@ const prayers: Array<{ key: PrayerName; label: string }> = [
   { key: 'isha', label: 'Isha' },
 ];
 
-// Simple in-memory cache to preserve selections across tab navigations.
 const rotaCache: Record<string, StaffRotaForDay> = {};
 const storageCache: Record<string, StaffRotaForDay> = {};
-
-const safeStorage = (() => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@react-native-async-storage/async-storage');
-    return (mod.default ?? mod) as {
-      getItem: (key: string) => Promise<string | null>;
-      setItem: (key: string, value: string) => Promise<void>;
-    };
-  } catch {
-    return {
-      getItem: async () => null,
-      setItem: async () => {},
-    };
-  }
-})();
 
 export default function StaffRotaScreen() {
   const router = useRouter();
@@ -55,6 +45,7 @@ export default function StaffRotaScreen() {
   const [prayerTimes, setPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pickerPrayer, setPickerPrayer] = useState<PrayerName | null>(null);
@@ -66,12 +57,11 @@ export default function StaffRotaScreen() {
   const cacheKey = selectedMosque ? `${selectedMosque.mosqueId}:${dateIso}` : null;
   const lastDateKey = 'staff_rota:last_selected_date';
 
-  // Load last selected date (persisted) on mount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const raw = await safeStorage.getItem(lastDateKey);
+        const raw = await persistentStorage.getItem(lastDateKey);
         if (cancelled || !raw) return;
         const parsed = new Date(raw);
         if (!isNaN(parsed.getTime())) {
@@ -86,28 +76,27 @@ export default function StaffRotaScreen() {
     };
   }, []);
 
-  const setCachedRota = React.useCallback(
+  const setCachedRota = useCallback(
     (rotaVal: StaffRotaForDay | null) => {
       if (!cacheKey || !rotaVal) return;
       rotaCache[cacheKey] = rotaVal;
       storageCache[cacheKey] = rotaVal;
-      safeStorage.setItem(`staff_rota_cache:${cacheKey}`, JSON.stringify(rotaVal)).catch(() => {});
+      persistentStorage.setItem(`staff_rota_cache:${cacheKey}`, JSON.stringify(rotaVal)).catch(() => {});
     },
     [cacheKey]
   );
 
-  const getCachedRota = React.useCallback((): StaffRotaForDay | null => {
+  const getCachedRota = useCallback((): StaffRotaForDay | null => {
     if (!cacheKey) return null;
     if (rotaCache[cacheKey]) return rotaCache[cacheKey];
     if (storageCache[cacheKey]) return storageCache[cacheKey];
     return null;
   }, [cacheKey]);
 
-  // Load persisted cache on key change
   useEffect(() => {
     let cancelled = false;
     if (!cacheKey) return;
-    safeStorage
+    persistentStorage
       .getItem(`staff_rota_cache:${cacheKey}`)
       .then((raw) => {
         if (cancelled || !raw) return;
@@ -121,7 +110,7 @@ export default function StaffRotaScreen() {
     };
   }, [cacheKey]);
 
-  const loadData = React.useCallback(async () => {
+  const loadData = useCallback(async () => {
     if (!selectedMosque) {
       return;
     }
@@ -138,7 +127,6 @@ export default function StaffRotaScreen() {
         getStaffRotaForDate(selectedMosque.mosqueId, selectedDate),
         getMuezzinsForMosque(selectedMosque.mosqueId),
       ]);
-      console.log('[StaffRota] load', { mosqueId: selectedMosque.mosqueId, dateIso, rotaCount: Object.keys(rotaMap ?? {}).length });
       const normalizedTimes = normalizePrayerTimes(timesRow as any);
       setPrayerTimes(normalizedTimes);
       setMuezzins(muezzinList);
@@ -150,19 +138,19 @@ export default function StaffRotaScreen() {
       if (!hasServerRows && cached) {
         setRota(cached);
         setCachedRota(cached);
-        setNotice('Showing cached assignments (no server rows returned). Please verify admin access for staff rota.');
+        setNotice('Showing cached assignments because no server rows were returned.');
       } else {
         setRota(merged);
         setCachedRota(merged);
         if (!hasServerRows) {
-          setNotice('No assignments returned from server. If you expect data, check staff_rota RLS for your admin user.');
+          setNotice('No assignments returned from the server for this date yet.');
         }
       }
       if (!timesRow) {
         setError('Please create prayer times for this date before assigning staff.');
       }
       if ((muezzinList ?? []).length === 0) {
-        setError((prev) => prev ?? 'No active muezzins found. If you expect options, please ensure admin access to the muezzins table.');
+        setError((prev) => prev ?? 'No active muezzins found for this mosque.');
       }
     } catch (e: any) {
       console.warn('load staff rota', e?.message ?? e);
@@ -172,10 +160,19 @@ export default function StaffRotaScreen() {
     } finally {
       setLoadingData(false);
     }
-  }, [selectedMosque?.mosqueId, selectedDate, dateIso]);
+  }, [selectedMosque, dateIso, selectedDate, getCachedRota, setCachedRota]);
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadData]);
 
   const handleSelectMuezzin = (prayer: PrayerName, userId: string) => {
@@ -225,20 +222,14 @@ export default function StaffRotaScreen() {
         setError('Unable to verify your account. Please re-login.');
         return;
       }
-      console.log('[StaffRota] save', {
-        mosqueId: selectedMosque.mosqueId,
-        dateIso,
-        assignments: rota,
-        assignedBy,
-      });
       const result = await saveStaffRotaForDate(selectedMosque.mosqueId, selectedDate, rota, assignedBy);
       if (!result.success) {
         setError(result.error ?? 'Unable to save assignments.');
       } else {
-        const msg = `Saved staff rota for ${dateIso} (${selectedMosque.name}).`;
-        setNotice(msg);
+        setNotice(`Saved staff rota for ${dateIso} (${selectedMosque.name}).`);
         Alert.alert('Saved', 'Staff rota saved.');
         setCachedRota(rota);
+        await loadData();
       }
     } catch (e: any) {
       console.warn('save staff rota', e?.message ?? e);
@@ -252,7 +243,9 @@ export default function StaffRotaScreen() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />
-        <Text style={{ marginTop: 8 }}>Loading...</Text>
+        <AppText variant="body" style={styles.feedbackText}>
+          Loading...
+        </AppText>
       </View>
     );
   }
@@ -260,7 +253,7 @@ export default function StaffRotaScreen() {
   if (!isAdmin) {
     return (
       <View style={styles.centered}>
-        <Text>You do not have admin access.</Text>
+        <AppText variant="body">You do not have admin access.</AppText>
       </View>
     );
   }
@@ -270,35 +263,48 @@ export default function StaffRotaScreen() {
   const currentRota = rota ?? emptyRota(prayerTimes);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.heading}>Staff Rota</Text>
-      <Text style={styles.subheading}>Assign muezzins for the selected day</Text>
-      <AdminNavRow
-        active="rota"
-        onGoPrayerTimes={() => router.push('/(admin)/prayer-times')}
-        onGoStaffRota={() => router.push('/(admin)/staff-rota')}
-      />
-      <View style={{ marginTop: 12 }}>
+    <AdminScreenShell
+      title="Staff Rota"
+      subtitle="Assign the right muezzin to each prayer."
+      backHref="/(admin)"
+      backLabel="Back to Console"
+      activeTab="rota"
+      onGoPrayerTimes={() => router.push('/(admin)/prayer-times')}
+      onGoStaffRota={() => router.push('/(admin)/staff-rota')}
+      mosqueName={selectedMosque?.name ?? null}
+      mosqueMeta={selectedMosque ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') || 'Daily rota editor' : null}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tokens.color.status.info} />}
+    >
+      <AppCard style={styles.utilityCard}>
+        <View style={styles.utilityHeader}>
+          <AppText variant="caption" color={tokens.color.text.secondary}>
+            Assignment date
+          </AppText>
+          <AppText variant="title">Rota date</AppText>
+        </View>
         <DateSelector
           date={selectedDate}
           onChange={(d) => {
             setSelectedDate(d);
-            safeStorage.setItem(lastDateKey, d.toISOString()).catch(() => {});
+            persistentStorage.setItem(lastDateKey, d.toISOString()).catch(() => {});
           }}
         />
-      </View>
-      {selectedMosque ? <Text style={styles.mosqueLabel}>Mosque: {selectedMosque.name}</Text> : null}
+      </AppCard>
 
       {noAdminMosque ? (
-        <Text style={styles.infoText}>
-          No admin mosque found. You can only assign staff for mosques where you are a local admin.
-        </Text>
+        <AdminBanner
+          tone="warning"
+          title="No mosque access"
+          message="You can only assign staff for mosques where your account has local admin access."
+        />
       ) : null}
 
       {loadingData ? (
         <View style={styles.loader}>
           <ActivityIndicator />
-          <Text style={{ marginTop: 6 }}>Loading staff rota...</Text>
+          <AppText variant="body" style={styles.feedbackText}>
+            Loading staff rota...
+          </AppText>
         </View>
       ) : (
         prayers.map((p) => {
@@ -310,47 +316,59 @@ export default function StaffRotaScreen() {
               row.muezzinUserId
             : 'Select muezzin';
           return (
-            <View key={p.key} style={[styles.card, disableControls && styles.cardDisabled]}>
-              <Text style={styles.cardTitle}>{p.label}</Text>
-              <Text style={styles.timeLabel}>
-                Adhan {formatTimeOrDash(row?.adhanTime)} | Iqama {formatTimeOrDash(row?.iqamaTime)}
-              </Text>
+            <AppCard key={p.key} style={[styles.card, disableControls && styles.cardDisabled]}>
+              <View style={styles.cardHeader}>
+                <AppText variant="title">{p.label}</AppText>
+                <AppText variant="body" color={tokens.color.text.secondary} style={styles.timeLabel}>
+                  Adhan {formatTimeOrDash(row?.adhanTime)} | Iqama {formatTimeOrDash(row?.iqamaTime)}
+                </AppText>
+              </View>
               <Pressable
                 onPress={() => setPickerPrayer(p.key)}
                 disabled={disableControls}
-                style={({ pressed }) => [styles.selectBtn, pressed && !disableControls && { opacity: 0.9 }, disableControls && { opacity: 0.5 }]}
+                style={({ pressed }) => [styles.selectBtn, pressed && !disableControls && styles.pressed, disableControls && styles.cardDisabled]}
               >
-                <Text style={styles.selectText}>{selectedName}</Text>
+                <AppText variant="body" style={styles.selectText}>
+                  {selectedName}
+                </AppText>
               </Pressable>
               <TextInput
                 style={styles.notes}
                 placeholder="Notes (optional)"
+                placeholderTextColor={tokens.color.text.muted}
                 value={row?.notes ?? ''}
                 onChangeText={(t) => handleNotesChange(p.key, t)}
                 editable={!disableControls}
               />
-            </View>
+            </AppCard>
           );
         })
       )}
+
       {!hasPrayerTimes && !loadingData ? (
-        <Text style={styles.infoText}>Please create prayer times for this date before assigning staff.</Text>
+        <AdminBanner
+          tone="warning"
+          title="Prayer times required"
+          message="Create prayer times for this date first, then assign muezzins to each prayer."
+        />
       ) : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-        <Pressable
-          onPress={handleSave}
-          disabled={saving || disableControls || !rota}
-        style={({ pressed }) => [styles.saveBtn, pressed && !saving && !disableControls && { opacity: 0.9 }, (saving || disableControls || !rota) && { opacity: 0.5 }]}
-      >
-        <Text style={styles.saveText}>{saving ? 'Saving...' : 'Save Assignments'}</Text>
-      </Pressable>
+      {notice ? <AdminBanner tone="info" title="Staff rota" message={notice} /> : null}
+      {error ? <AdminBanner tone="danger" title="Unable to continue" message={error} /> : null}
+      <View style={styles.actionRow}>
+        <AppButton title={saving ? 'Saving...' : 'Save Assignments'} onPress={handleSave} disabled={saving || disableControls || !rota} />
+      </View>
 
       <Modal transparent visible={!!pickerPrayer} animationType="fade" onRequestClose={() => setPickerPrayer(null)}>
         <Pressable style={styles.backdrop} onPress={() => setPickerPrayer(null)} />
         <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Select muezzin</Text>
-          {muezzins.length === 0 ? <Text style={styles.infoText}>No active muezzins found.</Text> : null}
+          <AppText variant="title" style={styles.modalTitle}>
+            Select muezzin
+          </AppText>
+          {muezzins.length === 0 ? (
+            <AppText variant="body" color={tokens.color.text.secondary}>
+              No active muezzins found.
+            </AppText>
+          ) : null}
           {muezzins.map((m) => (
             <Pressable
               key={m.userId ?? m.user_id}
@@ -358,55 +376,22 @@ export default function StaffRotaScreen() {
                 if (pickerPrayer) handleSelectMuezzin(pickerPrayer, m.userId ?? m.user_id ?? '');
                 setPickerPrayer(null);
               }}
-              style={({ pressed }) => [styles.modalItem, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [styles.modalItem, pressed && styles.pressed]}
               disabled={!m.userId && !m.user_id}
             >
-              <Text style={styles.modalItemText}>{m.displayName ?? m.name ?? 'Muezzin'}</Text>
+              <AppText variant="body" style={styles.modalItemText}>
+                {m.displayName ?? m.name ?? 'Muezzin'}
+              </AppText>
             </Pressable>
           ))}
           <Pressable onPress={() => setPickerPrayer(null)} style={styles.modalClose}>
-            <Text style={styles.modalCloseText}>Cancel</Text>
+            <AppText variant="body" color={tokens.color.status.info} style={styles.modalCloseText}>
+              Cancel
+            </AppText>
           </Pressable>
         </View>
       </Modal>
-    </ScrollView>
-  );
-}
-
-function AdminNavRow({
-  active,
-  onGoPrayerTimes,
-  onGoStaffRota,
-}: {
-  active: 'prayerTimes' | 'rota';
-  onGoPrayerTimes: () => void;
-  onGoStaffRota: () => void;
-}) {
-  return (
-    <View style={styles.navRow}>
-      <Pressable
-        onPress={onGoPrayerTimes}
-        disabled={active === 'prayerTimes'}
-        style={({ pressed }) => [
-          styles.navPill,
-          active === 'prayerTimes' && styles.navPillActive,
-          pressed && { opacity: 0.9 },
-        ]}
-      >
-        <Text style={[styles.navText, active === 'prayerTimes' && styles.navTextActive]}>Prayer Times</Text>
-      </Pressable>
-      <Pressable
-        onPress={onGoStaffRota}
-        disabled={active === 'rota'}
-        style={({ pressed }) => [
-          styles.navPill,
-          active === 'rota' && styles.navPillActive,
-          pressed && { opacity: 0.9 },
-        ]}
-      >
-        <Text style={[styles.navText, active === 'rota' && styles.navTextActive]}>Staff Rota</Text>
-      </Pressable>
-    </View>
+    </AdminScreenShell>
   );
 }
 
@@ -464,68 +449,51 @@ async function buildNameMap(muezzins: MuezzinSummary[], rota: StaffRotaForDay | 
   const missing = rotaIds.filter((id) => !map[id]);
   if (missing.length) {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, display_name, email')
-        .in('id', missing);
+      const { data, error } = await supabase.from('profiles').select('id, full_name, display_name, email').in('id', missing);
       if (!error && data) {
         data.forEach((row: any) => {
           const label = row.display_name ?? row.full_name ?? row.email ?? row.id;
           map[row.id] = label;
         });
       }
-    } catch (e) {
-      // ignore lookup errors; fallback to ids
+    } catch {
+      // ignore lookup errors
     }
   }
   return map;
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12 },
-  heading: { fontSize: 22, fontWeight: '800', color: '#0F172A' },
-  subheading: { color: '#475569' },
-  mosqueLabel: { marginTop: 6, color: '#0F172A', fontWeight: '700' },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
+  pressed: { opacity: 0.9 },
+  feedbackText: { marginTop: 8 },
+  utilityCard: { gap: tokens.spacing.sm, padding: tokens.spacing.sm, borderRadius: 16 },
+  utilityHeader: { gap: 2 },
+  actionRow: { marginTop: tokens.spacing.xs },
   loader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center' },
-  card: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-    gap: 8,
-  },
+  card: { gap: tokens.spacing.xs, padding: tokens.spacing.sm, borderRadius: 16 },
   cardDisabled: { opacity: 0.6 },
-  cardTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
-  timeLabel: { color: '#475569' },
+  cardHeader: { gap: 4 },
+  timeLabel: { lineHeight: 18, fontSize: 14 },
   selectBtn: {
-    paddingVertical: 10,
+    minHeight: 44,
+    paddingVertical: 9,
     paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    borderRadius: tokens.radius.md,
+    backgroundColor: '#F5F9FC',
+    borderWidth: 1,
+    borderColor: '#E0E7EF',
+    justifyContent: 'center',
   },
-  selectText: { fontWeight: '700', color: '#0F172A' },
+  selectText: { fontWeight: tokens.typography.weight.extrabold, color: '#0F172A', fontSize: 15 },
   notes: {
-    marginTop: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
+    borderRadius: tokens.radius.md,
     padding: 10,
     backgroundColor: '#FFFFFF',
+    color: '#0F172A',
   },
-  error: { color: '#DC2626', marginTop: 8 },
-  notice: { color: '#0F172A', marginTop: 6, fontWeight: '700' },
-  infoText: { marginTop: 8, color: '#475569' },
-  saveBtn: {
-    marginTop: 18,
-    backgroundColor: '#0EA5E9',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  saveText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
   modalCard: {
     position: 'absolute',
@@ -540,23 +508,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 10,
   },
-  modalTitle: { fontWeight: '800', fontSize: 16, color: '#0F172A' },
-  modalItem: { paddingVertical: 10 },
-  modalItemText: { fontWeight: '700', color: '#0F172A' },
+  modalTitle: { fontSize: 18 },
+  modalItem: { paddingVertical: 8 },
+  modalItemText: { fontWeight: tokens.typography.weight.bold, color: '#0F172A' },
   modalClose: { marginTop: 8, alignSelf: 'flex-end' },
-  modalCloseText: { color: '#0EA5E9', fontWeight: '700' },
-  navRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  navPill: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-  },
-  navPillActive: { backgroundColor: '#E0F2FE', borderColor: '#0EA5E9' },
-  navText: { fontWeight: '700', color: '#0F172A' },
-  navTextActive: { color: '#0C4A6E' },
+  modalCloseText: { fontWeight: tokens.typography.weight.bold },
 });
-

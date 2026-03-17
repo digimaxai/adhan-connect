@@ -1,1 +1,1 @@
-export { default } from '../../screens/admin/manage-mosques';
+export { default } from '../../screens/shared/manage-mosques';

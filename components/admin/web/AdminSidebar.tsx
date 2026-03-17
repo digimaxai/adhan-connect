@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, usePathname } from 'expo-router';
-import { useAdminContext } from '../lib/adminContext';
+import { useAdminContext } from '../../../lib/admin-web/adminContext';
 
 type NavItem = {
   label: string;
@@ -15,32 +15,21 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href.endsWith('/') ? href : `${href}/`);
 }
 
-/**
- * AdminSidebar
- * - Shows global nav links in all modes
- * - Adds mosque-scoped links when a mosque is selected
- * - Highlights the active route based on pathname
- */
 export default function AdminSidebar() {
   const pathname = usePathname();
   const { isMosqueMode, selectedMosqueId } = useAdminContext();
 
   const globalItems: NavItem[] = [
     { label: 'Dashboard', href: '/admin' },
+    { label: 'Prayer Times', href: '/admin/prayer-times' },
     { label: 'Mosques', href: '/admin/mosques' },
     { label: 'Users', href: '/admin/users' },
-    { label: 'Campaigns', href: '/admin/campaigns' },
-    { label: 'Billing', href: '/admin/billing' },
-    { label: 'System', href: '/admin/system' },
   ];
 
   const mosqueItems: NavItem[] = selectedMosqueId
     ? [
-        { label: 'Mosque Dashboard', href: `/mosque/${selectedMosqueId}` },
-        { label: 'Prayer Times', href: `/mosque/${selectedMosqueId}/prayer-times` },
-        { label: 'Staff Rota', href: `/mosque/${selectedMosqueId}/staff-rota` },
-        { label: 'Muezzins', href: `/mosque/${selectedMosqueId}/muezzins` },
-        { label: 'Broadcasts', href: `/mosque/${selectedMosqueId}/broadcasts` },
+        { label: 'Mosque Profile', href: `/admin/mosques/${selectedMosqueId}` },
+        { label: 'Prayer Times', href: `/admin/mosques/${selectedMosqueId}/prayer-times` },
       ]
     : [];
 
@@ -52,7 +41,11 @@ export default function AdminSidebar() {
           {globalItems.map((item) => {
             const active = isActive(pathname, item.href);
             return (
-              <Link key={item.href} href={item.href} style={{ ...styles.link, ...(active ? styles.linkActive : {}) }}>
+              <Link
+                key={item.href}
+                href={item.href as any}
+                style={{ ...styles.link, ...(active ? styles.linkActive : {}) } as any}
+              >
                 {item.label}
               </Link>
             );
@@ -67,7 +60,11 @@ export default function AdminSidebar() {
             {mosqueItems.map((item) => {
               const active = isActive(pathname, item.href);
               return (
-                <Link key={item.href} href={item.href} style={{ ...styles.link, ...(active ? styles.linkActive : {}) }}>
+                <Link
+                  key={item.href}
+                  href={item.href as any}
+                  style={{ ...styles.link, ...(active ? styles.linkActive : {}) } as any}
+                >
                   {item.label}
                 </Link>
               );

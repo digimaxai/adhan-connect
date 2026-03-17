@@ -21,6 +21,10 @@ export function useMuezzinSchedule() {
   const cancelledRef = useRef(false);
 
   const slotTimeMs = (slot: MuezzinSlot) => (slot.adhanTime ? slot.adhanTime.getTime() : Number.MAX_SAFE_INTEGER);
+  const slotWindowEndMs = (slot: MuezzinSlot) =>
+    slot.liveWindowEnd?.getTime() ?? slot.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+  const isWindowOpen = (slot: MuezzinSlot, nowMs: number) =>
+    !!slot.liveWindowStart && !!slot.liveWindowEnd && nowMs >= slot.liveWindowStart.getTime() && nowMs <= slot.liveWindowEnd.getTime();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,16 +70,27 @@ export function useMuezzinSchedule() {
       return;
     }
     const now = Date.now();
-    const upcoming = schedule.slots
-      .filter((slot) => slot.isAssignedToMe && slot.adhanTime && slot.adhanTime.getTime() >= now)
+    const actionable = schedule.slots
+      .filter((slot) => slot.isAssignedToMe)
+      .filter((slot) => slotWindowEndMs(slot) >= now)
       .sort((a, b) => (a.adhanTime?.getTime() ?? 0) - (b.adhanTime?.getTime() ?? 0));
-    if (upcoming[0]) {
-      setNextAssignedSlot(upcoming[0]);
+    actionable.sort((a, b) => {
+      const openA = isWindowOpen(a, now);
+      const openB = isWindowOpen(b, now);
+      if (openA !== openB) return openA ? -1 : 1;
+      const timeA = slotTimeMs(a);
+      const timeB = slotTimeMs(b);
+      if (timeA !== timeB) return timeA - timeB;
+      return PRAYER_ORDER.indexOf(a.prayerName) - PRAYER_ORDER.indexOf(b.prayerName);
+    });
+    if (actionable[0]) {
+      setNextAssignedSlot(actionable[0]);
       return;
     }
-    // Fallback: earliest assigned slot today, even if time is missing/past.
+
+    // Fallback only for schedules missing concrete times.
     const firstAssigned = [...schedule.slots]
-      .filter((slot) => slot.isAssignedToMe)
+      .filter((slot) => slot.isAssignedToMe && !slot.adhanTime)
       .sort((a, b) => {
         const timeA = slotTimeMs(a);
         const timeB = slotTimeMs(b);

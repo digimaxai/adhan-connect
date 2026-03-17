@@ -16,7 +16,7 @@ export default function DevRedirect() {
         <Text style={{ color: 'white', textAlign: 'center' }}>Copy</Text>
       </Pressable>
       <Text style={{ opacity: 0.7 }}>
-        Add this URL in Supabase > Auth > URL Configuration > Additional Redirect URLs (or set
+        Add this URL in Supabase {'>'} Auth {'>'} URL Configuration {'>'} Additional Redirect URLs (or set
         EXPO_PUBLIC_SUPABASE_REDIRECT_URL).
       </Text>
     </View>

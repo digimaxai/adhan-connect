@@ -19,6 +19,17 @@ export const getAuthRedirectUrl = () => {
   return Linking.createURL('/callback', { scheme: 'adhanconnect' });
 };
 
+export const getPasswordResetRedirectUrl = () => {
+  const envUrl = process.env.EXPO_PUBLIC_SUPABASE_REDIRECT_URL?.trim();
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined') return `${window.location.origin}/new-password`;
+    if (envUrl) return envUrl.replace(/\/callback$/, '/new-password');
+    return 'http://localhost:8081/new-password';
+  }
+  if (envUrl) return envUrl.replace(/\/callback$/, '/new-password');
+  return Linking.createURL('/new-password', { scheme: 'adhanconnect' });
+};
+
 const deriveDisplayName = (raw?: string | null, fallbackEmail?: string | null) => {
   const trimmed = raw?.trim();
   if (trimmed) return trimmed;
@@ -232,12 +243,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
-      const dynamicRedirect =
-        typeof window !== 'undefined' && Platform.OS === 'web'
-          ? `${window.location.origin}/callback`
-          : undefined;
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: dynamicRedirect ?? redirectTo,
+        redirectTo: getPasswordResetRedirectUrl(),
       });
       if (error) return { error: error.message };
       return {};

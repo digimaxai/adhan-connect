@@ -9,6 +9,7 @@ export type StaffRotaRow = {
   id?: string;
   mosque_id: string;
   muezzin_user_id: string;
+  staff_user_id?: string | null;
   prayer_name: string;
   date: string;
   adhan_time?: string | null;
@@ -42,14 +43,16 @@ export type MuezzinSummary = {
 export async function getMuezzinsForMosque(mosqueId: string): Promise<MuezzinSummary[]> {
   try {
     // Primary query: avoid joins so RLS on profiles can't filter out the base rows.
-    let { data, error } = await supabase
+    let data: Array<{ user_id: string; is_active?: boolean | null }> | null = null;
+    let error: any = null;
+    ({ data, error } = await supabase
       .from('muezzins')
       .select('user_id, is_active')
-      .match({ mosque_id: mosqueId, is_active: true });
+      .match({ mosque_id: mosqueId, is_active: true }));
 
     // If is_active column missing, retry without that filter.
     if (error && error.code === '42703') {
-      ({ data, error } = await supabase.from('muezzins').select('user_id').match({ mosque_id: mosqueId }));
+      ({ data, error } = await supabase.from('muezzins').select('user_id').match({ mosque_id: mosqueId }) as any);
     }
 
     if (error && error.code !== 'PGRST116') throw error;
@@ -75,10 +78,12 @@ export async function getMuezzinsForMosque(mosqueId: string): Promise<MuezzinSum
 async function fetchProfilesForUsers(userIds: string[]) {
   if (!userIds.length) return {} as Record<string, string>;
   try {
-    let { data, error } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds);
+    let data: Array<{ id: string; full_name?: string | null; email?: string | null }> | null = null;
+    let error: any = null;
+    ({ data, error } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds));
     if (error && error.code === '42703') {
       // full_name/email column missing; fall back to id only.
-      ({ data, error } = await supabase.from('profiles').select('id').in('id', userIds));
+      ({ data, error } = await supabase.from('profiles').select('id').in('id', userIds) as any);
     }
     if (error && error.code !== 'PGRST116') throw error;
     const map: Record<string, string> = {};
@@ -127,11 +132,20 @@ export async function getStaffRotaForDate(mosqueId: string, date: Date): Promise
   try {
     const baseSelect =
       'prayer_name, muezzin_user_id, staff_user_id, notes, adhan_time, iqama_time';
-    let { data, error } = await supabase
+    let data: Array<{
+      prayer_name?: string | null;
+      muezzin_user_id?: string | null;
+      staff_user_id?: string | null;
+      notes?: string | null;
+      adhan_time?: string | null;
+      iqama_time?: string | null;
+    }> | null = null;
+    let error: any = null;
+    ({ data, error } = await supabase
       .from('staff_rota')
       .select(baseSelect)
       .eq('mosque_id', mosqueId)
-      .eq('date', dateIso);
+      .eq('date', dateIso));
 
     // If newer columns are missing, fall back to a minimal projection.
     if (error && error.code === '42703') {

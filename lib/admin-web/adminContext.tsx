@@ -107,9 +107,3 @@ export function useAdminContext(): AdminContextValue {
   }
   return ctx;
 }
-
-// Expo Router treats files under app/ as routes; provide a default
-// export to satisfy the router while keeping the named exports for imports.
-export default function AdminContextRouteShim() {
-  return null;
-}

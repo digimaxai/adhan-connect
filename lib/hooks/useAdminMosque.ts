@@ -10,7 +10,14 @@ type State = {
 
 let lastSelectedMosqueId: string | null = null;
 
-export function useAdminMosque() {
+type UseAdminMosqueOptions = {
+  preferredMosqueId?: string | null;
+  autoSelectFirst?: boolean;
+};
+
+export function useAdminMosque(options?: UseAdminMosqueOptions) {
+  const preferredMosqueId = options?.preferredMosqueId ?? null;
+  const autoSelectFirst = options?.autoSelectFirst ?? true;
   const [state, setState] = useState<State>({
     mosques: [],
     selectedMosque: null,
@@ -26,6 +33,11 @@ export function useAdminMosque() {
       if (cancelled) return;
       const selected = (() => {
         if (!mosques.length) return null;
+        if (preferredMosqueId) {
+          const preferred = mosques.find((m) => m.mosqueId === preferredMosqueId);
+          if (preferred) return preferred;
+        }
+        if (!autoSelectFirst) return null;
         if (lastSelectedMosqueId) {
           const found = mosques.find((m) => m.mosqueId === lastSelectedMosqueId);
           if (found) return found;
@@ -40,7 +52,7 @@ export function useAdminMosque() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [autoSelectFirst, preferredMosqueId]);
 
   useEffect(() => {
     if (__DEV__) {

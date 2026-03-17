@@ -63,7 +63,7 @@ type CardProps = {
 
 function AdminCard({ title, description, href, router }: CardProps) {
   const handlePress = () => {
-    router.push(href);
+    router.push(href as any);
   };
   return (
     <Pressable onPress={handlePress} style={({ pressed }) => [styles.card, pressed && { opacity: 0.9 }]}>

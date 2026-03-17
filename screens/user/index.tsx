@@ -2,8 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../../lib/auth';
 import {
   AdhanBroadcast,
@@ -16,8 +15,14 @@ import {
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
 import AppLogo from '../../components/AppLogo';
+import { AppButton } from '../../components/ui/app-button';
+import { AppCard } from '../../components/ui/app-card';
+import { ScreenContainer } from '../../components/ui/screen-container';
+import { AppText } from '../../components/ui/app-text';
+import { persistentStorage } from '../../lib/persistentStorage';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
 import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
+import { tokens } from '../../theme/tokens';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
 type Subscription = { mosque_id: string };
@@ -31,27 +36,6 @@ const fallbackTimes: Record<PrayerName, string> = {
   maghrib: '17:42',
   isha: '19:05',
 };
-
-// Safe storage wrapper (falls back to in-memory if AsyncStorage is unavailable)
-const safeStorage = (() => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@react-native-async-storage/async-storage');
-    return mod.default ?? mod;
-  } catch {
-    const globalKey = '__ac_default_mosque_store__';
-    const memory: Record<string, string> = (globalThis as any)[globalKey] ?? ((globalThis as any)[globalKey] = {});
-    return {
-      getItem: async (key: string) => memory[key] ?? null,
-      setItem: async (key: string, val: string) => {
-        memory[key] = val;
-      },
-      removeItem: async (key: string) => {
-        delete memory[key];
-      },
-    };
-  }
-})();
 
 const formatHm = (val?: string | null) => {
   if (!val) return '--:--';
@@ -75,6 +59,7 @@ export default function HomeScreen() {
   const [muezzinError, setMuezzinError] = useState<string | null>(null);
   const [nextPrayer, setNextPrayer] = useState<ReturnType<typeof computeNextPrayer> | null>(null);
   const [defaultMosqueId, setDefaultMosqueId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const primaryMosque = useMemo(() => {
     const preferredId = defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
@@ -88,14 +73,16 @@ export default function HomeScreen() {
 
   const loadDefault = React.useCallback(async () => {
     try {
-      const stored = await safeStorage.getItem('default_mosque_id');
+      const stored = await persistentStorage.getItem('default_mosque_id');
       setDefaultMosqueId(stored ?? null);
+      return stored ?? null;
     } catch {
       setDefaultMosqueId(null);
+      return null;
     }
   }, []);
 
-  const loadHomeData = async () => {
+  const loadHomeData = React.useCallback(async () => {
     const [mosqueRes, subsRes, streamsRes] = await Promise.all([
       supabase.from('mosques').select('id, name, city, country, status').order('name', { ascending: true }).limit(200),
       userId
@@ -114,7 +101,62 @@ export default function HomeScreen() {
     } else {
       setLiveStreams({});
     }
-  };
+    return {
+      mosques: (mosqueRes.data ?? []) as Mosque[],
+      subs: (subsRes.data ?? []) as Subscription[],
+    };
+  }, [userId]);
+
+  const loadPrayerTimes = React.useCallback(
+    async (mosqueId?: string | null) => {
+      if (!mosqueId) {
+        setPrayerTimes(null);
+        setPrayerError(null);
+        return;
+      }
+      try {
+        const normalized = await getDailyPrayerTimes(mosqueId, new Date());
+        setPrayerError(null);
+        setPrayerTimes(mapNormalizedToLegacyShape(normalized));
+      } catch {
+        setPrayerError('Could not load prayer times.');
+        setPrayerTimes(null);
+      }
+    },
+    []
+  );
+
+  const loadMuezzin = React.useCallback(async () => {
+    if (!roles.isMuezzin) {
+      setNextBroadcast(null);
+      setMuezzinError(null);
+      return;
+    }
+    setMuezzinLoading(true);
+    setMuezzinError(null);
+    try {
+      const upcoming = await fetchUpcomingBroadcasts(1);
+      setNextBroadcast(upcoming[0] ?? null);
+      if (!upcoming.length) setMuezzinError('No upcoming adhans scheduled.');
+    } catch (e: any) {
+      setMuezzinError(e?.message ?? 'Could not load upcoming adhans.');
+      setNextBroadcast(null);
+    } finally {
+      setMuezzinLoading(false);
+    }
+  }, [roles.isMuezzin]);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const storedDefaultId = await loadDefault();
+      const { mosques: latestMosques, subs: latestSubs } = await loadHomeData();
+      const preferredId = storedDefaultId ?? latestSubs[0]?.mosque_id ?? latestMosques[0]?.id ?? null;
+      await Promise.all([loadPrayerTimes(preferredId), loadMuezzin()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadDefault, loadHomeData, loadMuezzin, loadPrayerTimes]);
 
   useEffect(() => {
     loadHomeData();
@@ -151,27 +193,8 @@ export default function HomeScreen() {
   }, [defaultMosqueId, mosques]);
 
   useEffect(() => {
-    const loadMuezzin = async () => {
-      if (!roles.isMuezzin) {
-        setNextBroadcast(null);
-        setMuezzinError(null);
-        return;
-      }
-      setMuezzinLoading(true);
-      setMuezzinError(null);
-      try {
-        const upcoming = await fetchUpcomingBroadcasts(1);
-        setNextBroadcast(upcoming[0] ?? null);
-        if (!upcoming.length) setMuezzinError('No upcoming adhans scheduled.');
-      } catch (e: any) {
-        setMuezzinError(e?.message ?? 'Could not load upcoming adhans.');
-        setNextBroadcast(null);
-      } finally {
-        setMuezzinLoading(false);
-      }
-    };
     loadMuezzin();
-  }, [roles.isMuezzin]);
+  }, [loadMuezzin]);
 
   const mapNormalizedToLegacyShape = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
     if (!normalized) return null;
@@ -184,24 +207,8 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    const loadPrayerTimes = async () => {
-      const primaryId = primaryMosque?.id;
-      if (!primaryId) {
-        setPrayerTimes(null);
-        setPrayerError(null);
-        return;
-      }
-      try {
-        const normalized = await getDailyPrayerTimes(primaryId, new Date());
-        setPrayerError(null);
-        setPrayerTimes(mapNormalizedToLegacyShape(normalized));
-      } catch (error: any) {
-        setPrayerError('Could not load prayer times.');
-        setPrayerTimes(null);
-      }
-    };
-    loadPrayerTimes();
-  }, [primaryMosque?.id]);
+    loadPrayerTimes(primaryMosque?.id);
+  }, [loadPrayerTimes, primaryMosque?.id]);
 
   const computeNextPrayer = (times: PrayerTimes | null) => {
     const now = new Date();
@@ -324,11 +331,13 @@ export default function HomeScreen() {
   };
 
   const MyMosques = () => (
-    <View style={[styles.cardContainer, styles.shadow]}>
+    <AppCard style={styles.cardContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.cardTitle}>My Mosques</Text>
+        <AppText variant="sectionTitle">My Mosques</AppText>
         <Pressable onPress={() => router.push('/manage-mosques')} hitSlop={6}>
-          <Text style={styles.manageLink}>Manage</Text>
+          <AppText variant="body" color={tokens.color.text.accent} style={styles.manageLink}>
+            Manage
+          </AppText>
         </Pressable>
       </View>
       {subs.length ? (
@@ -352,41 +361,46 @@ export default function HomeScreen() {
                 }
               >
                 <View style={styles.mosqueAvatar}>
-                  <Text style={styles.mosqueAvatarText}>{m!.name.slice(0, 2).toUpperCase()}</Text>
+                  <AppText style={styles.mosqueAvatarText}>{m!.name.slice(0, 2).toUpperCase()}</AppText>
                 </View>
-                <Text style={styles.mosqueLabel} numberOfLines={1}>
+                <AppText style={styles.mosqueLabel} numberOfLines={1}>
                   {m!.name}
-                </Text>
+                </AppText>
                 {m!.city ? (
-                  <Text style={styles.mosqueCity} numberOfLines={1}>
+                  <AppText variant="caption" style={styles.mosqueCity} numberOfLines={1}>
                     {m!.city}
-                  </Text>
+                  </AppText>
                 ) : null}
               </Pressable>
             ))}
         </ScrollView>
       ) : (
         <View style={{ paddingTop: 6 }}>
-          <Text style={styles.cardSubtitle}>Follow mosques to get live adhans.</Text>
+          <AppText variant="caption" style={styles.cardSubtitle}>
+            Follow mosques to get live adhans.
+          </AppText>
         </View>
       )}
-    </View>
+    </AppCard>
   );
 
   if (roles.isMuezzin) {
     return (
-      <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-        <ScrollView contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}>
+      <ScreenContainer
+        contentStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.color.text.accent} />}
+      >
           <View style={styles.headerRow}>
             <AppLogo size={30} />
-            <Text style={styles.appTitle}>Adhan Connect</Text>
+            <AppText variant="title" style={styles.appTitle}>
+              Adhan Connect
+            </AppText>
             <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12}>
               <Ionicons name="settings-outline" size={22} color="#0F172A" />
             </Pressable>
           </View>
           <MuezzinHero />
-        </ScrollView>
-      </SafeAreaView>
+      </ScreenContainer>
     );
   }
 
@@ -397,11 +411,15 @@ export default function HomeScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}>
+    <ScreenContainer
+      contentStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.color.text.accent} />}
+    >
         <View style={styles.headerRow}>
           <AppLogo size={30} />
-          <Text style={styles.appTitle}>Adhan Connect</Text>
+          <AppText variant="title" style={styles.appTitle}>
+            Adhan Connect
+          </AppText>
           <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12}>
             <Ionicons name="settings-outline" size={22} color="#0F172A" />
           </Pressable>
@@ -423,15 +441,23 @@ export default function HomeScreen() {
           ]}
         >
           <View style={{ gap: 4 }}>
-            <Text style={styles.eyebrow}>Next Prayer</Text>
-            {primaryMosque?.name ? <Text style={styles.heroSource}>{primaryMosque.name}</Text> : null}
+            <AppText variant="label" style={styles.eyebrow}>
+              Next Prayer
+            </AppText>
+            {primaryMosque?.name ? (
+              <AppText variant="heroSubtle" style={styles.heroSource}>
+                {primaryMosque.name}
+              </AppText>
+            ) : null}
           </View>
           <View style={{ gap: 6, marginTop: 10 }}>
-            <Text style={styles.nextTime}>{nextPrayer?.label ?? '05:18'}</Text>
-            <Text style={styles.nextName}>
+            <AppText variant="hero" style={styles.nextTime}>
+              {nextPrayer?.label ?? '05:18'}
+            </AppText>
+            <AppText style={styles.nextName}>
               {nextPrayer?.name ? nextPrayer.name.charAt(0).toUpperCase() + nextPrayer.name.slice(1) : 'Fajr'}
-            </Text>
-            <Text style={styles.nextEta}>{nextPrayer?.remaining ? `In ${nextPrayer.remaining}` : 'In 06:49'}</Text>
+            </AppText>
+            <AppText style={styles.nextEta}>{nextPrayer?.remaining ? `In ${nextPrayer.remaining}` : 'In 06:49'}</AppText>
           </View>
           <View style={{ marginTop: 12 }}>
             {liveInfo.isLive ? (
@@ -444,35 +470,41 @@ export default function HomeScreen() {
                   onPress={() => router.push('/(user)/now')}
                   style={({ pressed }) => [styles.listenBtn, { opacity: pressed ? 0.9 : 1 }]}
                 >
-                  <Text style={styles.listenText}>Listen Live</Text>
+                  <AppText variant="caption" color={tokens.color.text.inverse} style={styles.listenText}>
+                    Listen Live
+                  </AppText>
                 </Pressable>
               </View>
             ) : null}
           </View>
         </Pressable>
 
-        <MyMosques />
-
-        <View style={[styles.cardContainer, styles.shadow]}>
+        <AppCard style={styles.cardContainer}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.cardTitle}>Today's Prayer Times</Text>
+            <AppText variant="sectionTitle">Today's Prayer Times</AppText>
           </View>
-          {primaryMosque?.name ? <Text style={styles.cardSubtitle}>Based on {primaryMosque.name}</Text> : null}
+          {primaryMosque?.name ? (
+            <AppText variant="caption" style={styles.cardSubtitle}>
+              Based on {primaryMosque.name}
+            </AppText>
+          ) : null}
           <View style={styles.titleDivider} />
           <View style={styles.prayerTable}>
             {(['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).map((p) => (
               <View key={p} style={styles.prayerRow}>
-                <Text style={styles.prayerName}>{p.charAt(0).toUpperCase() + p.slice(1)}</Text>
-                <Text style={styles.prayerTimeText}>{formatHm(prayerTimes?.[p] as string) ?? fallbackTimes[p]}</Text>
+                <AppText style={styles.prayerName}>{p.charAt(0).toUpperCase() + p.slice(1)}</AppText>
+                <AppText style={styles.prayerTimeText}>{formatHm(prayerTimes?.[p] as string) ?? fallbackTimes[p]}</AppText>
               </View>
             ))}
           </View>
-          {prayerError && <Text style={styles.errorText}>{prayerError}</Text>}
-        </View>
+          {prayerError && <AppText style={styles.errorText}>{prayerError}</AppText>}
+        </AppCard>
+
+        <MyMosques />
 
         {otherLive.length > 0 && (
-          <View style={[styles.cardContainer, styles.shadow, { gap: 10 }]}>
-            <Text style={styles.cardTitle}>Other Live Broadcasts</Text>
+          <AppCard style={[styles.cardContainer, { gap: 10 }]}>
+            <AppText variant="sectionTitle">Other Live Broadcasts</AppText>
             {otherLive.map(([mosqueId]) => {
               const m = mosques.find((ms) => ms.id === mosqueId);
               if (!m) return null;
@@ -482,38 +514,38 @@ export default function HomeScreen() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                     <Ionicons name="radio-outline" size={18} color="#0F172A" />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.otherLiveName} numberOfLines={1}>
+                      <AppText style={styles.otherLiveName} numberOfLines={1}>
                         {m.name}
-                      </Text>
-                      <Text style={styles.otherLiveSub} numberOfLines={1}>
+                      </AppText>
+                      <AppText variant="caption" style={styles.otherLiveSub} numberOfLines={1}>
                         {city || 'Live broadcast'}
-                      </Text>
+                      </AppText>
                     </View>
                     <View style={styles.liveBadge}>
-                      <Text style={styles.liveBadgeText}>LIVE</Text>
+                      <AppText variant="caption" color={tokens.color.text.inverse} style={styles.liveBadgeText}>
+                        LIVE
+                      </AppText>
                     </View>
                   </View>
                   <Pressable onPress={() => router.push('/(user)/now')} hitSlop={6}>
-                    <Text style={styles.listenLink}>Listen</Text>
+                    <AppText variant="body" color={tokens.color.text.accent} style={styles.listenLink}>
+                      Listen
+                    </AppText>
                   </Pressable>
                 </View>
               );
             })}
-          </View>
+          </AppCard>
         )}
 
-        <View style={[styles.discoveryCard, styles.shadow]}>
-          <Text style={styles.cardTitle}>Find Mosques Near You</Text>
-          <Text style={styles.discoverySubtitle}>Discover mosques to follow and listen to live adhans.</Text>
-          <Pressable
-            onPress={() => router.push('/(user)/discover')}
-            style={({ pressed }) => [styles.discoveryBtn, { opacity: pressed ? 0.9 : 1 }]}
-          >
-            <Text style={styles.discoveryBtnText}>Discover</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+        <AppCard subtle style={styles.discoveryCard}>
+          <AppText variant="sectionTitle">Find Mosques Near You</AppText>
+          <AppText variant="body" style={styles.discoverySubtitle}>
+            Discover mosques to follow and listen to live adhans.
+          </AppText>
+          <AppButton title="Discover" onPress={() => router.push('/(user)/discover')} style={styles.discoveryBtn} />
+        </AppCard>
+    </ScreenContainer>
   );
 }
 

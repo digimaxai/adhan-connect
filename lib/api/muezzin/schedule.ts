@@ -8,12 +8,15 @@ export type MuezzinScheduleForDay = MuezzinSchedule & { date: Date };
 type StaffRotaRow = {
   prayer_name?: string | null;
   muezzin_user_id?: string | null;
+  staff_user_id?: string | null;
   adhan_time?: string | Date | null;
   iqama_time?: string | Date | null;
 };
 
 const PRAYERS: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 const ROTA_PRAYERS: RotaPrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+const WINDOW_START_MS = 3 * 60 * 1000;
+const WINDOW_END_MS = 2 * 60 * 1000;
 
 const toDate = (value?: string | Date | null): Date | null => {
   if (!value) return null;
@@ -106,13 +109,28 @@ export async function getMuezzinRotaForRange(
     const endIso = formatLocalDate(to);
     const baseSelect =
       'id, mosque_id, date, duty_date, prayer_name, prayer, muezzin_user_id, staff_user_id, role_on_duty, notes, adhan_time, iqama_time';
-    let { data, error } = await supabase
+    let data: Array<{
+      id?: string | null;
+      mosque_id?: string | null;
+      date?: string | null;
+      duty_date?: string | null;
+      prayer_name?: string | null;
+      prayer?: string | null;
+      muezzin_user_id?: string | null;
+      staff_user_id?: string | null;
+      role_on_duty?: string | null;
+      notes?: string | null;
+      adhan_time?: string | Date | null;
+      iqama_time?: string | Date | null;
+    }> | null = null;
+    let error: any = null;
+    ({ data, error } = await supabase
       .from('staff_rota')
       .select(baseSelect)
       .eq('mosque_id', mosqueId)
       .gte('date', startIso)
       .lte('date', endIso)
-      .order('date', { ascending: true });
+      .order('date', { ascending: true }));
 
     if (error && (error as any)?.code === '42703') {
       const fallback = await supabase
@@ -199,23 +217,110 @@ function getSlotStatus(
   const { adhanTime, liveWindowStart, liveWindowEnd } = slot;
   if (!adhanTime) return 'scheduled';
 
-  if (liveWindowStart && liveWindowEnd) {
-    if (now < liveWindowStart) return 'scheduled';
-    if (now >= liveWindowStart && now <= liveWindowEnd) {
-      // We will treat this as "ready" by default;
-      // the "live" status will be set later once streaming is actually started.
-      return 'ready';
-    }
-    if (now > liveWindowEnd) return 'completed';
-  } else {
-    // Fallback: no live window defined, just use the adhan time.
-    if (now < adhanTime) return 'scheduled';
-    if (now >= adhanTime && now.getTime() - adhanTime.getTime() < 10 * 60 * 1000) {
-      return 'ready';
-    }
-    return 'completed';
+  if (liveWindowStart && now < liveWindowStart) return 'scheduled';
+  if (liveWindowStart && liveWindowEnd && now >= liveWindowStart && now <= liveWindowEnd) {
+    // Window is open; actual "live" is still driven by stream state.
+    return 'ready';
   }
+  if (liveWindowEnd && now > liveWindowEnd) return 'completed';
+  if (now < adhanTime) return 'scheduled';
+  if (now >= adhanTime) return 'ready';
   return 'scheduled';
+}
+
+function pickNextAssignedSlot(slots: MuezzinPrayerSlot[], now: Date) {
+  const nowMs = now.getTime();
+  const actionable = slots
+    .filter((slot) => slot.isAssignedToMe)
+    .filter((slot) => (slot.liveWindowEnd?.getTime() ?? slot.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER) >= nowMs)
+    .sort((a, b) => (a.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER));
+  return actionable[0] ?? null;
+}
+
+async function buildSlotsForDate(
+  mosqueId: string,
+  mosqueName: string | null,
+  userId: string,
+  date: Date
+): Promise<MuezzinPrayerSlot[]> {
+  const dateIso = formatLocalDate(date);
+  const prayerTimesPromise = getDailyPrayerTimes(mosqueId, date);
+  const rotaPromise = (async () => {
+    const res = await supabase
+      .from('staff_rota')
+      .select('prayer_name,muezzin_user_id,staff_user_id,adhan_time,iqama_time')
+      .eq('mosque_id', mosqueId)
+      .eq('date', dateIso);
+    if (res.error && res.error.code === '42703') {
+      return supabase
+        .from('staff_rota')
+        .select('prayer_name,muezzin_user_id,staff_user_id')
+        .eq('mosque_id', mosqueId)
+        .eq('date', dateIso);
+    }
+    return res;
+  })();
+
+  const [prayerTimes, rotaRes] = await Promise.all([prayerTimesPromise, rotaPromise]);
+  const rotaRows = (rotaRes.data ?? []) as StaffRotaRow[];
+  const userIds = Array.from(
+    new Set(
+      rotaRows
+        .map((r) => (r.muezzin_user_id ?? r.staff_user_id) as string | null)
+        .filter(Boolean) as string[]
+    )
+  );
+
+  const nameMap: Record<string, string> = {};
+  if (userIds.length) {
+    const { data: profiles, error: profilesErr } = await supabase
+      .from('profiles')
+      .select('id, full_name, display_name')
+      .in('id', userIds);
+    if (!profilesErr && profiles) {
+      profiles.forEach((p: any) => {
+        const display = p?.display_name || p?.full_name;
+        if (display) nameMap[p.id] = display;
+      });
+    } else if (profilesErr) {
+      console.warn('[buildSlotsForDate] profiles error', profilesErr.message);
+    }
+  }
+
+  const now = new Date();
+  return PRAYERS.map((prayerName) => {
+    const lowerKey = lowerPrayerKey(prayerName);
+    const rota = rotaRows.find((r) => (r.prayer_name ?? '').toLowerCase() === lowerKey);
+    const assignedMuezzinUserId = (rota?.muezzin_user_id ?? rota?.staff_user_id ?? null) as string | null;
+    const slotTimes = (prayerTimes as any)?.[lowerKey] ?? null;
+    const adhanTime = slotTimes?.adhan ?? toDate(rota?.adhan_time);
+    const iqamaTime = slotTimes?.iqama ?? toDate(rota?.iqama_time);
+    const liveWindowStart = slotTimes?.liveWindowStart
+      ? toDate(slotTimes.liveWindowStart)
+      : adhanTime
+      ? new Date(adhanTime.getTime() - WINDOW_START_MS)
+      : null;
+    const liveWindowEnd = slotTimes?.liveWindowEnd
+      ? toDate(slotTimes.liveWindowEnd)
+      : adhanTime
+      ? new Date(adhanTime.getTime() + WINDOW_END_MS)
+      : null;
+
+    return {
+      id: `${mosqueId}-${dateIso}-${lowerKey}`,
+      mosqueId,
+      mosqueName: mosqueName ?? 'Mosque',
+      prayerName,
+      adhanTime,
+      liveWindowStart,
+      liveWindowEnd,
+      iqamaTime,
+      status: getSlotStatus(now, { adhanTime, liveWindowStart, liveWindowEnd }),
+      assignedMuezzinUserId,
+      assignedMuezzinName: assignedMuezzinUserId ? nameMap[assignedMuezzinUserId] ?? null : null,
+      isAssignedToMe: assignedMuezzinUserId === userId,
+    };
+  });
 }
 
 export async function getMuezzinScheduleForToday(): Promise<{
@@ -266,88 +371,18 @@ export async function getMuezzinScheduleForToday(): Promise<{
     const resolvedMosqueId = mosqueId;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const dateIso = formatLocalDate(today);
     const now = new Date();
-
-    // Fetch prayer times + rota with a fallback if adhan/iqama columns are missing.
-    const prayerTimesPromise = getDailyPrayerTimes(mosqueId, today);
-    const rotaPromise = (async () => {
-      let rotaQuery = supabase
-        .from('staff_rota')
-        .select('prayer_name,muezzin_user_id,staff_user_id,adhan_time,iqama_time')
-        .eq('mosque_id', mosqueId)
-        .eq('date', dateIso);
-      const res = await rotaQuery;
-      if (res.error && res.error.code === '42703') {
-        // Fallback without time columns for older schemas.
-        const fallback = await supabase
-          .from('staff_rota')
-          .select('prayer_name,muezzin_user_id,staff_user_id')
-          .eq('mosque_id', mosqueId)
-          .eq('date', dateIso);
-        return fallback;
-      }
-      return res;
-    })();
     const mosquePromise = supabase.from('mosques').select('name').eq('id', mosqueId).maybeSingle<{ name: string | null }>();
-
-    const [prayerTimes, rotaRes, mosqueRes] = await Promise.all([prayerTimesPromise, rotaPromise, mosquePromise]);
-
-    const rotaRows = (rotaRes.data ?? []) as StaffRotaRow[];
-    if (rotaRes.error) {
-      console.warn('[getMuezzinScheduleForToday] rota error', rotaRes.error.message);
-    }
-
+    const [mosqueRes] = await Promise.all([mosquePromise]);
     const mosqueName = mosqueRes.data?.name ?? null;
-
-    const userIds = Array.from(
-      new Set(
-        rotaRows
-          .map((r) => (r.muezzin_user_id ?? r.staff_user_id) as string | null)
-          .filter(Boolean) as string[]
-      )
-    );
-    const nameMap: Record<string, string> = {};
-    if (userIds.length) {
-      const { data: profiles, error: profilesErr } = await supabase
-        .from('profiles')
-        .select('id, full_name, display_name')
-        .in('id', userIds);
-      if (!profilesErr && profiles) {
-        profiles.forEach((p: any) => {
-          const display = p?.display_name || p?.full_name;
-          if (display) nameMap[p.id] = display;
-        });
-      } else if (profilesErr) {
-        console.warn('[getMuezzinScheduleForToday] profiles error', profilesErr.message);
-      }
+    const slots = await buildSlotsForDate(resolvedMosqueId, mosqueName, user.id, today);
+    let nextAssignedSlot = pickNextAssignedSlot(slots, now);
+    if (!nextAssignedSlot) {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowSlots = await buildSlotsForDate(resolvedMosqueId, mosqueName, user.id, tomorrow);
+      nextAssignedSlot = pickNextAssignedSlot(tomorrowSlots, now);
     }
-
-    const slots: MuezzinPrayerSlot[] = PRAYERS.map((prayerName) => {
-      const lowerKey = lowerPrayerKey(prayerName);
-      const rota = rotaRows.find((r) => (r.prayer_name ?? '').toLowerCase() === lowerKey);
-      const assignedMuezzinUserId = (rota?.muezzin_user_id ?? rota?.staff_user_id ?? null) as string | null;
-      const slotTimes = (prayerTimes as any)?.[lowerKey] ?? null;
-      const adhanTime = slotTimes?.adhan ?? toDate(rota?.adhan_time);
-      const iqamaTime = slotTimes?.iqama ?? toDate(rota?.iqama_time);
-      const liveWindowStart = slotTimes?.liveWindowStart ? toDate(slotTimes.liveWindowStart) : null;
-      const liveWindowEnd = slotTimes?.liveWindowEnd ? toDate(slotTimes.liveWindowEnd) : null;
-
-      return {
-        id: `${resolvedMosqueId}-${dateIso}-${lowerKey}`,
-        mosqueId: resolvedMosqueId,
-        mosqueName,
-        prayerName,
-        adhanTime,
-        liveWindowStart,
-        liveWindowEnd,
-        iqamaTime,
-        status: getSlotStatus(now, { adhanTime, liveWindowStart, liveWindowEnd }),
-        assignedMuezzinUserId,
-        assignedMuezzinName: assignedMuezzinUserId ? nameMap[assignedMuezzinUserId] ?? null : null,
-        isAssignedToMe: assignedMuezzinUserId === user.id,
-      };
-    });
 
     console.log('[getMuezzinScheduleForToday] user', user.id, 'mosque', mosqueId, 'slots', slots);
 
@@ -356,7 +391,7 @@ export async function getMuezzinScheduleForToday(): Promise<{
         mosqueId: resolvedMosqueId,
         mosqueName,
         date: today,
-        nextAssignedSlot: null,
+        nextAssignedSlot,
         slots,
       },
       error: null,

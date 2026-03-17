@@ -2,7 +2,7 @@
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Text, View } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
 type Status = 'idle' | 'working' | 'done' | 'error';
@@ -42,6 +42,16 @@ function getParams(url: string | null) {
   return qp;
 }
 
+function getBrowserUrl() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  return window.location.href;
+}
+
+function buildCandidateUrls(initialUrl: string | null) {
+  const urls = [initialUrl, getBrowserUrl()].filter((value): value is string => Boolean(value));
+  return Array.from(new Set(urls));
+}
+
 export default function AuthCallback() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>('idle');
@@ -53,73 +63,102 @@ export default function AuthCallback() {
     let mounted = true;
 
     async function handleUrl(url: string | null) {
-      if (!mounted || !url) return;
+      if (!mounted) return;
       setStatus('working');
-      setDebugUrl(url);
 
       try {
-        const params = getParams(url);
-        setDebugParams(params);
+        const candidateUrls = buildCandidateUrls(url);
+        let debugSourceUrl: string | null = null;
+        let debugSourceParams: Record<string, string | undefined> | null = null;
+        let shouldRouteToPasswordSetup = false;
+        let handled = false;
 
-        const code = params.code; // PKCE / OAuth
-        const token_hash = params.token_hash || params.token; // OTP links (incl. recovery)
-        const rawType = (params.type || '') as
-          | 'signup'
-          | 'recovery'
-          | 'magiclink'
-          | 'email_change'
-          | 'invite'
-          | '';
-        const type = rawType.toLowerCase();
-        const isRecovery = type === 'recovery';
+        for (const candidateUrl of candidateUrls) {
+          const params = getParams(candidateUrl);
+          if (!debugSourceUrl) {
+            debugSourceUrl = candidateUrl;
+            debugSourceParams = params;
+          }
 
-        const access_token = params.access_token;
-        const refresh_token = params.refresh_token;
-        // Some Supabase flows supply a short-lived recovery access token in the fragment; if present, prefer it.
-        const otpAccessToken = params.access_token ?? params?.access_token;
-        const otpRefreshToken = params.refresh_token ?? params?.refresh_token;
+          const code = params.code;
+          const token_hash = params.token_hash || params.token;
+          const rawType = (params.type || '') as
+            | 'signup'
+            | 'recovery'
+            | 'magiclink'
+            | 'email_change'
+            | 'invite'
+            | '';
+          const type = rawType.toLowerCase();
+          shouldRouteToPasswordSetup = type === 'recovery' || type === 'invite';
 
-        const error = params.error;
-        const error_description = params.error_description;
+          const access_token = params.access_token;
+          const refresh_token = params.refresh_token;
+          const error = params.error;
+          const error_description = params.error_description;
 
-        // If Supabase sent an explicit error, surface that
-        if (error || error_description) {
-          throw new Error(
-            error_description ||
-              error ||
-              'Link is invalid or has expired. Please request a new one.'
-          );
+          if (error || error_description) {
+            throw new Error(
+              error_description ||
+                error ||
+                'Link is invalid or has expired. Please request a new one.'
+            );
+          }
+
+          if (code) {
+            const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+            if (exErr) throw exErr;
+            handled = true;
+            debugSourceUrl = candidateUrl;
+            debugSourceParams = params;
+            break;
+          }
+
+          if (token_hash && type) {
+            const { error: otpErr } = await supabase.auth.verifyOtp({ token_hash, type: rawType as any });
+            if (otpErr) throw otpErr;
+            handled = true;
+            debugSourceUrl = candidateUrl;
+            debugSourceParams = params;
+            break;
+          }
+
+          if (access_token && refresh_token) {
+            const { error: sessErr } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+            if (sessErr) throw sessErr;
+            handled = true;
+            debugSourceUrl = candidateUrl;
+            debugSourceParams = params;
+            break;
+          }
+
+          if (type === 'signup') {
+            setDebugUrl(candidateUrl);
+            setDebugParams(params);
+            setStatus('done');
+            router.replace('/sign-in' as any);
+            return;
+          }
         }
 
-        // --- Primary token-based flows ---
-        if (code) {
-          const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
-          if (exErr) throw exErr;
-        } else if (token_hash && type) {
-          const { error: otpErr } = await supabase.auth.verifyOtp({ token_hash, type: rawType as any });
-          if (otpErr) throw otpErr;
-        } else if ((access_token && refresh_token) || (otpAccessToken && otpRefreshToken)) {
-          const { error: sessErr } = await supabase.auth.setSession({
-            access_token: access_token ?? otpAccessToken!,
-            refresh_token: refresh_token ?? otpRefreshToken!,
-          });
-          if (sessErr) throw sessErr;
-        } else if (type === 'signup') {
-          // Special case: email confirmed but no session tokens (email verified but not signed in)
-          if (!mounted) return;
-          setStatus('done');
-          router.replace('/sign-in' as any);
-          return;
-        } else {
-          // No error and no tokens -> unexpected URL
-          throw new Error('No auth code or token found in callback URL.');
+        setDebugUrl(debugSourceUrl);
+        setDebugParams(debugSourceParams);
+
+        if (!handled) {
+          const { data } = await supabase.auth.getSession();
+          if (!data.session) {
+            throw new Error('No auth code or token found in callback URL.');
+          }
         }
 
         if (!mounted) return;
         setStatus('done');
 
         // Route based on recovery vs normal auth
-        if (isRecovery) {
+        if (shouldRouteToPasswordSetup) {
           router.replace('/new-password' as any);
         } else {
           router.replace('/(tabs)' as any);
