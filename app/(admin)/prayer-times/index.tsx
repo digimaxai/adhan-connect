@@ -22,12 +22,11 @@ import { tokens } from '@/theme/tokens';
 import { useRoleFlags } from '@/lib/roles';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import {
-  getPrayerTimesByDate,
-  listPrayerTimesByDates,
   PrayerTimesRow,
+  listPrayerTimesByDates,
   upsertPrayerTimes,
 } from '@/lib/api/admin/prayerTimes';
-import { getDailyPrayerTimes } from '@/lib/api/prayerTimesUnified';
+import { loadPrayerTimesWorkspace } from '@/lib/api/admin/prayerTimesWorkspace';
 import {
   parsePrayerScheduleCsv,
   pickPrayerScheduleImportFile,
@@ -37,7 +36,6 @@ import {
   publishPrayerSchedulePreview,
 } from '@/lib/prayerScheduleImport';
 import {
-  listPrayerScheduleImports,
   PrayerScheduleImportRecord,
   rollbackPrayerScheduleImport,
 } from '@/lib/api/admin/prayerScheduleImports';
@@ -161,6 +159,19 @@ type CoverageAnalysis = {
   expectedDayCount: number | null;
 };
 
+type PublishedImportConfirmation = {
+  importId: string;
+  mosqueName: string;
+  sourceLabel: string;
+  scopeLabel: string;
+  coverageLabel: string;
+  rowsWritten: number;
+  inserts: number;
+  updates: number;
+  publishedAt: string | null;
+  sampleRows: PrayerSchedulePreviewRow[];
+};
+
 const COVERAGE_INTENT_OPTIONS: {
   id: CoverageIntent;
   label: string;
@@ -277,6 +288,7 @@ export default function PrayerTimesAdminScreen({
   const [showImportHistory, setShowImportHistory] = useState(false);
   const [showManualOverrideTools, setShowManualOverrideTools] = useState(false);
   const [showImportConfigurator, setShowImportConfigurator] = useState(false);
+  const [lastPublishedImport, setLastPublishedImport] = useState<PublishedImportConfirmation | null>(null);
   const [importHistory, setImportHistory] = useState<PrayerScheduleImportRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [rollingBackImportId, setRollingBackImportId] = useState<string | null>(null);
@@ -337,6 +349,7 @@ export default function PrayerTimesAdminScreen({
     setShowImportHistory(false);
     setShowManualOverrideTools(!canManageImports);
     setShowImportConfigurator(false);
+    setLastPublishedImport(null);
     setImportHistory([]);
   }, [canManageImports, selectedMosque?.mosqueId]);
 
@@ -424,20 +437,23 @@ export default function PrayerTimesAdminScreen({
     setNotice(null);
 
     try {
-      const row = await getPrayerTimesByDate(selectedMosque.mosqueId, dateIso);
-      if (row) {
-        setCurrentRow(row);
-        setForm(mapRowToForm(row));
-        setScheduleSourceLabel(formatScheduleSource(row));
+      const payload = await loadPrayerTimesWorkspace(selectedMosque.mosqueId, dateIso, 6);
+      if (payload.currentRow) {
+        setCurrentRow(payload.currentRow);
+        setForm(mapRowToForm(payload.currentRow));
+        setScheduleSourceLabel(formatScheduleSource(payload.currentRow));
         setScheduleSourceMeta(
-          row.updated_at ? `Last updated ${formatDateTime(row.updated_at)}` : null
+          payload.currentRow.updated_at ? `Last updated ${formatDateTime(payload.currentRow.updated_at)}` : null
         );
       } else {
-        const normalized = await getDailyPrayerTimes(selectedMosque.mosqueId, selectedDate);
         setCurrentRow(null);
-        if (normalized) {
-          setForm(mapNormalizedToForm(normalized));
-          setScheduleSourceLabel('Legacy fallback schedule loaded');
+        if (payload.fallbackRow) {
+          setForm(mapRowToForm(payload.fallbackRow));
+          setScheduleSourceLabel(
+            payload.fallbackSource === 'staff_rota'
+              ? 'Staff rota fallback schedule loaded'
+              : 'Legacy fallback schedule loaded'
+          );
           setScheduleSourceMeta(
             'Saving will publish a canonical prayer_times row for this date.'
           );
@@ -468,7 +484,7 @@ export default function PrayerTimesAdminScreen({
     } finally {
       setLoading(false);
     }
-  }, [selectedMosque, dateIso, mosques.length, selectedDate]);
+  }, [selectedMosque, dateIso, mosques.length]);
 
   useEffect(() => {
     loadPrayerTimes();
@@ -483,6 +499,19 @@ export default function PrayerTimesAdminScreen({
     }
   }, [loadPrayerTimes]);
 
+  const updateFormTime = useCallback(
+    (prayer: keyof PrayerTimeForm, field: keyof TimePair, value: string | null) => {
+      setForm((prev) => ({
+        ...prev,
+        [prayer]: {
+          ...prev[prayer],
+          [field]: value,
+        },
+      }));
+    },
+    []
+  );
+
   const loadImportHistory = useCallback(async () => {
     if (!selectedMosque || !canManageImports) {
       setImportHistory([]);
@@ -491,20 +520,21 @@ export default function PrayerTimesAdminScreen({
 
     setHistoryLoading(true);
     try {
-      const history = await listPrayerScheduleImports(selectedMosque.mosqueId, 6);
-      setImportHistory(history);
+      const payload = await loadPrayerTimesWorkspace(selectedMosque.mosqueId, dateIso, 6);
+      setImportHistory(payload.importHistory ?? []);
     } catch (e: any) {
       console.warn('load prayer schedule imports', e?.message ?? e);
     } finally {
       setHistoryLoading(false);
     }
-  }, [canManageImports, selectedMosque]);
+  }, [canManageImports, dateIso, selectedMosque]);
 
   useEffect(() => {
     void loadImportHistory();
   }, [loadImportHistory]);
 
   const openTimePicker = (prayer: keyof PrayerTimeForm, field: 'adhan' | 'iqama') => {
+    if (Platform.OS === 'web') return;
     if (disableForNoMosque) return;
     setPickerState({ prayer, field });
     setTempValue(buildPickerValue(form[prayer][field], selectedDate));
@@ -514,12 +544,23 @@ export default function PrayerTimesAdminScreen({
   const handleSave = async () => {
     if (!selectedMosque) return;
 
-    setSaving(true);
     setError(null);
     setNotice(null);
 
+    const invalidTime = findInvalidPrayerTime(form);
+    if (invalidTime) {
+      setError(
+        `Enter a valid HH:MM time for ${invalidTime.prayerLabel} ${invalidTime.fieldLabel} or clear the field before saving.`
+      );
+      return;
+    }
+
+    const normalizedForm = normalizePrayerTimeForm(form);
+    setForm(normalizedForm);
+    setSaving(true);
+
     try {
-      const payload = mapFormToRow(form, selectedDate);
+      const payload = mapFormToRow(normalizedForm, selectedDate);
       await upsertPrayerTimes(selectedMosque.mosqueId, dateIso, payload, {
         sourceType: 'manual',
         generatedMethod: 'quick_edit',
@@ -527,7 +568,9 @@ export default function PrayerTimesAdminScreen({
         overridesExist: true,
       });
       setNotice('Prayer times saved successfully.');
-      Alert.alert('Saved', 'Prayer times updated.');
+      if (!isWeb) {
+        Alert.alert('Saved', 'Prayer times updated.');
+      }
       await loadPrayerTimes();
     } catch (e: any) {
       console.warn('save prayer times', e?.message ?? e);
@@ -566,6 +609,7 @@ export default function PrayerTimesAdminScreen({
       const preview = await pickPrayerScheduleImportFile(importOptions);
       if (!preview) return;
       setImportPreview(preview);
+      setLastPublishedImport(null);
       setCoverageIntent(null);
       setImportImpact(null);
       setShowPublishReview(false);
@@ -611,6 +655,7 @@ export default function PrayerTimesAdminScreen({
     try {
       const preview = parsePrayerScheduleCsv(pastedCsv, 'Pasted CSV', importOptions);
       setImportPreview(preview);
+      setLastPublishedImport(null);
       setCoverageIntent(null);
       setImportImpact(null);
       setShowPublishReview(false);
@@ -629,6 +674,7 @@ export default function PrayerTimesAdminScreen({
     const template = variant === 'full' ? FULL_TEMPLATE_CSV : MINIMAL_TEMPLATE_CSV;
     setPastedCsv(template);
     setImportPreview(null);
+    setLastPublishedImport(null);
     setCoverageIntent(null);
     setImportImpact(null);
     setShowPublishReview(false);
@@ -694,19 +740,25 @@ export default function PrayerTimesAdminScreen({
   const handleConfirmPublishImport = async () => {
     if (!selectedMosque || !importPreview || !coverageIntent) return;
 
+    const previewToPublish = importPreview;
+    const coverageIntentLabel = formatCoverageIntentLabel(coverageIntent);
+    const coverageLabel =
+      coverageAnalysis?.label ??
+      formatCoverage(previewToPublish.summary.startDate, previewToPublish.summary.endDate);
+
     setPublishingImport(true);
     setShowPublishReview(false);
     setError(null);
     setNotice(
-      `Publishing ${importPreview.validRows.length} timetable rows for ${selectedMosque.name}. This may take a few seconds.`
+      `Publishing ${previewToPublish.validRows.length} timetable rows for ${selectedMosque.name}. This may take a few seconds.`
     );
 
     try {
       const publishResult = await publishPrayerSchedulePreview({
         mosqueId: selectedMosque.mosqueId,
-        rows: importPreview.validRows,
-        summary: importPreview.summary,
-        sourceLabel: importPreview.fileName ?? 'Pasted CSV',
+        rows: previewToPublish.validRows,
+        summary: previewToPublish.summary,
+        sourceLabel: previewToPublish.fileName ?? 'Pasted CSV',
         importMode,
         fixedIqamaOffsetMinutes:
           buildImportOptions(
@@ -717,27 +769,41 @@ export default function PrayerTimesAdminScreen({
             manualContextYear
           ).fixedIqamaOffsetMinutes,
         metadata: {
-          parserDetection: importPreview.detection ?? null,
-          parserColumnMapping: importPreview.columnMapping ?? null,
+          parserDetection: previewToPublish.detection ?? null,
+          parserColumnMapping: previewToPublish.columnMapping ?? null,
           dateContext: manualDateContext ?? null,
           coverageIntent,
-          coverageIntentLabel: formatCoverageIntentLabel(coverageIntent),
+          coverageIntentLabel,
           coverageAnalysis,
           impactSummary: importImpact,
           onboardingEntry: isOnboardingEntry,
         },
         meta: {
           sourceType: 'upload',
-          generatedMethod: importPreview.fileName
-            ? `csv_upload:${importMode}:${importPreview.fileName}`
+          generatedMethod: previewToPublish.fileName
+            ? `csv_upload:${importMode}:${previewToPublish.fileName}`
             : `csv_upload:${importMode}`,
           updatedBy: userId || null,
           overridesExist: true,
         },
       });
 
+      setLastPublishedImport(
+        buildPublishedImportConfirmation({
+          mosqueName: selectedMosque.name,
+          sourceLabel: previewToPublish.fileName ?? 'Pasted CSV',
+          scopeLabel: coverageIntentLabel,
+          coverageLabel,
+          importId: publishResult.importRecord.id,
+          publishedAt: publishResult.importRecord.published_at ?? null,
+          rowsWritten: publishResult.rows.length,
+          inserts: publishResult.impactSummary?.inserts ?? importImpact?.inserts ?? previewToPublish.validRows.length,
+          updates: publishResult.impactSummary?.updates ?? importImpact?.updates ?? 0,
+          rows: publishResult.rows,
+        })
+      );
       setNotice(
-        `Published ${importPreview.validRows.length} timetable rows for ${selectedMosque.name}. Import ${publishResult.importRecord.id.slice(0, 8)} was added to history.`
+        `Published ${previewToPublish.validRows.length} timetable rows for ${selectedMosque.name}. The live confirmation summary is shown below.`
       );
       setImportPreview(null);
       setCoverageIntent(null);
@@ -825,13 +891,7 @@ export default function PrayerTimesAdminScreen({
     if (!pickerState) return;
     const hh = value.getHours().toString().padStart(2, '0');
     const mm = value.getMinutes().toString().padStart(2, '0');
-    setForm((prev) => ({
-      ...prev,
-      [pickerState.prayer]: {
-        ...prev[pickerState.prayer],
-        [pickerState.field]: `${hh}:${mm}`,
-      },
-    }));
+    updateFormTime(pickerState.prayer, pickerState.field, `${hh}:${mm}`);
   };
 
   const closePicker = (commit = false) => {
@@ -859,6 +919,7 @@ export default function PrayerTimesAdminScreen({
     if (candidate && !isNaN(candidate.getTime())) return candidate;
     return new Date(selectedDate);
   })();
+  const manualSaveFeedback = error ?? (notice === 'Prayer times saved successfully.' ? notice : null);
 
   if (roleLoading || mosqueLoading) {
     return (
@@ -1389,6 +1450,57 @@ export default function PrayerTimesAdminScreen({
             )}
           </AppCard>
 
+          {lastPublishedImport && !importPreview ? (
+            <AppCard subtle style={styles.publishSuccessCard}>
+              <View style={styles.publishSuccessHeader}>
+                <View style={styles.importCopy}>
+                  <AppText variant="caption" color={tokens.color.text.secondary}>
+                    Latest publish
+                  </AppText>
+                  <AppText variant="title" style={styles.previewTitle}>
+                    Schedule confirmed live for {lastPublishedImport.mosqueName}
+                  </AppText>
+                  <AppText variant="body" color={tokens.color.text.secondary}>
+                    {lastPublishedImport.sourceLabel} was published as {lastPublishedImport.scopeLabel.toLowerCase()} coverage for {lastPublishedImport.coverageLabel}.
+                  </AppText>
+                  <AppText variant="caption" color={tokens.color.text.secondary}>
+                    Import {lastPublishedImport.importId.slice(0, 8)}{lastPublishedImport.publishedAt ? ` · ${formatDateTime(lastPublishedImport.publishedAt)}` : ''}
+                  </AppText>
+                </View>
+              </View>
+              <View style={styles.previewSummaryGrid}>
+                <SummaryMetric
+                  label="Rows written"
+                  value={String(lastPublishedImport.rowsWritten)}
+                />
+                <SummaryMetric
+                  label="Inserted"
+                  value={String(lastPublishedImport.inserts)}
+                />
+                <SummaryMetric
+                  label="Updated"
+                  value={String(lastPublishedImport.updates)}
+                />
+                <SummaryMetric
+                  label="Coverage"
+                  value={lastPublishedImport.coverageLabel}
+                />
+              </View>
+              {lastPublishedImport.sampleRows.length ? (
+                <View style={styles.publishSuccessSamples}>
+                  <AppText variant="caption" color={tokens.color.text.secondary}>
+                    Live sample
+                  </AppText>
+                  <View style={styles.previewRows}>
+                    {lastPublishedImport.sampleRows.map((row) => (
+                      <PreviewRow key={`published-${row.date}`} row={row} />
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+            </AppCard>
+          ) : null}
+
           {importPreview ? (
             <View style={styles.previewSection}>
               <View style={styles.previewSummaryGrid}>
@@ -1800,21 +1912,37 @@ export default function PrayerTimesAdminScreen({
                     <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
                       Adhan
                     </AppText>
-                    <TimeButton
-                      label={form[p.key].adhan}
-                      onPress={() => openTimePicker(p.key, 'adhan')}
-                      disabled={disableForNoMosque}
-                    />
+                    {isWeb ? (
+                      <WebTimeInput
+                        value={form[p.key].adhan}
+                        onChangeText={(value) => updateFormTime(p.key, 'adhan', value)}
+                        disabled={disableForNoMosque}
+                      />
+                    ) : (
+                      <TimeButton
+                        label={form[p.key].adhan}
+                        onPress={() => openTimePicker(p.key, 'adhan')}
+                        disabled={disableForNoMosque}
+                      />
+                    )}
                   </View>
                   <View style={styles.row}>
                     <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
                       Iqama
                     </AppText>
-                    <TimeButton
-                      label={form[p.key].iqama}
-                      onPress={() => openTimePicker(p.key, 'iqama')}
-                      disabled={disableForNoMosque}
-                    />
+                    {isWeb ? (
+                      <WebTimeInput
+                        value={form[p.key].iqama}
+                        onChangeText={(value) => updateFormTime(p.key, 'iqama', value)}
+                        disabled={disableForNoMosque}
+                      />
+                    ) : (
+                      <TimeButton
+                        label={form[p.key].iqama}
+                        onPress={() => openTimePicker(p.key, 'iqama')}
+                        disabled={disableForNoMosque}
+                      />
+                    )}
                   </View>
                 </AppCard>
               ))
@@ -1827,6 +1955,15 @@ export default function PrayerTimesAdminScreen({
                 disabled={saving || disableForNoMosque}
               />
             </View>
+            {manualSaveFeedback ? (
+              <AppText
+                variant="caption"
+                color={error ? tokens.color.status.danger : '#047857'}
+                style={styles.actionFeedback}
+              >
+                {manualSaveFeedback}
+              </AppText>
+            ) : null}
           </>
         ) : (
           <AppText variant="body" color={tokens.color.text.secondary}>
@@ -2114,37 +2251,15 @@ function mapRowToForm(row: PrayerTimesRow): PrayerTimeForm {
   };
 }
 
-function mapNormalizedToForm(
-  normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>
-): PrayerTimeForm {
-  const toHmDate = (value?: Date | null) => {
-    if (!value) return null;
-    const hh = value.getHours().toString().padStart(2, '0');
-    const mm = value.getMinutes().toString().padStart(2, '0');
-    return `${hh}:${mm}`;
-  };
-
+function mapPublishedPrayerTimesRowToPreviewRow(row: PrayerTimesRow): PrayerSchedulePreviewRow {
+  const mapped = mapRowToForm(row);
   return {
-    fajr: {
-      adhan: toHmDate(normalized?.fajr?.adhan ?? null),
-      iqama: toHmDate(normalized?.fajr?.iqama ?? null),
-    },
-    dhuhr: {
-      adhan: toHmDate(normalized?.dhuhr?.adhan ?? null),
-      iqama: toHmDate(normalized?.dhuhr?.iqama ?? null),
-    },
-    asr: {
-      adhan: toHmDate(normalized?.asr?.adhan ?? null),
-      iqama: toHmDate(normalized?.asr?.iqama ?? null),
-    },
-    maghrib: {
-      adhan: toHmDate(normalized?.maghrib?.adhan ?? null),
-      iqama: toHmDate(normalized?.maghrib?.iqama ?? null),
-    },
-    isha: {
-      adhan: toHmDate(normalized?.isha?.adhan ?? null),
-      iqama: toHmDate(normalized?.isha?.iqama ?? null),
-    },
+    date: normalizeDateKey(row.date),
+    fajr: mapped.fajr,
+    dhuhr: mapped.dhuhr,
+    asr: mapped.asr,
+    maghrib: mapped.maghrib,
+    isha: mapped.isha,
   };
 }
 
@@ -2179,6 +2294,81 @@ function combine(day: Date, hm: string | null) {
   return d.toISOString();
 }
 
+function normalizeTimeDraft(value: string) {
+  const sanitized = value.replace(/[^\d:]/g, '');
+  if (!sanitized.length) return null;
+
+  if (sanitized.includes(':')) {
+    const [rawHours, rawMinutes = ''] = sanitized.split(':', 2);
+    const hours = rawHours.replace(/\D/g, '').slice(0, 2);
+    const minutes = rawMinutes.replace(/\D/g, '').slice(0, 2);
+    if (!hours.length && !minutes.length) return null;
+    return minutes.length || sanitized.endsWith(':') ? `${hours}:${minutes}` : hours;
+  }
+
+  const digits = sanitized.replace(/\D/g, '').slice(0, 4);
+  if (!digits.length) return null;
+  if (digits.length <= 2) return digits;
+  if (digits.length === 3) return `${digits.slice(0, 1)}:${digits.slice(1)}`;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function normalizePrayerTimeValue(value: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours > 23 || minutes > 59) {
+    return null;
+  }
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
+function isValidTimeDraft(value: string | null) {
+  return !value || !!normalizePrayerTimeValue(value);
+}
+
+function normalizePrayerTimeForm(form: PrayerTimeForm): PrayerTimeForm {
+  return {
+    fajr: {
+      adhan: normalizePrayerTimeValue(form.fajr.adhan),
+      iqama: normalizePrayerTimeValue(form.fajr.iqama),
+    },
+    dhuhr: {
+      adhan: normalizePrayerTimeValue(form.dhuhr.adhan),
+      iqama: normalizePrayerTimeValue(form.dhuhr.iqama),
+    },
+    asr: {
+      adhan: normalizePrayerTimeValue(form.asr.adhan),
+      iqama: normalizePrayerTimeValue(form.asr.iqama),
+    },
+    maghrib: {
+      adhan: normalizePrayerTimeValue(form.maghrib.adhan),
+      iqama: normalizePrayerTimeValue(form.maghrib.iqama),
+    },
+    isha: {
+      adhan: normalizePrayerTimeValue(form.isha.adhan),
+      iqama: normalizePrayerTimeValue(form.isha.iqama),
+    },
+  };
+}
+
+function findInvalidPrayerTime(form: PrayerTimeForm) {
+  for (const prayer of prayers) {
+    for (const field of ['adhan', 'iqama'] as const) {
+      if (!isValidTimeDraft(form[prayer.key][field])) {
+        return {
+          prayerLabel: prayer.label,
+          fieldLabel: field === 'adhan' ? 'adhan' : 'iqama',
+        };
+      }
+    }
+  }
+  return null;
+}
+
 function buildPickerValue(hm: string | null, baseDate: Date) {
   const d = new Date(baseDate);
   if (hm) {
@@ -2202,6 +2392,36 @@ function formatCoverage(startDate: string | null, endDate: string | null) {
   if (!startDate || !endDate) return 'No range';
   if (startDate === endDate) return startDate;
   return `${startDate} to ${endDate}`;
+}
+
+function buildPublishedImportConfirmation(args: {
+  importId: string;
+  mosqueName: string;
+  sourceLabel: string;
+  scopeLabel: string;
+  coverageLabel: string;
+  rowsWritten: number;
+  inserts: number;
+  updates: number;
+  publishedAt: string | null;
+  rows: PrayerTimesRow[];
+}): PublishedImportConfirmation {
+  const sortedRows = [...args.rows].sort((left, right) =>
+    normalizeDateKey(left.date).localeCompare(normalizeDateKey(right.date))
+  );
+
+  return {
+    importId: args.importId,
+    mosqueName: args.mosqueName,
+    sourceLabel: args.sourceLabel,
+    scopeLabel: args.scopeLabel,
+    coverageLabel: args.coverageLabel,
+    rowsWritten: args.rowsWritten,
+    inserts: args.inserts,
+    updates: args.updates,
+    publishedAt: args.publishedAt,
+    sampleRows: sortedRows.slice(0, 3).map(mapPublishedPrayerTimesRowToPreviewRow),
+  };
 }
 
 function getImportRecoveryTips(preview: PrayerSchedulePreview | null) {
@@ -2672,6 +2892,32 @@ function TimeButton({
   );
 }
 
+function WebTimeInput({
+  value,
+  onChangeText,
+  disabled,
+}: {
+  value: string | null;
+  onChangeText: (value: string | null) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <TextInput
+      style={[styles.timeInput, disabled && styles.cardDisabled]}
+      value={value ?? ''}
+      onChangeText={(nextValue) => onChangeText(normalizeTimeDraft(nextValue))}
+      editable={!disabled}
+      placeholder="HH:MM"
+      placeholderTextColor={tokens.color.text.muted}
+      keyboardType="number-pad"
+      maxLength={5}
+      autoCapitalize="none"
+      autoCorrect={false}
+      selectTextOnFocus
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
   pressed: { opacity: 0.9 },
@@ -2959,6 +3205,19 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
   },
+  publishSuccessCard: {
+    gap: 12,
+    borderRadius: 16,
+    backgroundColor: '#F3FBF6',
+    borderWidth: 1,
+    borderColor: '#D5F1DF',
+  },
+  publishSuccessHeader: {
+    gap: 8,
+  },
+  publishSuccessSamples: {
+    gap: 8,
+  },
   summaryMetric: {
     minWidth: 140,
     flexGrow: 1,
@@ -3114,6 +3373,7 @@ const styles = StyleSheet.create({
   sectionHeader: { gap: 2, marginTop: 2 },
   sectionTitle: { fontSize: 17, lineHeight: 22 },
   actionRow: { marginTop: tokens.spacing.xs },
+  actionFeedback: { marginTop: 8 },
   loader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center' },
   card: { gap: tokens.spacing.xs, padding: tokens.spacing.sm, borderRadius: 16 },
   cardDisabled: { opacity: 0.6 },
@@ -3130,6 +3390,19 @@ const styles = StyleSheet.create({
     borderColor: '#E0E7EF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  timeInput: {
+    minWidth: 88,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    borderRadius: tokens.radius.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    color: '#0F172A',
+    textAlign: 'center',
+    fontWeight: tokens.typography.weight.extrabold,
+    fontSize: 15,
   },
   timeText: { fontWeight: tokens.typography.weight.extrabold, fontSize: 15 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },

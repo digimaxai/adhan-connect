@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, RefreshControl } from 'react-native';
+import React, { useMemo, useEffect, useState } from 'react';
+import { View, StyleSheet, RefreshControl } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
+import { useRoleFlags } from '../../lib/roles';
 import type { MuezzinSchedule, MuezzinSlot } from '../../lib/types/muezzin';
 import { AppButton } from '../../components/ui/app-button';
 import { AppCard } from '../../components/ui/app-card';
@@ -17,15 +18,24 @@ const WINDOW_END_MS = 2 * 60 * 1000;
 export default function MuezzinToolsScreen() {
   const router = useRouter();
   const { schedule, nextAssignedSlot, loading, refresh } = useMuezzinSchedule();
+  const roles = useRoleFlags();
+  const primaryMuezzinMosque = roles.muezzinMosques[0] ?? null;
+  const hasSchedulePayload = !!schedule?.mosqueId || !!schedule?.mosqueName || !!schedule?.slots.length;
 
   const resolvedSchedule: MuezzinSchedule = schedule ?? {
-    mosqueId: null,
-    mosqueName: null,
+    mosqueId: primaryMuezzinMosque?.mosqueId ?? null,
+    mosqueName: primaryMuezzinMosque?.name ?? null,
     slots: [],
     nextAssignedSlot: null,
+    nextMosqueSlot: null,
   };
 
   const primaryMosqueId = resolvedSchedule.mosqueId;
+  const isInitialScheduleLoad = !!loading && !hasSchedulePayload;
+  const nextPrayerSlot = useMemo(
+    () => nextAssignedSlot ?? resolvedSchedule.nextMosqueSlot ?? resolvedSchedule.nextAssignedSlot ?? null,
+    [nextAssignedSlot, resolvedSchedule.nextMosqueSlot, resolvedSchedule.nextAssignedSlot]
+  );
 
   const handleOpenLiveBroadcast = (slot: MuezzinSlot | null) => {
     if (!slot) return;
@@ -72,9 +82,17 @@ export default function MuezzinToolsScreen() {
         <AppText variant="title" style={styles.title}>Muezzin Home</AppText>
         <AppText variant="caption" style={styles.subtitle}>Review your next adhan and start live when the time comes.</AppText>
 
-        <NextAdhanCard slot={nextAssignedSlot} onPressStatusStrip={handleOpenLiveBroadcast} />
+        <NextAdhanCard
+          slot={nextPrayerSlot}
+          assignedSlot={nextAssignedSlot}
+          mosqueName={resolvedSchedule.mosqueName}
+          loading={isInitialScheduleLoad}
+          onPressStatusStrip={handleOpenLiveBroadcast}
+        />
 
-        <TodaysAdhansCard schedule={resolvedSchedule} />
+        <TodaysPrayerTimesCard schedule={resolvedSchedule} loading={isInitialScheduleLoad} />
+
+        <TodaysRotaCard schedule={resolvedSchedule} loading={isInitialScheduleLoad} />
 
         <AppButton title="Manage Live Broadcast" onPress={handleManageLivePress} style={styles.primaryButton} />
     </ScreenContainer>
@@ -83,10 +101,13 @@ export default function MuezzinToolsScreen() {
 
 interface NextAdhanCardProps {
   slot: MuezzinSlot | null;
+  assignedSlot: MuezzinSlot | null;
+  mosqueName: string | null;
+  loading: boolean;
   onPressStatusStrip: (slot: MuezzinSlot | null) => void;
 }
 
-const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip }) => {
+const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqueName, loading, onPressStatusStrip }) => {
   const router = useRouter();
   const [now, setNow] = useState(() => new Date());
 
@@ -97,13 +118,24 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip 
 
   const liveWindowStart = slot?.liveWindowStart ?? (slot?.adhanTime ? new Date(slot.adhanTime.getTime() - WINDOW_START_MS) : null);
   const liveWindowEnd = slot?.liveWindowEnd ?? (slot?.adhanTime ? new Date(slot.adhanTime.getTime() + WINDOW_END_MS) : null);
-  const isLiveWindowOpen = !!liveWindowStart && !!liveWindowEnd && now >= liveWindowStart && now <= liveWindowEnd;
   const isAfterWindow = !!liveWindowEnd && now > liveWindowEnd;
   const liveOpensIn = liveWindowStart ? formatDuration(liveWindowStart, now) : null;
   const countdownText = getNextAdhanCountdown(slot, now, liveWindowEnd);
   const slotIsTomorrow = isTomorrow(slot?.adhanTime ?? null, now);
-
-  const canManageLive = !!slot && (isLiveWindowOpen || slot.status === 'ready' || slot.status === 'live');
+  const activeAssignedSlot = assignedSlot ?? (slot?.isAssignedToMe ? slot : null);
+  const assignedLiveWindowStart =
+    activeAssignedSlot?.liveWindowStart ??
+    (activeAssignedSlot?.adhanTime ? new Date(activeAssignedSlot.adhanTime.getTime() - WINDOW_START_MS) : null);
+  const assignedLiveWindowEnd =
+    activeAssignedSlot?.liveWindowEnd ??
+    (activeAssignedSlot?.adhanTime ? new Date(activeAssignedSlot.adhanTime.getTime() + WINDOW_END_MS) : null);
+  const canManageLive =
+    !!activeAssignedSlot &&
+    !!assignedLiveWindowStart &&
+    !!assignedLiveWindowEnd &&
+    (now >= assignedLiveWindowStart || activeAssignedSlot.status === 'ready' || activeAssignedSlot.status === 'live') &&
+    now <= assignedLiveWindowEnd;
+  const assignedSlotDiffers = !!slot && !!activeAssignedSlot && slot.id !== activeAssignedSlot.id;
 
   const statusLabel =
     slot?.status === 'live'
@@ -120,24 +152,55 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip 
       : slot?.status === 'ready'
       ? styles.statusPillReady
       : styles.statusPillNeutral;
+  const assignmentSummary = slot
+    ? slot.isAssignedToMe
+      ? 'Assigned to you'
+      : slot.assignedMuezzinName
+      ? `Assigned to ${slot.assignedMuezzinName}`
+      : 'No muezzin assigned yet'
+    : null;
+  const liveWindowSummary = !slot
+    ? 'Use test mode to verify the live broadcast flow.'
+    : canManageLive
+    ? 'Broadcast window is open now.'
+    : isAfterWindow
+    ? 'Adhan window ended for this slot.'
+    : !activeAssignedSlot
+    ? 'No assigned live slot right now.'
+    : assignedSlotDiffers
+    ? `Your next live slot is ${activeAssignedSlot.prayerName} at ${formatTime(activeAssignedSlot.adhanTime)}.`
+    : liveOpensIn
+    ? `Live broadcast opens in ${liveOpensIn}.`
+    : 'Live broadcast opens soon.';
 
   const handleStartTest = () => {
     router.push({ pathname: '/(muezzin)/live-broadcast', params: { mode: 'test' } });
   };
 
   const handleManage = () => {
-    if (!slot) {
+    if (!activeAssignedSlot) {
       handleStartTest();
       return;
     }
-    onPressStatusStrip(slot);
+    onPressStatusStrip(activeAssignedSlot);
   };
+
+  const resolvedMosqueName =
+    slot?.mosqueName ??
+    mosqueName ??
+    (loading ? 'Loading assigned mosque...' : 'No mosque assigned');
+  const showLoadingState = loading && !slot;
 
   return (
     <AppCard padded={false} style={styles.heroCard}>
-      <View style={styles.heroHeaderRow}>
-        <AppText variant="caption" style={styles.heroContextText}>Muezzin - {slot?.mosqueName ?? 'Mosque'}</AppText>
-        <View style={styles.heroMetaRow}>
+      <View style={styles.heroTop}>
+        <View style={styles.heroContextBlock}>
+          <AppText variant="caption" style={styles.heroEyebrow}>Assigned mosque</AppText>
+          <AppText variant="body" style={styles.heroContextText} numberOfLines={2}>
+            {resolvedMosqueName}
+          </AppText>
+        </View>
+        <View style={styles.heroBadgeWrap}>
           {slotIsTomorrow ? (
             <View style={[styles.statusPill, styles.statusPillTomorrow]}>
               <AppText variant="caption" style={styles.statusPillTomorrowText}>Tomorrow</AppText>
@@ -153,22 +216,69 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip 
 
       <View style={styles.heroMain}>
         <AppText variant="caption" style={styles.heroLabel}>Next adhan</AppText>
-        <AppText variant="hero" style={styles.heroTime}>{slot ? `${slot.prayerName} - ${formatTime(slot.adhanTime)}` : 'No adhans remaining today.'}</AppText>
-        {!!countdownText && slot && <AppText variant="body" style={styles.heroCountdown}>{countdownText}</AppText>}
+        {showLoadingState ? (
+          <>
+            <AppText variant="hero" style={styles.heroTime}>Loading today&apos;s schedule...</AppText>
+            <View style={styles.heroDetailsCard}>
+              <View style={styles.heroDetailRow}>
+                <Ionicons name="time-outline" size={16} color="#8CCBFF" />
+                <AppText variant="caption" style={styles.heroDetailText}>
+                  Pull to refresh if this takes more than a few seconds.
+                </AppText>
+              </View>
+            </View>
+          </>
+        ) : slot ? (
+          <>
+            <View style={styles.heroPrimaryRow}>
+              <View style={styles.heroPrayerPill}>
+                <AppText variant="body" style={styles.heroPrayerName}>{slot.prayerName}</AppText>
+              </View>
+              <AppText variant="hero" style={styles.heroTime}>{formatTime(slot.adhanTime)}</AppText>
+            </View>
+            {!!countdownText && <AppText variant="body" style={styles.heroCountdown}>{countdownText}</AppText>}
+            <View style={styles.heroDetailsCard}>
+              {assignmentSummary ? (
+                <View style={styles.heroDetailRow}>
+                  <Ionicons
+                    name={slot.isAssignedToMe ? 'mic-outline' : slot.assignedMuezzinName ? 'person-outline' : 'alert-circle-outline'}
+                    size={16}
+                    color="#8CCBFF"
+                  />
+                  <AppText variant="caption" style={styles.heroDetailText}>{assignmentSummary}</AppText>
+                </View>
+              ) : null}
+              <View style={styles.heroDetailRow}>
+                <Ionicons name="radio-outline" size={16} color="#8CCBFF" />
+                <AppText variant="caption" style={styles.heroDetailText}>{liveWindowSummary}</AppText>
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
+            <AppText variant="hero" style={styles.heroTime}>No adhans remaining today.</AppText>
+            <View style={styles.heroDetailsCard}>
+              <View style={styles.heroDetailRow}>
+                <Ionicons name="flask-outline" size={16} color="#8CCBFF" />
+                <AppText variant="caption" style={styles.heroDetailText}>{liveWindowSummary}</AppText>
+              </View>
+            </View>
+          </>
+        )}
       </View>
 
-      {!slot ? (
+      {showLoadingState ? (
+        <View style={styles.heroFooterNote}>
+          <AppText variant="caption" style={styles.heroFooterText}>Checking your rota and prayer times now.</AppText>
+        </View>
+      ) : !slot ? (
         <AppButton title="Start test live adhan" onPress={handleStartTest} style={styles.primaryButton} />
       ) : canManageLive ? (
         <AppButton title="Manage Live Broadcast" onPress={handleManage} style={styles.primaryButton} />
-      ) : isAfterWindow ? (
-        <View style={[styles.heroStrip, styles.heroStripDisabled]}>
-          <AppText variant="body" color={tokens.color.text.inverse} style={styles.heroStripText}>Adhan window ended</AppText>
-        </View>
       ) : (
-        <View style={[styles.heroStrip, styles.heroStripDisabled]}>
-          <AppText variant="body" color={tokens.color.text.inverse} style={styles.heroStripText}>
-            {liveOpensIn ? `Live broadcast opens in ${liveOpensIn}` : 'Live broadcast opens soon'}
+        <View style={styles.heroFooterNote}>
+          <AppText variant="caption" style={styles.heroFooterText}>
+            {slot.isAssignedToMe ? 'You can manage this slot when the broadcast window opens.' : 'You can monitor this slot and open test mode if needed.'}
           </AppText>
         </View>
       )}
@@ -176,20 +286,70 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, onPressStatusStrip 
   );
 };
 
-interface TodaysAdhansCardProps {
+interface TodaysScheduleCardProps {
   schedule: MuezzinSchedule;
+  loading?: boolean;
 }
 
-const TodaysAdhansCard: React.FC<TodaysAdhansCardProps> = ({ schedule }) => {
-  if (!schedule.slots.length) return null;
+const TodaysPrayerTimesCard: React.FC<TodaysScheduleCardProps> = ({ schedule, loading = false }) => {
+  const subtitleText = schedule.mosqueName ?? (loading ? 'Loading assigned mosque...' : null);
+  if (!schedule.slots.length && !loading) {
+    return (
+      <AppCard style={styles.card}>
+        <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Prayer Times</AppText>
+        {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
+        <AppText variant="caption" style={styles.cardEmptyText}>Prayer times are unavailable right now. Pull to refresh.</AppText>
+      </AppCard>
+    );
+  }
 
   return (
     <AppCard style={styles.card}>
-      <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Adhans</AppText>
-      {!!schedule.mosqueName && <AppText variant="caption" style={styles.cardSubtitle}>{schedule.mosqueName}</AppText>}
+      <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Prayer Times</AppText>
+      {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
 
       <View style={{ marginTop: 12 }}>
-        {schedule.slots.map((slot, index) => {
+        {loading && !schedule.slots.length ? (
+          <AppText variant="caption" style={styles.cardEmptyText}>Loading today&apos;s prayer times...</AppText>
+        ) : schedule.slots.map((slot, index) => {
+          const isLast = index === schedule.slots.length - 1;
+          return (
+            <View key={`${slot.id}-times`} style={[styles.adahnRow, !isLast && styles.adahnRowDivider]}>
+              <View style={styles.adahnLeft}>
+                <AppText style={styles.adahnName}>{slot.prayerName}</AppText>
+              </View>
+              <View style={styles.adahnRightOnly}>
+                <AppText style={styles.adahnTime}>{formatTime(slot.adhanTime)}</AppText>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </AppCard>
+  );
+};
+
+const TodaysRotaCard: React.FC<TodaysScheduleCardProps> = ({ schedule, loading = false }) => {
+  const subtitleText = schedule.mosqueName ?? (loading ? 'Loading assigned mosque...' : null);
+  if (!schedule.slots.length && !loading) {
+    return (
+      <AppCard style={styles.card}>
+        <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Rota</AppText>
+        {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
+        <AppText variant="caption" style={styles.cardEmptyText}>Rota assignments are unavailable right now. Pull to refresh.</AppText>
+      </AppCard>
+    );
+  }
+
+  return (
+    <AppCard style={styles.card}>
+      <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Rota</AppText>
+      {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
+
+      <View style={{ marginTop: 12 }}>
+        {loading && !schedule.slots.length ? (
+          <AppText variant="caption" style={styles.cardEmptyText}>Loading today&apos;s rota...</AppText>
+        ) : schedule.slots.map((slot, index) => {
           const isLast = index === schedule.slots.length - 1;
           return (
             <View key={slot.id} style={[styles.adahnRow, !isLast && styles.adahnRowDivider]}>
@@ -298,23 +458,31 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: '#071427',
     borderRadius: 24,
-    padding: 10,
+    padding: 16,
     marginBottom: 6,
   },
-  heroHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+  heroTop: {
+    gap: 10,
+    marginBottom: 14,
   },
-  heroMetaRow: {
+  heroContextBlock: {
+    gap: 4,
+  },
+  heroBadgeWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
+  heroEyebrow: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: '#6FB9FF',
+  },
   heroContextText: {
-    fontSize: 12,
-    color: '#52a6ff',
+    color: '#E2E8F0',
+    fontWeight: '700',
+    lineHeight: 20,
   },
   statusPill: {
     paddingHorizontal: 10,
@@ -344,42 +512,70 @@ const styles = StyleSheet.create({
     color: '#0369A1',
   },
   heroMain: {
-    marginBottom: 8,
+    gap: 10,
   },
   heroLabel: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.7)',
-    marginBottom: 4,
+  },
+  heroPrimaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    gap: 12,
+  },
+  heroPrayerPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(111,185,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(111,185,255,0.2)',
+  },
+  heroPrayerName: {
+    color: '#D8EEFF',
+    fontWeight: '800',
+    fontSize: 16,
   },
   heroTime: {
-    fontSize: 32,
-    fontWeight: '700',
+    flexShrink: 1,
+    fontSize: 40,
+    lineHeight: 42,
+    fontWeight: '800',
     color: '#ffffff',
   },
   heroCountdown: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#22C55E',
-    marginTop: 4,
+    fontWeight: '700',
   },
-  heroStrip: {
-    marginTop: 8,
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+  heroDetailsCard: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
-  heroStripActive: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  heroDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
   },
-  heroStripDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
+  heroDetailText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.84)',
+    lineHeight: 18,
   },
-  heroStripPressed: {
-    opacity: 0.7,
+  heroFooterNote: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
-  heroStripText: {
-    textAlign: 'center',
-    fontSize: 14,
-    color: '#ffffff',
+  heroFooterText: {
+    color: 'rgba(255,255,255,0.68)',
+    lineHeight: 18,
   },
   card: {
     backgroundColor: '#ffffff',
@@ -405,6 +601,12 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 4,
   },
+  cardEmptyText: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#64748B',
+  },
   adahnRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -419,6 +621,7 @@ const styles = StyleSheet.create({
   adahnLeft: { flex: 1 },
   adahnMiddle: { width: 70, alignItems: 'flex-end' },
   adahnRight: { flexShrink: 0, marginLeft: 8 },
+  adahnRightOnly: { minWidth: 72, alignItems: 'flex-end' },
   adahnName: {
     fontSize: 16,
     fontWeight: '600',

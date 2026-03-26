@@ -1,3 +1,4 @@
+import { resolveApiUrl, supportsServerApi } from '../apiBaseUrl';
 import { supabase } from '../../supabase';
 
 export type PrayerTimesRow = {
@@ -83,12 +84,79 @@ function buildPrayerTimesPayload(
   return payload;
 }
 
+async function upsertPrayerTimesViaServer(
+  mosqueId: string,
+  dateIso: string,
+  data: Partial<PrayerTimesRow>,
+  meta?: PrayerTimesWriteMeta
+): Promise<{ handled: boolean; row: PrayerTimesRow | null }> {
+  if (!supportsServerApi()) {
+    return { handled: false, row: null };
+  }
+
+  const endpoint = resolveApiUrl('/api/admin/prayer-times-save');
+  if (!endpoint) {
+    return { handled: false, row: null };
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session?.access_token) {
+    throw new Error('Your session has expired. Refresh and sign in again.');
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionData.session.access_token}`,
+      },
+      body: JSON.stringify({
+        mosqueId,
+        date: dateIso,
+        data,
+        meta,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { handled: false, row: null };
+      }
+      throw new Error(payload?.error || 'Unable to save prayer times.');
+    }
+
+    return {
+      handled: true,
+      row: (payload?.row ?? null) as PrayerTimesRow | null,
+    };
+  } catch (error: any) {
+    const message = error?.message ?? '';
+    const looksLikeMissingEndpoint =
+      message.toLowerCase().includes('failed to fetch') ||
+      message.toLowerCase().includes('network request failed');
+
+    if (looksLikeMissingEndpoint) {
+      console.warn('[upsertPrayerTimesViaServer] falling back to direct client write', error);
+      return { handled: false, row: null };
+    }
+
+    throw error;
+  }
+}
+
 export async function upsertPrayerTimes(
   mosqueId: string,
   dateIso: string,
   data: Partial<PrayerTimesRow>,
   meta?: PrayerTimesWriteMeta
 ) {
+  const serverResult = await upsertPrayerTimesViaServer(mosqueId, dateIso, data, meta);
+  if (serverResult.handled) {
+    return serverResult.row;
+  }
+
   const payload = buildPrayerTimesPayload(mosqueId, dateIso, data, meta);
   // First try with the intended composite key; if the constraint is missing in some environments, retry without onConflict.
   const attempt = async (useConflict: boolean) =>

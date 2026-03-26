@@ -6,13 +6,18 @@ import { supabase } from '../../../lib/supabaseClient';
 import { RequireMainAdmin } from '../../../components/admin/web/RequireMainAdmin';
 import { AdminContextProvider } from '../../../lib/admin-web/adminContext';
 import { AdminFeedbackProvider, useAdminFeedback } from '../../../lib/admin-web/adminFeedback';
+import { evaluateLocalAdminPolicy, mapMosquePolicyRow } from '../../../lib/admin/localAdminPolicy';
 import type { MosqueOption } from '../../../components/admin/web/AdminTopBar';
 import AdminShell from '../../../components/admin/web/AdminShell';
 import { AdminMetricCard, AdminPanel } from '../../../components/admin/web/AdminPrimitives';
 import AdminDataTable from '../../../components/admin/web/AdminDataTable';
 import AdminFilterPills from '../../../components/admin/web/AdminFilterPills';
+import { assignLocalAdminMembership, removeLocalAdminMembership } from '../../../lib/api/admin/localAdminAssignments';
+import { assignMuezzinMembership, removeMuezzinMembership } from '../../../lib/api/admin/muezzinAssignments';
+import { resolveApiUrl, supportsServerApi } from '../../../lib/api/apiBaseUrl';
 
 type UserRole = 'user' | 'local_admin' | 'main_admin' | 'muezzin';
+type GlobalRoleFilter = 'all' | 'user' | 'main_admin';
 
 type UserRow = {
   id: string;
@@ -21,28 +26,197 @@ type UserRow = {
   created_at: string | null;
 };
 
-type Assignment = {
-  mosque_id: string;
-  user_id: string;
-};
-
 type MosqueRow = {
   id: string;
   name: string;
   city?: string | null;
   country?: string | null;
   status?: string | null;
+  allow_multi_mosque_local_admins?: boolean | null;
 };
+
+type UserAccessPayload = {
+  users: UserRow[];
+  totalCount: number;
+  mosques: MosqueRow[];
+  adminAssignments: Record<string, string[]>;
+  muezzinAssignments: Record<string, string[]>;
+};
+
+type DisplayGlobalRole = 'user' | 'main_admin';
 
 const PAGE_SIZE = 20;
 const USER_TABLE_COLUMNS = [
   { key: 'email', label: 'Email', width: '18%' },
-  { key: 'role', label: 'Role', width: '12%' },
+  { key: 'role', label: 'Global Role', width: '12%' },
   { key: 'local_admins', label: 'Local Admin Of', width: '23%' },
   { key: 'muezzins', label: 'Muezzin Of', width: '23%' },
   { key: 'created', label: 'Created', width: '12%' },
   { key: 'actions', label: 'Actions', width: '12%' },
 ];
+
+function normalizeDisplayedGlobalRole(role: UserRole): DisplayGlobalRole {
+  return role === 'main_admin' ? 'main_admin' : 'user';
+}
+
+function isLegacyScopedGlobalRole(role: UserRole) {
+  return role === 'local_admin' || role === 'muezzin';
+}
+
+function parsePageParam(value: string | string[] | undefined) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function parseRoleParam(value: string | string[] | undefined): GlobalRoleFilter {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === 'user' || raw === 'main_admin' ? raw : 'all';
+}
+
+function parseSearchParam(value: string | string[] | undefined) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === 'string' ? raw : '';
+}
+
+function buildUsersRoute(search: string, page: number, roleFilter: GlobalRoleFilter) {
+  const params = new URLSearchParams();
+  const trimmedSearch = search.trim();
+  if (trimmedSearch) {
+    params.set('search', trimmedSearch);
+  }
+  if (page > 0) {
+    params.set('page', String(page));
+  }
+  if (roleFilter !== 'all') {
+    params.set('role', roleFilter);
+  }
+  const query = params.toString();
+  return query ? `/admin/users?${query}` : '/admin/users';
+}
+
+async function loadUserAccessViaServer(page: number, search: string, roleFilter: GlobalRoleFilter): Promise<UserAccessPayload> {
+  if (!supportsServerApi()) {
+    throw new Error('Admin user access API is unavailable in this runtime.');
+  }
+
+  const endpoint = resolveApiUrl('/api/admin/users-access');
+  if (!endpoint) {
+    throw new Error('Could not resolve the admin user access endpoint.');
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session?.access_token) {
+    throw new Error('Your session has expired. Refresh the page and sign in again.');
+  }
+
+  const url = new URL(endpoint);
+  url.searchParams.set('page', String(page));
+  url.searchParams.set('pageSize', String(PAGE_SIZE));
+  if (search.trim()) {
+    url.searchParams.set('search', search.trim());
+  }
+  if (roleFilter !== 'all') {
+    url.searchParams.set('role', roleFilter);
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+    },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Unable to load the user access matrix.');
+  }
+
+  return {
+    users: (payload.users ?? []) as UserRow[],
+    totalCount: payload.totalCount ?? 0,
+    mosques: (payload.mosques ?? []) as MosqueRow[],
+    adminAssignments: (payload.adminAssignments ?? {}) as Record<string, string[]>,
+    muezzinAssignments: (payload.muezzinAssignments ?? {}) as Record<string, string[]>,
+  };
+}
+
+async function loadUserAccessViaClient(page: number, search: string, roleFilter: GlobalRoleFilter): Promise<UserAccessPayload> {
+  const from = page * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
+  let usersQuery = supabase
+    .from('users')
+    .select('id, email, role, created_at', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (search.trim()) {
+    usersQuery = usersQuery.ilike('email', `%${search.trim()}%`);
+  }
+
+  if (roleFilter === 'main_admin') {
+    usersQuery = usersQuery.eq('role', 'main_admin');
+  } else if (roleFilter === 'user') {
+    usersQuery = usersQuery.neq('role', 'main_admin');
+  }
+
+  const [usersRes, mosquesRes] = await Promise.all([
+    usersQuery,
+    supabase
+      .from('mosques')
+      .select('id, name, city, country, status, allow_multi_mosque_local_admins')
+      .order('name', { ascending: true })
+      .limit(500),
+  ]);
+
+  if (usersRes.error) {
+    throw new Error(usersRes.error.message || 'Unable to load users.');
+  }
+
+  if (mosquesRes.error) {
+    throw new Error(mosquesRes.error.message || 'Unable to load mosques.');
+  }
+
+  const users = (usersRes.data ?? []) as UserRow[];
+  const ids = users.map((user) => user.id);
+
+  const adminAssignments: Record<string, string[]> = {};
+  const muezzinAssignments: Record<string, string[]> = {};
+
+  if (ids.length) {
+    const [adminRes, muezzinRes] = await Promise.all([
+      supabase.from('mosque_admins').select('user_id, mosque_id').in('user_id', ids),
+      supabase.from('muezzins').select('user_id, mosque_id, is_active').in('user_id', ids),
+    ]);
+
+    if (adminRes.error) {
+      throw new Error(adminRes.error.message || 'Unable to load mosque admin assignments.');
+    }
+
+    if (muezzinRes.error) {
+      throw new Error(muezzinRes.error.message || 'Unable to load muezzin assignments.');
+    }
+
+    for (const row of adminRes.data ?? []) {
+      adminAssignments[row.user_id] = adminAssignments[row.user_id] ?? [];
+      adminAssignments[row.user_id].push(row.mosque_id);
+    }
+
+    for (const row of muezzinRes.data ?? []) {
+      if ((row as { is_active?: boolean | null }).is_active === false) continue;
+      muezzinAssignments[row.user_id] = muezzinAssignments[row.user_id] ?? [];
+      muezzinAssignments[row.user_id].push(row.mosque_id);
+    }
+  }
+
+  return {
+    users,
+    totalCount: usersRes.count ?? 0,
+    mosques: (mosquesRes.data ?? []) as MosqueRow[],
+    adminAssignments,
+    muezzinAssignments,
+  };
+}
 
 export default function UsersPage() {
   return (
@@ -58,15 +232,18 @@ export default function UsersPage() {
 
 function UsersShell() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ search?: string }>();
+  const params = useLocalSearchParams<{ search?: string; page?: string; role?: string }>();
   const { notifyError, notifyInfo, notifySuccess } = useAdminFeedback();
+  const initialSearch = parseSearchParam(params.search);
+  const initialPage = parsePageParam(params.page);
+  const initialRoleFilter = parseRoleParam(params.role);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(initialPage);
   const [loading, setLoading] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
-  const [search, setSearch] = useState(typeof params.search === 'string' ? params.search : '');
-  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
+  const [search, setSearch] = useState(initialSearch);
+  const [roleFilter, setRoleFilter] = useState<GlobalRoleFilter>(initialRoleFilter);
 
   const [mosques, setMosques] = useState<MosqueRow[]>([]);
   const [adminAssignments, setAdminAssignments] = useState<Record<string, string[]>>({});
@@ -76,39 +253,14 @@ function UsersShell() {
   const [selectedMuezzinMosque, setSelectedMuezzinMosque] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (typeof params.search === 'string') {
-      setSearch(params.search);
-      return;
-    }
-    setSearch('');
-  }, [params.search]);
+    const nextSearch = parseSearchParam(params.search);
+    const nextPage = parsePageParam(params.page);
+    const nextRole = parseRoleParam(params.role);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const mosquesRes = await supabase
-          .from('mosques')
-          .select('id, name, city, country, status')
-          .order('name', { ascending: true })
-          .limit(500);
-        if (mosquesRes.error) {
-          console.error('mosques fetch error', mosquesRes.error);
-          if (!cancelled) setErrorBanner('Some data failed to load. Check console logs.');
-          return;
-        }
-        if (!cancelled) {
-          setMosques(mosquesRes.data ?? []);
-        }
-      } catch (e) {
-        console.error('mosques load error', e);
-        if (!cancelled) setErrorBanner('Some data failed to load. Check console logs.');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setSearch((prev) => (prev === nextSearch ? prev : nextSearch));
+    setPage((prev) => (prev === nextPage ? prev : nextPage));
+    setRoleFilter((prev) => (prev === nextRole ? prev : nextRole));
+  }, [params.page, params.role, params.search]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,75 +269,40 @@ function UsersShell() {
       setLoading(true);
       setErrorBanner(null);
       try {
-        const from = page * PAGE_SIZE;
-        const to = from + PAGE_SIZE - 1;
-        let query = supabase
-          .from('users')
-          .select('id, email, role, created_at', { count: 'exact' })
-          .ilike('email', search ? `%${search}%` : '%');
+        let payload: UserAccessPayload | null = null;
 
-        if (roleFilter !== 'all') {
-          query = query.eq('role', roleFilter);
-        }
-
-        const usersRes = await query.order('created_at', { ascending: false }).range(from, to);
-
-        if (usersRes.error) {
-          console.error('users fetch error', usersRes.error);
-          if (!cancelled) {
-            setErrorBanner('Some data failed to load. Check console logs.');
-            setUsers([]);
-            setTotalCount(0);
-            setAdminAssignments({});
-            setMuezzinAssignments({});
+        if (supportsServerApi()) {
+          try {
+            payload = await loadUserAccessViaServer(page, search, roleFilter);
+          } catch (error) {
+            console.warn('users page server load fallback', error);
           }
-          return;
         }
 
-        const rows = (usersRes.data ?? []) as UserRow[];
-        const ids = rows.map((u) => u.id);
+        if (!payload) {
+          payload = await loadUserAccessViaClient(page, search, roleFilter);
+        }
 
         if (!cancelled) {
-          setUsers(rows);
-          setTotalCount(usersRes.count ?? 0);
-        }
-
-        if (!ids.length) {
-          if (!cancelled) {
-            setAdminAssignments({});
-            setMuezzinAssignments({});
-          }
-          return;
-        }
-
-        const adminRes = await supabase.from('mosque_admins').select('user_id, mosque_id').in('user_id', ids);
-        if (adminRes.error) {
-          console.error('mosque_admins fetch error', adminRes.error);
-          if (!cancelled) setErrorBanner('Some data failed to load. Check console logs.');
-        } else if (!cancelled) {
-          const map: Record<string, string[]> = {};
-          (adminRes.data ?? []).forEach((row: Assignment) => {
-            map[row.user_id] = map[row.user_id] || [];
-            map[row.user_id].push(row.mosque_id);
-          });
-          setAdminAssignments(map);
-        }
-
-        const muezzinRes = await supabase.from('muezzins').select('user_id, mosque_id').in('user_id', ids);
-        if (muezzinRes.error) {
-          console.error('muezzin fetch error', muezzinRes.error);
-          if (!cancelled) setErrorBanner('Some data failed to load. Check console logs.');
-        } else if (!cancelled) {
-          const map: Record<string, string[]> = {};
-          (muezzinRes.data ?? []).forEach((row: Assignment) => {
-            map[row.user_id] = map[row.user_id] || [];
-            map[row.user_id].push(row.mosque_id);
-          });
-          setMuezzinAssignments(map);
+          setUsers(payload.users);
+          setTotalCount(payload.totalCount);
+          setMosques(payload.mosques);
+          setAdminAssignments(payload.adminAssignments);
+          setMuezzinAssignments(payload.muezzinAssignments);
+          setErrorBanner(null);
         }
       } catch (e) {
         console.error('users page load error', e);
-        if (!cancelled) setErrorBanner('Some data failed to load. Check console logs.');
+        if (!cancelled) {
+          setErrorBanner(
+            e instanceof Error ? e.message : 'Unable to load the user access matrix from the server or client fallback.'
+          );
+          setUsers([]);
+          setTotalCount(0);
+          setMosques([]);
+          setAdminAssignments({});
+          setMuezzinAssignments({});
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -217,13 +334,21 @@ function UsersShell() {
     return map;
   }, [mosques]);
 
+  const mosquePolicyMap = useMemo(() => {
+    const map: Record<string, ReturnType<typeof mapMosquePolicyRow>> = {};
+    mosques.forEach((mosque) => {
+      map[mosque.id] = mapMosquePolicyRow(mosque);
+    });
+    return map;
+  }, [mosques]);
+
   const activeFilters = useMemo(() => {
     const filters: { key: string; label: string; value: string }[] = [];
     if (search.trim()) {
       filters.push({ key: 'search', label: 'Search', value: search.trim() });
     }
     if (roleFilter !== 'all') {
-      filters.push({ key: 'role', label: 'Role', value: roleFilter.replace('_', ' ') });
+      filters.push({ key: 'role', label: 'Global role', value: roleFilter.replace('_', ' ') });
     }
     return filters;
   }, [roleFilter, search]);
@@ -248,7 +373,7 @@ function UsersShell() {
     const next = term.trim();
     setPage(0);
     setSearch(next);
-    router.replace((next ? `/admin/users?search=${encodeURIComponent(next)}` : '/admin/users') as any);
+    router.replace(buildUsersRoute(next, 0, roleFilter) as any);
   };
 
   const clearFilter = (key: string) => {
@@ -259,6 +384,7 @@ function UsersShell() {
     if (key === 'role') {
       setRoleFilter('all');
       setPage(0);
+      router.replace(buildUsersRoute(search, 0, 'all') as any);
     }
   };
 
@@ -270,20 +396,20 @@ function UsersShell() {
       return;
     }
     setSearch('');
+    router.replace('/admin/users' as any);
   };
 
-  const setRole = async (userId: string, role: UserRole) => {
+  const goToPage = (nextPage: number) => {
+    setPage(nextPage);
+    router.replace(buildUsersRoute(search, nextPage, roleFilter) as any);
+  };
+
+  const setGlobalRole = async (userId: string, role: Extract<UserRole, 'user' | 'main_admin'>) => {
     const prev = users.find((u) => u.id === userId)?.role;
-    const hasAssignments =
-      (adminAssignments[userId] ?? []).length > 0 || (muezzinAssignments[userId] ?? []).length > 0;
-    if (role === 'user' && hasAssignments) {
-      notifyError('Remove mosque assignments before demoting this user.');
-      return;
-    }
     const confirmText =
       role === 'user'
-        ? 'Demote this user to basic listener?'
-        : `Change role to ${role}?`;
+        ? 'Set this account back to the base user role? Mosque-scoped assignments will remain intact.'
+        : 'Grant main-admin access to this account?';
     const confirmed = typeof window !== 'undefined' ? window.confirm(confirmText) : true;
     if (!confirmed) return;
 
@@ -301,7 +427,12 @@ function UsersShell() {
           timestamp: new Date().toISOString(),
         });
         setUsers((prevList) => prevList.map((u) => (u.id === userId ? { ...u, role } : u)));
-        notifySuccess('User role updated.', `The selected account is now set to ${role}.`);
+        notifySuccess(
+          'Global role updated.',
+          role === 'main_admin'
+            ? 'This account now has network-wide main-admin access.'
+            : 'This account now uses the base user role. Mosque-scoped assignments still control local admin and muezzin access.'
+        );
       }
     } catch (e) {
       console.error('set role exception', e);
@@ -312,40 +443,46 @@ function UsersShell() {
   const assignLocalAdmin = async (userId: string, mosqueId: string | undefined) => {
     if (!mosqueId) return;
     const currentRole = users.find((u) => u.id === userId)?.role;
-    if (currentRole !== 'local_admin' && currentRole !== 'main_admin') {
-      notifyError('Set this user to Local Admin before assigning mosque access.');
+    if (currentRole === 'main_admin') {
+      notifyError('Main admins do not need local-admin assignments.');
       return;
     }
     const already = (adminAssignments[userId] ?? []).includes(mosqueId);
     if (already) return;
-    try {
-      const { error } = await supabase.from('mosque_admins').insert({ user_id: userId, mosque_id: mosqueId });
-      if (error) {
-        const msg = (error.message || '').toLowerCase();
-        if (error.code === '23505' || msg.includes('duplicate')) {
-          notifyInfo('That user already has local-admin access to this mosque.');
-        } else {
-          console.error('assign local admin error', error);
-          notifyError('Local-admin assignment failed.', 'Check console logs for the Supabase error details.');
-        }
-      } else {
-        console.log('[ADMIN_ACTION]', {
-          action: 'assign_local_admin',
-          user_id: userId,
-          mosque_id: mosqueId,
-          timestamp: new Date().toISOString(),
-        });
-        setAdminAssignments((prev) => {
-          const next = { ...prev };
-          next[userId] = [...(next[userId] ?? []), mosqueId];
-          return next;
-        });
-        setSelectedAdminMosque((prev) => ({ ...prev, [userId]: '' }));
-        notifySuccess('Local admin assigned.', 'The user now has access to the chosen mosque.');
+    const targetMosque = mosquePolicyMap[mosqueId];
+    if (targetMosque) {
+      const assignedMosques = (adminAssignments[userId] ?? [])
+        .map((assignedMosqueId) => mosquePolicyMap[assignedMosqueId])
+        .filter(Boolean);
+      const policyDecision = evaluateLocalAdminPolicy(targetMosque, assignedMosques);
+      if (!policyDecision.allowed) {
+        notifyError('Assignment blocked.', policyDecision.message ?? 'This assignment is not allowed for this mosque.');
+        return;
       }
+    }
+    try {
+      await assignLocalAdminMembership({ userId, mosqueId });
+      console.log('[ADMIN_ACTION]', {
+        action: 'assign_local_admin',
+        user_id: userId,
+        mosque_id: mosqueId,
+        timestamp: new Date().toISOString(),
+      });
+      setAdminAssignments((prev) => {
+        const next = { ...prev };
+        next[userId] = [...(next[userId] ?? []), mosqueId];
+        return next;
+      });
+      setSelectedAdminMosque((prev) => ({ ...prev, [userId]: '' }));
+      notifySuccess('Local admin assigned.', 'The user now has access to the chosen mosque.');
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'The request did not complete cleanly.';
+      if (message.toLowerCase().includes('already')) {
+        notifyInfo('That user already has local-admin access to this mosque.');
+        return;
+      }
       console.error('assign local admin exception', e);
-      notifyError('Local-admin assignment failed.', 'The request did not complete cleanly.');
+      notifyError('Local-admin assignment failed.', message);
     }
   };
 
@@ -355,73 +492,58 @@ function UsersShell() {
     if (!confirmed) return;
 
     try {
-      const { error } = await supabase
-        .from('mosque_admins')
-        .delete()
-        .eq('user_id', userId)
-        .eq('mosque_id', mosqueId);
-      if (error) {
-        console.error('remove local admin error', error);
-        notifyError('Removing local-admin access failed.', 'Check console logs for the Supabase error details.');
-      } else {
-        console.log('[ADMIN_ACTION]', {
-          action: 'remove_local_admin',
-          user_id: userId,
-          mosque_id: mosqueId,
-          timestamp: new Date().toISOString(),
-        });
-        setAdminAssignments((prev) => {
-          const next = { ...prev };
-          next[userId] = (next[userId] ?? []).filter((m) => m !== mosqueId);
-          return next;
-        });
-        notifySuccess('Local admin removed.', 'Mosque-scoped admin access has been removed.');
-      }
+      await removeLocalAdminMembership({ userId, mosqueId });
+      console.log('[ADMIN_ACTION]', {
+        action: 'remove_local_admin',
+        user_id: userId,
+        mosque_id: mosqueId,
+        timestamp: new Date().toISOString(),
+      });
+      setAdminAssignments((prev) => {
+        const next = { ...prev };
+        next[userId] = (next[userId] ?? []).filter((m) => m !== mosqueId);
+        return next;
+      });
+      notifySuccess('Local admin removed.', 'Mosque-scoped admin access has been removed.');
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'The request did not complete cleanly.';
       console.error('remove local admin exception', e);
-      notifyError('Removing local-admin access failed.', 'The request did not complete cleanly.');
+      notifyError('Removing local-admin access failed.', message);
     }
   };
 
   const assignMuezzin = async (userId: string, mosqueId: string | undefined) => {
     if (!mosqueId) return;
     const currentRole = users.find((u) => u.id === userId)?.role;
-    if (currentRole !== 'muezzin') {
-      notifyError('Set this user to Muezzin before assigning mosque access.');
+    if (currentRole === 'main_admin') {
+      notifyError('Main admins should not be assigned as mosque-scoped muezzins.');
       return;
     }
     const already = (muezzinAssignments[userId] ?? []).includes(mosqueId);
     if (already) return;
     try {
-      const { error } = await supabase
-        .from('muezzins')
-        .insert({ user_id: userId, mosque_id: mosqueId, is_active: true });
-      if (error) {
-        const msg = (error.message || '').toLowerCase();
-        if (error.code === '23505' || msg.includes('duplicate')) {
-          notifyInfo('That user already has muezzin access to this mosque.');
-        } else {
-          console.error('assign muezzin error', error);
-          notifyError('Muezzin assignment failed.', 'Check console logs for the Supabase error details.');
-        }
-      } else {
-        console.log('[ADMIN_ACTION]', {
-          action: 'assign_muezzin',
-          user_id: userId,
-          mosque_id: mosqueId,
-          timestamp: new Date().toISOString(),
-        });
-        setMuezzinAssignments((prev) => {
-          const next = { ...prev };
-          next[userId] = [...(next[userId] ?? []), mosqueId];
-          return next;
-        });
-        setSelectedMuezzinMosque((prev) => ({ ...prev, [userId]: '' }));
-        notifySuccess('Muezzin assigned.', 'The user now has muezzin access to the chosen mosque.');
-      }
+      await assignMuezzinMembership({ userId, mosqueId });
+      console.log('[ADMIN_ACTION]', {
+        action: 'assign_muezzin',
+        user_id: userId,
+        mosque_id: mosqueId,
+        timestamp: new Date().toISOString(),
+      });
+      setMuezzinAssignments((prev) => {
+        const next = { ...prev };
+        next[userId] = [...(next[userId] ?? []), mosqueId];
+        return next;
+      });
+      setSelectedMuezzinMosque((prev) => ({ ...prev, [userId]: '' }));
+      notifySuccess('Muezzin assigned.', 'The user now has muezzin access to the chosen mosque.');
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'The request did not complete cleanly.';
+      if (message.toLowerCase().includes('already')) {
+        notifyInfo('That user already has muezzin access to this mosque.');
+        return;
+      }
       console.error('assign muezzin exception', e);
-      notifyError('Muezzin assignment failed.', 'The request did not complete cleanly.');
+      notifyError('Muezzin assignment failed.', message);
     }
   };
 
@@ -431,31 +553,23 @@ function UsersShell() {
     if (!confirmed) return;
 
     try {
-      const { error } = await supabase
-        .from('muezzins')
-        .delete()
-        .eq('user_id', userId)
-        .eq('mosque_id', mosqueId);
-      if (error) {
-        console.error('remove muezzin error', error);
-        notifyError('Removing muezzin access failed.', 'Check console logs for the Supabase error details.');
-      } else {
-        console.log('[ADMIN_ACTION]', {
-          action: 'remove_muezzin',
-          user_id: userId,
-          mosque_id: mosqueId,
-          timestamp: new Date().toISOString(),
-        });
-        setMuezzinAssignments((prev) => {
-          const next = { ...prev };
-          next[userId] = (next[userId] ?? []).filter((m) => m !== mosqueId);
-          return next;
-        });
-        notifySuccess('Muezzin removed.', 'Mosque-scoped muezzin access has been removed.');
-      }
+      await removeMuezzinMembership({ userId, mosqueId });
+      console.log('[ADMIN_ACTION]', {
+        action: 'remove_muezzin',
+        user_id: userId,
+        mosque_id: mosqueId,
+        timestamp: new Date().toISOString(),
+      });
+      setMuezzinAssignments((prev) => {
+        const next = { ...prev };
+        next[userId] = (next[userId] ?? []).filter((m) => m !== mosqueId);
+        return next;
+      });
+      notifySuccess('Muezzin removed.', 'Mosque-scoped muezzin access has been removed.');
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'The request did not complete cleanly.';
       console.error('remove muezzin exception', e);
-      notifyError('Removing muezzin access failed.', 'The request did not complete cleanly.');
+      notifyError('Removing muezzin access failed.', message);
     }
   };
 
@@ -468,23 +582,25 @@ function UsersShell() {
       onSelect: clearAllFilters,
     },
     {
-      key: 'users-filter-local-admins',
-      label: 'Show local admins',
-      description: 'Filter the access matrix to local-admin accounts.',
-      keywords: ['local admin', 'filter'],
+      key: 'users-filter-main-admins',
+      label: 'Show main admins',
+      description: 'Filter the access matrix to accounts with global main-admin access.',
+      keywords: ['main admin', 'filter'],
       onSelect: () => {
-        setRoleFilter('local_admin');
+        setRoleFilter('main_admin');
         setPage(0);
+        router.replace(buildUsersRoute(search, 0, 'main_admin') as any);
       },
     },
     {
-      key: 'users-filter-muezzins',
-      label: 'Show muezzins',
-      description: 'Filter the access matrix to muezzin-role accounts.',
-      keywords: ['muezzin', 'filter'],
+      key: 'users-filter-base-users',
+      label: 'Show base users',
+      description: 'Filter the access matrix to non-global accounts.',
+      keywords: ['user', 'listener', 'filter'],
       onSelect: () => {
-        setRoleFilter('muezzin');
+        setRoleFilter('user');
         setPage(0);
+        router.replace(buildUsersRoute(search, 0, 'user') as any);
       },
     },
   ];
@@ -493,7 +609,7 @@ function UsersShell() {
     <AdminShell
       title="User access and role control"
       eyebrow="Identity & Permissions"
-      description="Review role posture, manage mosque assignments, and resolve access mismatches before they create operational drift."
+      description="Keep global roles minimal, then grant mosque-scoped local-admin and muezzin access only through explicit assignments."
       mosques={mosqueOptions}
       onSearch={handleSearch}
       commandActions={commandActions}
@@ -520,24 +636,24 @@ function UsersShell() {
       >
         <div style={styles.toolbar}>
           <div style={styles.filterControl}>
-            <label style={styles.filterLabel}>Role focus</label>
+            <label style={styles.filterLabel}>Global role</label>
             <select
               value={roleFilter}
               onChange={(e) => {
-                setRoleFilter(e.target.value as 'all' | UserRole);
+                const nextRole = e.target.value as GlobalRoleFilter;
+                setRoleFilter(nextRole);
                 setPage(0);
+                router.replace(buildUsersRoute(search, 0, nextRole) as any);
               }}
               style={styles.select}
             >
-              <option value="all">All roles</option>
-              <option value="user">User</option>
-              <option value="local_admin">Local Admin</option>
-              <option value="main_admin">Main Admin</option>
-              <option value="muezzin">Muezzin</option>
+              <option value="all">All accounts</option>
+              <option value="user">Base user</option>
+              <option value="main_admin">Main admin</option>
             </select>
           </div>
           <div style={styles.toolbarCopy}>
-            Search from the command bar above, then use this table to handle assignments and role cleanup with less scanning.
+            Search from the command bar above, then manage mosque-scoped assignments here without turning profile roles into local-admin or muezzin flags.
           </div>
         </div>
 
@@ -556,7 +672,7 @@ function UsersShell() {
               <div style={styles.footerActions}>
                 <button
                   style={styles.pageButton}
-                  onClick={() => canPrev && setPage((p) => p - 1)}
+                  onClick={() => canPrev && goToPage(page - 1)}
                   disabled={!canPrev || loading}
                 >
                   Previous
@@ -566,7 +682,7 @@ function UsersShell() {
                 </span>
                 <button
                   style={styles.pageButton}
-                  onClick={() => canNext && setPage((p) => p + 1)}
+                  onClick={() => canNext && goToPage(page + 1)}
                   disabled={!canNext || loading}
                 >
                   Next
@@ -580,6 +696,9 @@ function UsersShell() {
             const muezzinMosques = muezzinAssignments[u.id] ?? [];
             const availableAdminMosques = mosques.filter((m) => !adminMosques.includes(m.id));
             const availableMuezzinMosques = mosques.filter((m) => !muezzinMosques.includes(m.id));
+            const displayRole = normalizeDisplayedGlobalRole(u.role);
+            const hasLegacyRole = isLegacyScopedGlobalRole(u.role);
+            const isMainAdmin = displayRole === 'main_admin';
 
             return (
               <tr key={u.id}>
@@ -589,7 +708,14 @@ function UsersShell() {
                     <div style={styles.secondaryText}>User ID: {u.id.slice(0, 8)}</div>
                   </div>
                 </td>
-                <td style={styles.td}>{renderRoleBadge(u.role)}</td>
+                <td style={styles.td}>
+                  <div style={styles.roleCell}>
+                    {renderRoleBadge(displayRole)}
+                    {hasLegacyRole ? (
+                      <div style={styles.legacyRoleHint}>Stored as legacy {u.role}. Normalize this account.</div>
+                    ) : null}
+                  </div>
+                </td>
                 <td style={styles.td}>
                   <div style={styles.assignmentStack}>
                     <div style={styles.pillRow}>
@@ -623,17 +749,46 @@ function UsersShell() {
                         <option value="">Select mosque</option>
                         {availableAdminMosques.map((m) => (
                           <option key={m.id} value={m.id}>
-                            {m.name}
+                            {m.name} {m.allow_multi_mosque_local_admins ? '(shared)' : '(exclusive)'}
                           </option>
                         ))}
                       </select>
+                      {(() => {
+                        const selectedMosqueId = selectedAdminMosque[u.id] ?? '';
+                        if (!selectedMosqueId) return null;
+                        const targetMosque = mosquePolicyMap[selectedMosqueId];
+                        if (!targetMosque) return null;
+                        const assignedMosques = adminMosques
+                          .map((assignedMosqueId) => mosquePolicyMap[assignedMosqueId])
+                          .filter(Boolean);
+                        const policyDecision = evaluateLocalAdminPolicy(targetMosque, assignedMosques);
+                        return !policyDecision.allowed ? (
+                          <span style={styles.assignmentHint}>{policyDecision.message}</span>
+                        ) : (
+                          <span style={styles.assignmentHintNeutral}>
+                            {targetMosque.allowMultiMosqueLocalAdmins
+                              ? 'This mosque allows shared local-admin access.'
+                              : 'This mosque keeps local admins exclusive to this mosque.'}
+                          </span>
+                        );
+                      })()}
                       <button
                         style={styles.assignButton}
                         onClick={() => assignLocalAdmin(u.id, selectedAdminMosque[u.id])}
                         disabled={
                           !selectedAdminMosque[u.id] ||
                           loading ||
-                          (u.role !== 'local_admin' && u.role !== 'main_admin')
+                          isMainAdmin ||
+                          (() => {
+                            const selectedMosqueId = selectedAdminMosque[u.id];
+                            if (!selectedMosqueId) return false;
+                            const targetMosque = mosquePolicyMap[selectedMosqueId];
+                            if (!targetMosque) return false;
+                            const assignedMosques = adminMosques
+                              .map((assignedMosqueId) => mosquePolicyMap[assignedMosqueId])
+                              .filter(Boolean);
+                            return !evaluateLocalAdminPolicy(targetMosque, assignedMosques).allowed;
+                          })()
                         }
                       >
                         Assign
@@ -681,7 +836,7 @@ function UsersShell() {
                       <button
                         style={styles.assignButton}
                         onClick={() => assignMuezzin(u.id, selectedMuezzinMosque[u.id])}
-                        disabled={!selectedMuezzinMosque[u.id] || loading || u.role !== 'muezzin'}
+                        disabled={!selectedMuezzinMosque[u.id] || loading || isMainAdmin}
                       >
                         Assign
                       </button>
@@ -695,24 +850,17 @@ function UsersShell() {
                   <div style={styles.actionRow}>
                     <button
                       style={styles.actionButton}
-                      onClick={() => setRole(u.id, 'local_admin')}
-                      disabled={u.role === 'local_admin' || loading}
+                      onClick={() => setGlobalRole(u.id, 'main_admin')}
+                      disabled={isMainAdmin || loading}
                     >
-                      Make local admin
-                    </button>
-                    <button
-                      style={styles.actionButton}
-                      onClick={() => setRole(u.id, 'muezzin')}
-                      disabled={u.role === 'muezzin' || loading}
-                    >
-                      Make muezzin
+                      Grant main admin
                     </button>
                     <button
                       style={styles.actionButtonSecondary}
-                      onClick={() => setRole(u.id, 'user')}
-                      disabled={u.role === 'user' || loading}
+                      onClick={() => setGlobalRole(u.id, 'user')}
+                      disabled={(u.role === 'user' && !hasLegacyRole) || loading}
                     >
-                      Demote
+                      {hasLegacyRole ? 'Normalize account' : 'Set base account'}
                     </button>
                   </div>
                 </td>
@@ -725,7 +873,7 @@ function UsersShell() {
   );
 }
 
-function renderRoleBadge(role: UserRole) {
+function renderRoleBadge(role: DisplayGlobalRole) {
   const style: React.CSSProperties = {
     display: 'inline-block',
     padding: '4px 8px',
@@ -736,12 +884,6 @@ function renderRoleBadge(role: UserRole) {
 
   if (role === 'main_admin') {
     return <span style={{ ...style, backgroundColor: '#0f172a', color: '#e2e8f0' }}>main_admin</span>;
-  }
-  if (role === 'local_admin') {
-    return <span style={{ ...style, backgroundColor: '#dbeafe', color: '#1d4ed8' }}>local_admin</span>;
-  }
-  if (role === 'muezzin') {
-    return <span style={{ ...style, backgroundColor: '#dcfce7', color: '#166534' }}>muezzin</span>;
   }
   return <span style={{ ...style, backgroundColor: '#e2e8f0', color: '#0f172a' }}>user</span>;
 }
@@ -806,6 +948,11 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 6,
   },
+  roleCell: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
   primaryText: {
     fontWeight: 800,
     color: '#0f172a',
@@ -814,6 +961,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: '#64748b',
     fontWeight: 600,
+  },
+  legacyRoleHint: {
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: '#b45309',
+    fontWeight: 700,
   },
   assignmentStack: {
     display: 'flex',
@@ -865,6 +1018,21 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
+  },
+  assignmentHint: {
+    flexBasis: '100%',
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: '#b45309',
+    fontWeight: 700,
+  },
+  assignmentHintNeutral: {
+    flexBasis: '100%',
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: '#475569',
+    fontWeight: 600,
   },
   select: {
     minWidth: 170,

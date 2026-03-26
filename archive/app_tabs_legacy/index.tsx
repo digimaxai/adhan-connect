@@ -14,7 +14,7 @@ import {
   statusBadge,
 } from '../../lib/adhans';
 import { useRoleFlags } from '../../lib/roles';
-import { persistentStorage } from '../../lib/persistentStorage';
+import { getDefaultMosqueId } from '../../lib/mosquePreferences';
 import { supabase } from '../../lib/supabase';
 import AppLogo from '../../components/AppLogo';
 import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
@@ -77,12 +77,12 @@ export default function HomeScreen() {
 
   const loadDefault = React.useCallback(async () => {
     try {
-      const stored = await persistentStorage.getItem('default_mosque_id');
+      const stored = await getDefaultMosqueId(userId);
       setDefaultMosqueId(stored ?? null);
     } catch {
       setDefaultMosqueId(null);
     }
-  }, []);
+  }, [userId]);
 
   const loadHomeData = async () => {
     const [mosqueRes, subsRes, streamsRes] = await Promise.all([

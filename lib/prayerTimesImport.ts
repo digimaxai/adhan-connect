@@ -1,7 +1,7 @@
 // lib/prayerTimesImport.ts
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from './supabase';
+import { readNativeFileAsText } from './nativeFileText';
 
 // ---- Types ----
 type PrayerCsvRow = {
@@ -102,7 +102,7 @@ export async function pickAndImportPrayerCsv(params: {
   const uri = asset.uri;
 
   // 2) Read file (UTF-8 by default)
-  const contents = await FileSystem.readAsStringAsync(uri);
+  const contents = await readNativeFileAsText(uri);
 
   // 3) Parse CSV
   let rows: PrayerCsvRow[];

@@ -10,10 +10,10 @@ import { tokens } from '@/theme/tokens';
 import { useRoleFlags } from '@/lib/roles';
 import { useAuth } from '@/lib/auth';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
-import { persistentStorage } from '@/lib/persistentStorage';
+import { clearDefaultMosqueId, getDefaultMosqueId, setDefaultMosqueId } from '@/lib/mosquePreferences';
 
 export default function AdminSettingsScreen() {
-  const { loading: roleLoading, isAdmin, isLocalAdmin } = useRoleFlags();
+  const { loading: roleLoading, isAdmin, isLocalAdmin, role, isMuezzin, hasDualStaffAccess } = useRoleFlags();
   const { session, signOut } = useAuth();
   const { mosques, selectedMosque, setSelectedMosque, loading: mosqueLoading } = useAdminMosque();
   const [defaultId, setDefaultId] = useState<string | null>(null);
@@ -22,6 +22,7 @@ export default function AdminSettingsScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const accountUserId = session?.user?.id ?? null;
 
   const adminMosques = useMemo(() => mosques ?? [], [mosques]);
   const canSelect = isAdmin || isLocalAdmin;
@@ -32,14 +33,14 @@ export default function AdminSettingsScreen() {
 
   const loadDefaultMosque = useCallback(async () => {
     try {
-      const stored = await persistentStorage.getItem('default_mosque_id');
+      const stored = await getDefaultMosqueId(accountUserId);
       setDefaultId(stored ?? null);
       setError(null);
     } catch {
       setDefaultId(null);
       setError('Could not load the saved default mosque for this account.');
     }
-  }, []);
+  }, [accountUserId]);
 
   useEffect(() => {
     loadDefaultMosque();
@@ -58,7 +59,7 @@ export default function AdminSettingsScreen() {
     if (!canSelect) return;
     setSaving(true);
     try {
-      await persistentStorage.setItem('default_mosque_id', mosqueId);
+      await setDefaultMosqueId(accountUserId, mosqueId);
       setDefaultId(mosqueId);
       setSelectedMosque?.(mosqueId);
       setNotice('Default admin mosque updated.');
@@ -75,7 +76,7 @@ export default function AdminSettingsScreen() {
   const handleClearDefault = async () => {
     setSaving(true);
     try {
-      await persistentStorage.removeItem('default_mosque_id');
+      await clearDefaultMosqueId(accountUserId);
       setDefaultId(null);
       setNotice('Default admin mosque cleared.');
       setError(null);
@@ -105,7 +106,7 @@ export default function AdminSettingsScreen() {
         <AppText variant="body" color={tokens.color.text.secondary} style={styles.muted}>
           You do not have local admin access.
         </AppText>
-        <AppButton title="Go to Home" onPress={() => router.replace('/(user)')} />
+        <AppButton title="Go to Home" onPress={() => router.replace('/' as any)} />
       </View>
     );
   }
@@ -132,8 +133,12 @@ export default function AdminSettingsScreen() {
         <View style={styles.detailList}>
           <DetailRow label="User ID" value={session?.user?.id ?? 'unknown'} />
           <DetailRow label="Email" value={(session?.user as any)?.email ?? 'unknown'} />
-          <DetailRow label="Role" value={session?.user?.role ?? 'unknown'} />
+          <DetailRow label="Global role" value={role ?? session?.user?.role ?? 'unknown'} />
+          <DetailRow label="Muezzin access" value={isMuezzin ? 'Available' : 'Not assigned'} />
         </View>
+        {hasDualStaffAccess ? (
+          <AppButton title="Choose Workspace" variant="ghost" onPress={() => router.push('/role-entry')} style={styles.switchButton} />
+        ) : null}
         <AppButton title="Sign Out" variant="secondary" onPress={() => signOut?.()} style={styles.signOutButton} />
       </AppCard>
 
@@ -258,6 +263,9 @@ const styles = StyleSheet.create({
   signOutButton: {
     alignSelf: 'flex-start',
     minWidth: 128,
+  },
+  switchButton: {
+    alignSelf: 'flex-start',
   },
   currentDefaultCard: {
     gap: 4,

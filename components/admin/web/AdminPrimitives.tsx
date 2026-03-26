@@ -53,12 +53,14 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(148, 163, 184, 0.18)',
     background:
       'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.94) 100%)',
-    padding: '18px 20px',
+    padding: '20px 22px',
     boxShadow: '0 12px 30px rgba(15,23,42,0.06)',
+    width: '100%',
+    boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
-    minHeight: 128,
+    gap: 10,
+    minHeight: 144,
   },
   metricLabel: {
     fontSize: 12,
@@ -68,14 +70,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#64748b',
   },
   metricValue: {
-    fontSize: 34,
+    fontSize: 'clamp(2.15rem, 1.85rem + 0.55vw, 2.8rem)',
     lineHeight: 1,
     fontWeight: 900,
     color: '#0f172a',
   },
   metricDetail: {
-    fontSize: 13,
-    lineHeight: 1.5,
+    fontSize: 14,
+    lineHeight: 1.55,
     color: '#475569',
   },
   panel: {
@@ -83,10 +85,12 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(148, 163, 184, 0.18)',
     background: 'rgba(255,255,255,0.96)',
     boxShadow: '0 14px 30px rgba(15,23,42,0.05)',
-    padding: 18,
+    padding: 22,
+    width: '100%',
+    boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
-    gap: 14,
+    gap: 16,
   },
   panelHeader: {
     display: 'flex',
@@ -101,13 +105,13 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 4,
   },
   panelTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 900,
     color: '#0f172a',
   },
   panelSubtitle: {
-    fontSize: 13,
-    lineHeight: 1.5,
+    fontSize: 14,
+    lineHeight: 1.6,
     color: '#64748b',
   },
   panelAction: {

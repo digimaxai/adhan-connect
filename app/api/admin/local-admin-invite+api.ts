@@ -170,7 +170,7 @@ export const POST: RequestHandler = async (request) => {
       userProfile = {
         id: authLookup.user.id,
         email: authLookup.user.email ?? email,
-        role: 'local_admin',
+        role: 'user',
         display_name: deriveDisplayName(
           displayNameInput,
           (authLookup.user.user_metadata?.display_name as string | undefined) ?? null,
@@ -203,7 +203,7 @@ export const POST: RequestHandler = async (request) => {
       userProfile = {
         id: invitedUserData.user.id,
         email: invitedUserData.user.email ?? email,
-        role: 'local_admin',
+        role: 'user',
         display_name: deriveDisplayName(
           displayNameInput,
           (invitedUserData.user.user_metadata?.display_name as string | undefined) ?? null,
@@ -218,7 +218,7 @@ export const POST: RequestHandler = async (request) => {
     return json({ error: 'Unable to prepare a local admin account for this email.' }, 500);
   }
 
-  const nextRole = userProfile.role === 'main_admin' ? 'main_admin' : 'local_admin';
+  const nextRole = userProfile.role === 'main_admin' ? 'main_admin' : 'user';
   const nextDisplayName = deriveDisplayName(displayNameInput, userProfile.display_name, userProfile.email ?? email);
 
   const { data: savedProfile, error: saveProfileError } = await supabaseAdmin
@@ -244,7 +244,10 @@ export const POST: RequestHandler = async (request) => {
     .insert({ mosque_id: mosqueId, user_id: savedProfile.id });
 
   if (assignmentError && !isDuplicateError(assignmentError)) {
-    return json({ error: 'Unable to assign this user to the selected mosque.' }, 500);
+    return json(
+      { error: assignmentError.message || 'Unable to assign this user to the selected mosque.' },
+      assignmentError.code === 'P0001' ? 409 : 500
+    );
   }
 
   return json({

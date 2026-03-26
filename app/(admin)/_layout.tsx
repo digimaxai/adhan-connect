@@ -1,18 +1,10 @@
-import { Stack, useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import { Redirect, Stack } from 'expo-router';
+import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useRoleFlags } from '../../lib/roles';
 
 export default function AdminStack() {
   const roles = useRoleFlags();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (roles.loading) return;
-    if (roles.isMuezzin) {
-      router.replace('/(muezzin)');
-    }
-  }, [roles.loading, roles.isMuezzin, router]);
 
   if (roles.loading) {
     return (
@@ -22,16 +14,17 @@ export default function AdminStack() {
     );
   }
 
-  if (roles.isMuezzin) {
-    return null;
+  if (roles.isMuezzin && !roles.isAdmin) {
+    return <Redirect href={'/' as any} />;
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack initialRouteName="index" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="manage-mosques" />
       <Stack.Screen name="events" />
       <Stack.Screen name="admin/prayer-times" />
+      <Stack.Screen name="muezzins" />
       <Stack.Screen name="muezzin" />
       <Stack.Screen name="broadcast" />
       <Stack.Screen name="campaign" />

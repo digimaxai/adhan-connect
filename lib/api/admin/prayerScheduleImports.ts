@@ -124,6 +124,11 @@ export async function publishPrayerScheduleImportAudit(params: {
   const dates = uniqueDates(params.rows.map((row) => row.date));
   const existingRows = await getPrayerTimesRowsByDate(params.mosqueId, dates);
   const existingByDate = new Map(existingRows.map((row) => [normalizeDateKey(row.date), row]));
+  const impactSummary = {
+    existingDates: existingByDate.size,
+    updates: dates.filter((date) => existingByDate.has(date)).length,
+    inserts: dates.filter((date) => !existingByDate.has(date)).length,
+  };
 
   const createdImport = await createPrayerScheduleImportRecord({
     mosqueId: params.mosqueId,
@@ -178,6 +183,7 @@ export async function publishPrayerScheduleImportAudit(params: {
     return {
       importRecord: updatedImport,
       rows: publishedRows as PrayerTimesRow[],
+      impactSummary,
     };
   } catch (error: any) {
     await markPrayerScheduleImportFailed(createdImport.id, error?.message ?? 'Unknown publish failure.');

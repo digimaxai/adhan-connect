@@ -145,6 +145,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     alignItems: 'flex-start',
     padding: '8vh 18px 18px',
+    boxSizing: 'border-box',
   },
   panel: {
     width: 'min(720px, 100%)',
@@ -153,6 +154,7 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: '#ffffff',
     boxShadow: '0 32px 70px rgba(15,23,42,0.24)',
     overflow: 'hidden',
+    boxSizing: 'border-box',
   },
   header: {
     display: 'flex',
@@ -191,6 +193,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 16,
     border: '1px solid #cbd5e1',
     fontSize: 15,
+    boxSizing: 'border-box',
   },
   list: {
     display: 'flex',

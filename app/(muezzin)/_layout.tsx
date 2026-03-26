@@ -20,7 +20,7 @@ export default function MuezzinTabs() {
 
   return (
     <Tabs
-      initialRouteName="index"
+      initialRouteName="muezzin-home"
       screenOptions={{
         headerShown: false,
         lazy: true,
@@ -45,12 +45,13 @@ export default function MuezzinTabs() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="muezzin-home"
         options={{
           title: 'Home',
           tabBarIcon: pillIcon('home-outline'),
         }}
       />
+      <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
       <Tabs.Screen
         name="my-rota"
         options={{
@@ -74,7 +75,6 @@ export default function MuezzinTabs() {
       <Tabs.Screen name="live-player" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="muezzin-live" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="live" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="mosque" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="manage-mosques" options={{ href: null, headerShown: false }} />
     </Tabs>

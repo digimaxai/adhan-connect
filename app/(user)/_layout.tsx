@@ -20,7 +20,7 @@ export default function UserTabs() {
 
   return (
     <Tabs
-      initialRouteName="index"
+      initialRouteName="listener-home"
       screenOptions={{
         headerShown: false,
         lazy: true,
@@ -45,10 +45,18 @@ export default function UserTabs() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="listener-home"
         options={{
           title: 'Home',
           tabBarIcon: pillIcon('home-outline'),
+        }}
+      />
+      <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen
+        name="discover"
+        options={{
+          title: 'Discover',
+          tabBarIcon: pillIcon('compass-outline'),
         }}
       />
       <Tabs.Screen
@@ -62,7 +70,6 @@ export default function UserTabs() {
       {/* hidden routes for user area */}
       <Tabs.Screen name="now" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="live-player" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="mosque" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="manage-mosques" options={{ href: null, headerShown: false }} />
     </Tabs>

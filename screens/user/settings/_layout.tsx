@@ -15,7 +15,6 @@ export default function SettingsStackLayout() {
       <Stack.Screen name="location" />
       <Stack.Screen name="mixer" />
       <Stack.Screen name="notifications" />
-      <Stack.Screen name="subscriptions" />
     </Stack>
   );
 }

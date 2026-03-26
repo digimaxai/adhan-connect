@@ -19,6 +19,7 @@ type MosqueRow = {
   city?: string | null;
   country?: string | null;
   status?: string | null;
+  allow_multi_mosque_local_admins?: boolean | null;
   created_at?: string | null;
 };
 
@@ -65,6 +66,7 @@ function MosquesShell() {
   const [createName, setCreateName] = useState('');
   const [createCity, setCreateCity] = useState('');
   const [createCountry, setCreateCountry] = useState('');
+  const [createAllowMultiMosqueLocalAdmins, setCreateAllowMultiMosqueLocalAdmins] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -86,7 +88,7 @@ function MosquesShell() {
     (async () => {
       const mosquesSelectorRes = await supabase
         .from('mosques')
-        .select('id, name, city, country, status')
+        .select('id, name, city, country, status, allow_multi_mosque_local_admins')
         .order('name', { ascending: true })
         .limit(500);
       if (!mosquesSelectorRes.error && !cancelled) {
@@ -108,7 +110,7 @@ function MosquesShell() {
         const to = from + PAGE_SIZE - 1;
         let query = supabase
           .from('mosques')
-          .select('id, name, city, country, status, created_at', { count: 'exact' });
+          .select('id, name, city, country, status, allow_multi_mosque_local_admins, created_at', { count: 'exact' });
 
         if (statusFilter !== 'all') query = query.eq('status', statusFilter);
         if (debouncedSearch) {
@@ -257,17 +259,21 @@ function MosquesShell() {
       return;
     }
 
-    const payload: Record<string, any> = { name: trimmed, status: 'pending' };
+    const payload: Record<string, any> = {
+      name: trimmed,
+      status: 'pending',
+      allow_multi_mosque_local_admins: createAllowMultiMosqueLocalAdmins,
+    };
     if (createCity.trim()) payload.city = createCity.trim();
     if (createCountry.trim()) payload.country = createCountry.trim();
 
     setCreating(true);
     try {
-      const { data, error } = await supabase
-        .from('mosques')
-        .insert(payload)
-        .select('id, name, city, country, status, created_at')
-        .single();
+        const { data, error } = await supabase
+          .from('mosques')
+          .insert(payload)
+          .select('id, name, city, country, status, allow_multi_mosque_local_admins, created_at')
+          .single();
       if (error) {
         console.error('mosque create error', error);
         setCreateError('Create failed. Check console logs.');
@@ -278,6 +284,7 @@ function MosquesShell() {
       setCreateName('');
       setCreateCity('');
       setCreateCountry('');
+      setCreateAllowMultiMosqueLocalAdmins(false);
       notifySuccess('Mosque created.', 'The new mosque is now in pending status.');
       if (data) {
         setMosquesForSelector((prev) =>
@@ -471,6 +478,28 @@ function MosquesShell() {
             <label style={styles.label}>Country</label>
             <TextInput value={createCountry} onChange={(e) => setCreateCountry(e.target.value)} />
           </div>
+          <div>
+            <label style={styles.label}>Cross-mosque local-admin access</label>
+            <div style={styles.toggleRow}>
+              <Button
+                variant={createAllowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                onClick={() => setCreateAllowMultiMosqueLocalAdmins(true)}
+                type="button"
+              >
+                Active
+              </Button>
+              <Button
+                variant={!createAllowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                onClick={() => setCreateAllowMultiMosqueLocalAdmins(false)}
+                type="button"
+              >
+                Inactive
+              </Button>
+            </div>
+            <div style={styles.helperText}>
+              Inactive keeps this mosque&apos;s local admins exclusive to this mosque. Active allows sharing, but only with other mosques that also allow it.
+            </div>
+          </div>
           {createError ? <div style={styles.errorBanner}>{createError}</div> : null}
           <div style={styles.modalActions}>
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
@@ -565,6 +594,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     marginBottom: 6,
     color: '#0f172a',
+  },
+  toggleRow: {
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  helperText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: '#475569',
   },
   modalActions: {
     display: 'flex',

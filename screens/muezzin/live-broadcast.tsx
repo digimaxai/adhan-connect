@@ -21,6 +21,13 @@ type Params = {
 
 const WINDOW_START_MS = 3 * 60 * 1000; // 3 minutes before
 const WINDOW_END_MS = 2 * 60 * 1000; // 2 minutes after
+const VALID_PRAYER_KEYS: PrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+
+function normalizePrayerKey(value?: string | null): PrayerName | null {
+  if (!value) return null;
+  const normalized = value.toString().trim().toLowerCase();
+  return VALID_PRAYER_KEYS.includes(normalized as PrayerName) ? (normalized as PrayerName) : null;
+}
 
 const formatCountdown = (seconds: number) => {
   const mins = Math.max(0, Math.floor(seconds / 60));
@@ -34,16 +41,19 @@ export default function MuezzinLiveScreen() {
   const { schedule, nextAssignedSlot } = useMuezzinSchedule();
   const paramsMosqueId = params.mosqueId ?? null;
   const resolvedMosqueId = paramsMosqueId ?? schedule?.mosqueId ?? '';
+  const fallbackSlot = nextAssignedSlot ?? schedule?.nextMosqueSlot ?? null;
   const selectedSlot = useMemo(() => {
     if (params.slotId) {
       const found = schedule?.slots?.find((slot) => slot.id === params.slotId);
       if (found) return found;
     }
-    return nextAssignedSlot ?? null;
-  }, [nextAssignedSlot, params.slotId, schedule?.slots]);
+    return fallbackSlot;
+  }, [fallbackSlot, params.slotId, schedule?.slots]);
   const mosqueName = params.mosqueName ?? selectedSlot?.mosqueName ?? schedule?.mosqueName ?? 'Mosque';
-  const prayerName = params.prayerName ?? (selectedSlot?.prayerName as string) ?? (nextAssignedSlot?.prayerName as string) ?? 'Adhan';
-  const prayerKey = (prayerName ?? '').toString().toLowerCase() as PrayerName;
+  const prayerName = params.prayerName ?? (selectedSlot?.prayerName as string) ?? (fallbackSlot?.prayerName as string) ?? 'Adhan';
+  const effectivePrayerKey = normalizePrayerKey(
+    params.prayerName ?? selectedSlot?.prayerName ?? fallbackSlot?.prayerName ?? null
+  );
   const mode = params.mode === 'test' ? 'test' : 'normal';
 
   const prayerTimes = useMosquePrayerTimes(resolvedMosqueId);
@@ -52,15 +62,15 @@ export default function MuezzinLiveScreen() {
 
   const adhanFromParams = useMemo(() => {
     const scheduledTime = (params.adhanTime as string | undefined) ?? params.scheduledTime;
-    if (!scheduledTime) return null;
+    if (!scheduledTime || !effectivePrayerKey) return null;
     return {
       id: params.adhanId ?? params.slotId ?? 'pending',
       mosque_id: resolvedMosqueId,
-      prayer: prayerKey,
+      prayer: effectivePrayerKey,
       scheduled_at: scheduledTime,
       status: 'scheduled',
     };
-  }, [params.adhanId, params.adhanTime, params.scheduledTime, params.slotId, prayerKey, resolvedMosqueId]);
+  }, [effectivePrayerKey, params.adhanId, params.adhanTime, params.scheduledTime, params.slotId, resolvedMosqueId]);
 
   const adhanFromSlot = useMemo(() => {
     if (!selectedSlot?.adhanTime) return null;
@@ -76,32 +86,44 @@ export default function MuezzinLiveScreen() {
   const activeAdhan = useMemo(() => {
     if (adhanFromParams) return adhanFromParams;
     if (adhanFromSlot) return adhanFromSlot;
-    if (nextAssignedSlot?.adhanTime) {
-      const assignedPrayerKey = nextAssignedSlot.prayerName.toLowerCase();
+    if (fallbackSlot?.adhanTime) {
+      const assignedPrayerKey = fallbackSlot.prayerName.toLowerCase();
       return {
-        id: `assigned-${nextAssignedSlot.prayerName}`,
+        id: `assigned-${fallbackSlot.prayerName}`,
         mosque_id: resolvedMosqueId,
         prayer: assignedPrayerKey,
-        scheduled_at: nextAssignedSlot.adhanTime.toISOString(),
+        scheduled_at: fallbackSlot.adhanTime.toISOString(),
         status: 'scheduled',
       };
     }
-    // fallback to nearest prayer time if available
-    const fromTimes = prayerTimes.times?.[prayerKey];
+    // Only synthesize from prayer times when the page resolved a concrete prayer.
+    const fromTimes = effectivePrayerKey ? prayerTimes.times?.[effectivePrayerKey] : null;
     if (fromTimes) {
+      const resolvedPrayerKey = effectivePrayerKey as PrayerName;
       const [h, m] = fromTimes.split(':').map((v) => parseInt(v, 10));
       const d = new Date();
       d.setHours(h, m, 0, 0);
       return {
         id: 'fallback',
         mosque_id: resolvedMosqueId,
-        prayer: prayerKey,
+        prayer: resolvedPrayerKey,
+        scheduled_at: d.toISOString(),
+        status: 'scheduled',
+      };
+    }
+    if (mode === 'test' && resolvedMosqueId) {
+      const d = new Date();
+      d.setSeconds(d.getSeconds() + 120);
+      return {
+        id: 'test-broadcast',
+        mosque_id: resolvedMosqueId,
+        prayer: effectivePrayerKey ?? 'maghrib',
         scheduled_at: d.toISOString(),
         status: 'scheduled',
       };
     }
     return null;
-  }, [adhanFromParams, adhanFromSlot, nextAssignedSlot?.adhanTime, prayerTimes.times, prayerKey, prayerName, resolvedMosqueId]);
+  }, [adhanFromParams, adhanFromSlot, effectivePrayerKey, fallbackSlot?.adhanTime, fallbackSlot?.prayerName, mode, prayerTimes.times, resolvedMosqueId]);
 
   const scheduledDate = useMemo(() => {
     if (activeAdhan?.scheduled_at) return new Date(activeAdhan.scheduled_at);
@@ -149,8 +171,7 @@ export default function MuezzinLiveScreen() {
     return 'Awaiting schedule.';
   })();
 
-  const isAssigned =
-    schedule?.slots?.some((slot) => slot.prayerName.toLowerCase() === prayerKey && slot.isAssignedToMe) ?? false;
+  const isAssigned = selectedSlot?.isAssignedToMe ?? fallbackSlot?.isAssignedToMe ?? false;
 
   const connectionStatus = engine.isLive ? 'Stream connected' : engine.loading ? 'Connecting...' : 'Ready to connect';
 
@@ -271,7 +292,7 @@ export default function MuezzinLiveScreen() {
                 {new Date(engine.stream.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </Text>
             </View>
-          ) : timeUntil !== null ? (
+          ) : !engine.isLate && timeUntil !== null ? (
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>Time until adhan</Text>
               <Text style={styles.metaValue}>{formatCountdown(timeUntil)}</Text>

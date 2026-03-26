@@ -6,6 +6,7 @@ import { supabase } from '../../../lib/supabaseClient';
 import { RequireMainAdmin } from '../../../components/admin/web/RequireMainAdmin';
 import { AdminContextProvider, useAdminContext } from '../../../lib/admin-web/adminContext';
 import { AdminFeedbackProvider } from '../../../lib/admin-web/adminFeedback';
+import { useAdminViewport } from '../../../lib/admin-web/useAdminViewport';
 import type { MosqueOption } from '../../../components/admin/web/AdminTopBar';
 import AdminShell from '../../../components/admin/web/AdminShell';
 import { AdminPanel } from '../../../components/admin/web/AdminPrimitives';
@@ -34,6 +35,7 @@ export default function PrayerTimesHubPage() {
 function PrayerTimesHubShell() {
   const router = useRouter();
   const { selectedMosqueId, setSelectedMosqueId } = useAdminContext();
+  const { isCompact } = useAdminViewport();
   const [mosques, setMosques] = useState<MosqueRow[]>([]);
 
   useEffect(() => {
@@ -129,7 +131,7 @@ function PrayerTimesHubShell() {
         )
       }
     >
-      <div style={styles.grid}>
+      <div style={{ ...styles.grid, ...(isCompact ? styles.gridCompact : null) }}>
         <AdminPanel
           title="Current context"
           subtitle="The import surface only opens inside a mosque route now, so publish actions cannot drift across mosques."
@@ -207,6 +209,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
     gap: 14,
+  },
+  gridCompact: {
+    gridTemplateColumns: '1fr',
   },
   contextCard: {
     display: 'flex',

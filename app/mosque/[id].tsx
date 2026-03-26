@@ -391,7 +391,7 @@ export default function MosquePage() {
                 <Text style={styles.liveSubtitle}>Broadcasting Adhan</Text>
               </View>
             </View>
-            <Pressable onPress={() => router.push('/(tabs)/now')} style={({ pressed }) => [styles.livePrimary, { opacity: pressed ? 0.9 : 1 }]}>
+            <Pressable onPress={() => router.push('/(user)/now')} style={({ pressed }) => [styles.livePrimary, { opacity: pressed ? 0.9 : 1 }]}>
               <Text style={styles.livePrimaryText}>Listen Live</Text>
             </Pressable>
           </View>

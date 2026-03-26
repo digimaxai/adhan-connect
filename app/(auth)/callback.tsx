@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Text, View } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { requireRoleEntrySelection } from '../../lib/roleEntrySession';
 
 type Status = 'idle' | 'working' | 'done' | 'error';
 
@@ -161,7 +162,9 @@ export default function AuthCallback() {
         if (shouldRouteToPasswordSetup) {
           router.replace('/new-password' as any);
         } else {
-          router.replace('/(tabs)' as any);
+          const { data: sessionData } = await supabase.auth.getSession();
+          await requireRoleEntrySelection(sessionData.session?.user?.id ?? null);
+          router.replace('/listener-home' as any);
         }
       } catch (e: any) {
         if (!mounted) return;

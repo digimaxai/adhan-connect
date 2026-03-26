@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { PrayerName } from '../adhans';
+import { resolveApiUrls, supportsServerApi } from './apiBaseUrl';
 
 export type PrayerTimeSlot = { adhan: Date | null; iqama: Date | null };
 export type NormalizedPrayerTimes = Record<PrayerName, PrayerTimeSlot>;
@@ -67,6 +68,42 @@ const formatLocalDate = (d: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+function isServerPrayerTimesPayload(value: unknown): value is { row?: PrayerTimesRow | null; error?: string | null } {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as Record<string, unknown>;
+  return 'row' in payload || 'error' in payload;
+}
+
+async function loadDailyPrayerTimesViaServer(mosqueId: string, dateIso: string): Promise<PrayerTimesRow | null> {
+  if (!supportsServerApi()) return null;
+
+  const endpoints = resolveApiUrls('/api/prayer-times-daily');
+  if (!endpoints.length) return null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const url = new URL(endpoint);
+      url.searchParams.set('mosqueId', mosqueId);
+      url.searchParams.set('date', dateIso);
+
+      const response = await fetch(url.toString());
+      const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        continue;
+      }
+      if (!contentType.includes('application/json') || !isServerPrayerTimesPayload(payload)) {
+        continue;
+      }
+      return (payload.row ?? null) as PrayerTimesRow | null;
+    } catch (error) {
+      console.warn('[getDailyPrayerTimes] server fallback error', error);
+    }
+  }
+
+  return null;
+}
+
 export function normalizePrayerTimes(row?: PrayerTimesRow | null): NormalizedPrayerTimes | null {
   if (!row) return null;
   const normalized = emptyNormalized();
@@ -92,6 +129,17 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   // NOTE: prayer_times is the canonical source; if a row exists for (mosque_id, date) it fully overrides mosque_prayer_times for that day. mosque_prayer_times is fallback only.
   // Example: for Harrow on 2025-12-09, if prayer_times has edited times and mosque_prayer_times still holds imported ones, this helper returns the prayer_times values for all prayers.
   const dateIso = formatLocalDate(date);
+
+  const serverRow = await loadDailyPrayerTimesViaServer(mosqueId, dateIso);
+  if (serverRow) {
+    return {
+      fajr: { adhan: safeDateWithBase(serverRow.fajr_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.fajr_iqama_time, dateIso) },
+      dhuhr: { adhan: safeDateWithBase(serverRow.dhuhr_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.dhuhr_iqama_time, dateIso) },
+      asr: { adhan: safeDateWithBase(serverRow.asr_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.asr_iqama_time, dateIso) },
+      maghrib: { adhan: safeDateWithBase(serverRow.maghrib_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.maghrib_iqama_time, dateIso) },
+      isha: { adhan: safeDateWithBase(serverRow.isha_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.isha_iqama_time, dateIso) },
+    };
+  }
 
   let normalized: NormalizedPrayerTimes | null = null;
   try {
@@ -165,11 +213,18 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
 
   // As a last resort, try staff_rota adhan_time so listeners can still see schedule-driven times.
   try {
-    const { data: rota, error: rotaErr } = await supabase
+    let rota: RotaRow[] | null = null;
+    let rotaErr: any = null;
+    ({ data: rota, error: rotaErr } = await supabase
       .from('staff_rota')
       .select('prayer_name, adhan_time')
       .eq('mosque_id', mosqueId)
-      .eq('date', dateIso);
+      .eq('date', dateIso));
+
+    if (rotaErr?.code === '42703') {
+      rota = [];
+      rotaErr = null;
+    }
 
     if (!rotaErr && rota?.length) {
       const rotaNormalized = emptyNormalized();

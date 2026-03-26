@@ -2,24 +2,26 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, Animated, Easing, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import AppLogo from '../../components/AppLogo';
+import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { PrayerName } from '../../lib/adhans';
-import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
 import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 
 type StreamRow = {
   id: string;
   mosque_id: string;
-  type: string;
-  url: string;
-  status: string;
+  type?: string | null;
+  url?: string | null;
+  stream_url?: string | null;
+  status?: string | null;
+  started_at?: string | null;
   is_live: boolean;
   mosques?: { name?: string | null; city?: string | null; country?: string | null };
 };
@@ -49,6 +51,10 @@ const heroPatternUri = `data:image/svg+xml;utf8,${encodeURIComponent(heroPattern
 
 export default function NowScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mosqueId?: string }>();
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+  const requestedMosqueId = typeof params.mosqueId === 'string' ? params.mosqueId : null;
 
   const [streams, setStreams] = useState<StreamRow[]>([]);
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
@@ -64,7 +70,6 @@ export default function NowScreen() {
   const playScale = useRef(new Animated.Value(1)).current;
 
   const current = useMemo(() => streams.find((s) => s.id === activeId) ?? streams[0] ?? null, [streams, activeId]);
-  const liveInfo = useLiveStreamForMosque(current?.mosque_id);
   const followedList = useMemo(() => streams.filter((s) => followedIds.has(s.mosque_id)).slice(0, 3), [streams, followedIds]);
 
   const load = useCallback(async () => {
@@ -72,27 +77,40 @@ export default function NowScreen() {
     setError(null);
     try {
       const [subsRes, streamsRes] = await Promise.all([
-        supabase.from('subscriptions').select('mosque_id').limit(3),
+        userId
+          ? supabase.from('subscriptions').select('mosque_id').eq('user_id', userId).limit(3)
+          : Promise.resolve({ data: [] as { mosque_id: string }[], error: null }),
         supabase
           .from('streams')
-          .select('id, mosque_id, type, url, status, is_live, mosques(name,city,country)')
-          .eq('status', 'active')
+          .select('id, mosque_id, type, url, stream_url, status, started_at, is_live, mosques(name,city,country)')
           .eq('is_live', true)
+          .order('started_at', { ascending: false, nullsFirst: false })
           .limit(20),
       ]);
       if (streamsRes.error) throw streamsRes.error;
       const subSet = new Set((subsRes.data ?? []).map((s) => s.mosque_id));
       setFollowedIds(subSet);
-      const streamRows = (streamsRes.data ?? []) as StreamRow[];
-      setStreams(streamRows);
-      setActiveId((prev) => prev ?? streamRows[0]?.id ?? null);
+      const dedupedByMosque = new Map<string, StreamRow>();
+      ((streamsRes.data ?? []) as StreamRow[]).forEach((stream) => {
+        if (!stream.is_live || dedupedByMosque.has(stream.mosque_id)) return;
+        dedupedByMosque.set(stream.mosque_id, stream);
+      });
+      const streamRows = Array.from(dedupedByMosque.values());
+      const visibleStreams = subSet.size > 0 ? streamRows.filter((stream) => subSet.has(stream.mosque_id)) : streamRows;
+      setStreams(visibleStreams);
+      const preferredStream =
+        (requestedMosqueId ? visibleStreams.find((stream) => stream.mosque_id === requestedMosqueId) : null) ??
+        visibleStreams[0] ??
+        null;
+      setActiveId(preferredStream?.id ?? null);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load live stream.');
       setStreams([]);
+      setActiveId(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [requestedMosqueId, userId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -193,7 +211,12 @@ export default function NowScreen() {
         await soundRef.current.unloadAsync();
         soundRef.current = null;
       }
-      const uri = liveInfo.streamUrl ?? stream.url;
+      const uri = stream.stream_url ?? stream.url ?? null;
+      if (!uri) {
+        setError('This mosque is marked live, but no playback URL is configured yet.');
+        setPlaying(false);
+        return;
+      }
       const { sound } = await Audio.Sound.createAsync(
         { uri: uri },
         { shouldPlay: true, volume }
@@ -239,6 +262,21 @@ export default function NowScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <Text style={styles.subtle}>Loading...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!current) {
+    const emptyMessage =
+      followedIds.size > 0
+        ? 'No live Adhan is available from your followed mosques right now.'
+        : 'No live Adhan is available right now.';
+    return (
+      <SafeAreaView style={styles.screen}>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>Nothing live right now</Text>
+          <Text style={styles.emptySubtitle}>{emptyMessage}</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -545,6 +583,9 @@ const styles = StyleSheet.create({
   nextValue: { color: '#444444', fontWeight: '600', fontSize: 15 },
 
   subtle: { color: '#64748B', marginTop: 12, paddingHorizontal: 16 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  emptyTitle: { color: '#0F172A', fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  emptySubtitle: { color: '#64748B', fontSize: 14, marginTop: 8, textAlign: 'center' },
   error: { color: '#B91C1C', marginTop: 10, fontWeight: '700' },
 
   shadow: { shadowColor: '#000000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },

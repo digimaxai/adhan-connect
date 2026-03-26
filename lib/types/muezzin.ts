@@ -19,6 +19,54 @@ export interface StaffRotaEntry {
   notes?: string | null;
 }
 
+export type CoverRequestKind = 'release' | 'cover';
+
+export type CoverRequestUrgency = 'standard' | 'urgent';
+
+export type CoverRequestStatus =
+  | 'open'
+  | 'volunteered'
+  | 'provisional_cover'
+  | 'approved'
+  | 'dismissed'
+  | 'cancelled';
+
+export interface MuezzinCoverRequest {
+  id: string;
+  mosque_id: string;
+  date: string;
+  prayer_name: RotaPrayerName;
+  requester_user_id: string;
+  original_muezzin_user_id: string;
+  volunteer_user_id?: string | null;
+  request_kind: CoverRequestKind;
+  urgency: CoverRequestUrgency;
+  status: CoverRequestStatus;
+  reason?: string | null;
+  requested_at?: string | null;
+  responded_at?: string | null;
+  resolved_at?: string | null;
+  resolved_by_user_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  requester_name?: string | null;
+  volunteer_name?: string | null;
+  resolved_by_name?: string | null;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  mosque_id?: string | null;
+  actor_user_id?: string | null;
+  type: string;
+  title: string;
+  body: string;
+  metadata?: Record<string, unknown> | null;
+  read_at?: string | null;
+  created_at?: string | null;
+}
+
 export interface MuezzinSlot {
   id: string;
   mosqueId: string;
@@ -40,5 +88,6 @@ export interface MuezzinSchedule {
   mosqueName: string | null;
   slots: MuezzinSlot[];
   nextAssignedSlot: MuezzinSlot | null;
+  nextMosqueSlot?: MuezzinSlot | null;
   date?: Date | null;
 }

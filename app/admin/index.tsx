@@ -7,6 +7,7 @@ import { Button, Pill } from '../../components/admin/web/ui';
 import { RequireMainAdmin } from '../../components/admin/web/RequireMainAdmin';
 import { AdminContextProvider } from '../../lib/admin-web/adminContext';
 import { AdminFeedbackProvider } from '../../lib/admin-web/adminFeedback';
+import { useAdminViewport } from '../../lib/admin-web/useAdminViewport';
 import AdminShell from '../../components/admin/web/AdminShell';
 import { AdminMetricCard, AdminPanel } from '../../components/admin/web/AdminPrimitives';
 import { useAuth } from '../../lib/auth';
@@ -35,6 +36,7 @@ export default function AdminHomePage() {
 function AdminLanding() {
   const { signOut } = useAuth();
   const router = useRouter();
+  const { isComfortable, isCompact, isPhone } = useAdminViewport();
   const [mosques, setMosques] = useState<MosqueRow[]>([]);
   const [userCount, setUserCount] = useState(0);
 
@@ -168,23 +170,46 @@ function AdminLanding() {
         </Button>
       }
     >
-      <div style={styles.metricGrid}>
+      <div
+        style={{
+          ...styles.metricGrid,
+          ...(isComfortable ? styles.metricGridComfortable : null),
+          ...(isPhone ? styles.metricGridPhone : null),
+        }}
+      >
         <AdminMetricCard label="Registered mosques" value={mosques.length} detail={`${activeMosques} active across the network`} />
         <AdminMetricCard label="Pending approvals" value={pendingMosques} detail="New submissions needing a main admin decision" />
         <AdminMetricCard label="Inactive mosques" value={inactiveMosques} detail="Listings hidden or paused from active service" />
         <AdminMetricCard label="Platform users" value={userCount} detail="Accounts with active access to the platform" />
       </div>
 
-      <div style={styles.dashboardGrid}>
+      <div
+        style={{
+          ...styles.dashboardGrid,
+          ...(isComfortable ? styles.dashboardGridComfortable : null),
+          ...(isCompact ? styles.dashboardGridCompact : null),
+        }}
+      >
         <AdminPanel title="Priority queue" subtitle="Start with the highest-value work so the console feels like an operations desk, not a link page.">
           <div style={styles.priorityList}>
             {priorityItems.map((item) => (
-              <div key={item.label} style={styles.priorityRow}>
+              <div
+                key={item.label}
+                style={{
+                  ...styles.priorityRow,
+                  ...(isPhone ? styles.priorityRowPhone : null),
+                }}
+              >
                 <div style={styles.priorityMeta}>
                   <div style={styles.priorityLabel}>{item.label}</div>
                   <div style={styles.priorityHint}>Current live count</div>
                 </div>
-                <div style={styles.priorityValueWrap}>
+                <div
+                  style={{
+                    ...styles.priorityValueWrap,
+                    ...(isPhone ? styles.priorityValueWrapPhone : null),
+                  }}
+                >
                   <div style={styles.priorityValue}>{item.value}</div>
                   <Pill status={item.tone} />
                 </div>
@@ -212,28 +237,47 @@ function AdminLanding() {
 const styles: Record<string, React.CSSProperties> = {
   metricGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: 14,
+    width: '100%',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gap: 16,
+  },
+  metricGridComfortable: {
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  },
+  metricGridPhone: {
+    gridTemplateColumns: '1fr',
   },
   dashboardGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(320px, 1.1fr) minmax(320px, 1fr)',
-    gap: 16,
+    width: '100%',
+    gridTemplateColumns: 'minmax(0, 1.12fr) minmax(0, 1fr)',
+    gap: 18,
+  },
+  dashboardGridComfortable: {
+    gridTemplateColumns: '1fr',
+  },
+  dashboardGridCompact: {
+    gridTemplateColumns: '1fr',
   },
   priorityList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    width: '100%',
+    gap: 14,
   },
   priorityRow: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    borderRadius: 18,
-    padding: '14px 16px',
+    gap: 14,
+    borderRadius: 20,
+    padding: '18px 18px',
     backgroundColor: '#f8fafc',
     border: '1px solid #e2e8f0',
+  },
+  priorityRowPhone: {
+    alignItems: 'flex-start',
+    flexDirection: 'column',
   },
   priorityMeta: {
     display: 'flex',
@@ -241,12 +285,12 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 4,
   },
   priorityLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: 800,
     color: '#0f172a',
   },
   priorityHint: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748b',
   },
   priorityValueWrap: {
@@ -254,43 +298,49 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 10,
   },
+  priorityValueWrapPhone: {
+    width: '100%',
+    justifyContent: 'space-between',
+  },
   priorityValue: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 900,
     color: '#0f172a',
   },
   actionGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: 12,
+    width: '100%',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gap: 14,
   },
   actionCard: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
-    minHeight: 180,
-    padding: '18px',
-    borderRadius: 20,
+    gap: 12,
+    minHeight: 210,
+    padding: '20px',
+    borderRadius: 24,
     textDecoration: 'none',
     color: '#0f172a',
     background:
       'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(240,249,255,0.95) 100%)',
     border: '1px solid rgba(14,165,233,0.18)',
     boxShadow: '0 16px 28px rgba(14,165,233,0.08)',
+    boxSizing: 'border-box',
   },
   actionTitle: {
-    fontSize: 19,
-    lineHeight: 1.1,
+    fontSize: 21,
+    lineHeight: 1.15,
     fontWeight: 900,
   },
   actionDescription: {
-    fontSize: 13,
-    lineHeight: 1.6,
+    fontSize: 14,
+    lineHeight: 1.65,
     color: '#475569',
     flex: 1,
   },
   actionLink: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 800,
     color: '#0369a1',
   },

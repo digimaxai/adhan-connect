@@ -12,6 +12,7 @@ export const Card: React.FC<{ style?: React.CSSProperties; children: React.React
       border: '1px solid #e2e8f0',
       borderRadius: 12,
       boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+      boxSizing: 'border-box',
       ...style,
     }}
   >
@@ -25,13 +26,16 @@ export const Button: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }
 > = ({ variant = 'primary', style, children, ...rest }) => {
   const base: React.CSSProperties = {
-    padding: '10px 12px',
-    borderRadius: 8,
+    padding: '11px 14px',
+    borderRadius: 12,
     border: '1px solid transparent',
+    fontSize: 14,
+    lineHeight: 1.2,
     fontWeight: 800,
     cursor: 'pointer',
     backgroundColor: '#0f172a',
     color: '#fff',
+    boxSizing: 'border-box',
   };
   const variants: Record<ButtonVariant, React.CSSProperties> = {
     primary: { backgroundColor: '#0f172a', color: '#fff', borderColor: '#0f172a' },
@@ -105,12 +109,13 @@ export const Modal: React.FC<{
     >
       <div
         style={{
-          width: 'min(520px, 94vw)',
+          width: 'min(560px, 94vw)',
           background: '#fff',
-          borderRadius: 12,
+          borderRadius: 18,
           border: '1px solid #e2e8f0',
           boxShadow: '0 12px 30px rgba(0,0,0,0.14)',
-          padding: 20,
+          padding: 24,
+          boxSizing: 'border-box',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -154,6 +159,7 @@ export const Menu: React.FC<{
             borderRadius: 10,
             boxShadow: '0 10px 24px rgba(0,0,0,0.12)',
             zIndex: 20,
+            boxSizing: 'border-box',
           }}
         >
           {children}
@@ -191,10 +197,11 @@ export const TextInput: React.FC<
   <input
     style={{
       width: '100%',
-      padding: '10px 12px',
-      borderRadius: 8,
+      padding: '12px 14px',
+      borderRadius: 12,
       border: '1px solid #cbd5e1',
-      fontSize: 14,
+      fontSize: 15,
+      boxSizing: 'border-box',
       ...style,
     }}
     {...rest}
@@ -209,11 +216,12 @@ export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (
   <select
     style={{
       width: '100%',
-      padding: '10px 12px',
-      borderRadius: 8,
+      padding: '12px 14px',
+      borderRadius: 12,
       border: '1px solid #cbd5e1',
-      fontSize: 14,
+      fontSize: 15,
       backgroundColor: '#fff',
+      boxSizing: 'border-box',
       ...style,
     }}
     {...rest}

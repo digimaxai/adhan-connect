@@ -141,7 +141,7 @@ export default function NewPassword() {
       const { error } = await supabase.auth.updateUser({ password: pw });
       if (error) throw error;
       setOk(true);
-      setTimeout(() => router.replace('/(tabs)' as any), 800);
+      setTimeout(() => router.replace('/listener-home' as any), 800);
     } catch (e: any) {
       setErr(e?.message ?? 'Failed to update password.');
     } finally {

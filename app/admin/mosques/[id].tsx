@@ -6,6 +6,10 @@ import { supabase } from '../../../lib/supabaseClient';
 import { RequireMainAdmin } from '../../../components/admin/web/RequireMainAdmin';
 import { AdminContextProvider, useAdminContext } from '../../../lib/admin-web/adminContext';
 import { AdminFeedbackProvider, useAdminFeedback } from '../../../lib/admin-web/adminFeedback';
+import { useAdminViewport } from '../../../lib/admin-web/useAdminViewport';
+import { resolveApiUrl, supportsServerApi } from '../../../lib/api/apiBaseUrl';
+import { removeLocalAdminMembership } from '../../../lib/api/admin/localAdminAssignments';
+import { removeMuezzinMembership } from '../../../lib/api/admin/muezzinAssignments';
 import type { MosqueOption } from '../../../components/admin/web/AdminTopBar';
 import AdminShell from '../../../components/admin/web/AdminShell';
 import { AdminMetricCard, AdminPanel } from '../../../components/admin/web/AdminPrimitives';
@@ -17,6 +21,7 @@ type MosqueRow = {
   city?: string | null;
   country?: string | null;
   status?: string | null;
+  allow_multi_mosque_local_admins?: boolean | null;
   created_at?: string | null;
 };
 
@@ -30,6 +35,58 @@ type AssignmentUser = {
 
 type MosqueAdmin = { user_id: string; mosque_id: string };
 type MuezzinRow = { user_id: string; mosque_id: string; is_active?: boolean | null };
+type MosqueWorkspaceTab = 'overview' | 'admins' | 'muezzins' | 'campaigns';
+type MosqueWorkspacePayload = {
+  mosque: MosqueRow;
+  mosques: MosqueRow[];
+  admins: MosqueAdmin[];
+  muezzins: MuezzinRow[];
+  people: AssignmentUser[];
+};
+
+function parseWorkspaceTab(value: string | string[] | undefined): MosqueWorkspaceTab {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw === 'admins' || raw === 'muezzins' || raw === 'campaigns') return raw;
+  return 'overview';
+}
+
+async function loadMosqueWorkspaceViaServer(mosqueId: string): Promise<MosqueWorkspacePayload> {
+  if (!supportsServerApi()) {
+    throw new Error('Mosque workspace API is unavailable in this runtime.');
+  }
+
+  const endpoint = resolveApiUrl('/api/admin/mosque-workspace');
+  if (!endpoint) {
+    throw new Error('Could not resolve the mosque workspace endpoint.');
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session?.access_token) {
+    throw new Error('Your session has expired. Refresh the page and sign in again.');
+  }
+
+  const url = new URL(endpoint);
+  url.searchParams.set('mosqueId', mosqueId);
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+    },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Unable to load this mosque workspace.');
+  }
+
+  return {
+    mosque: payload.mosque as MosqueRow,
+    mosques: (payload.mosques ?? []) as MosqueRow[],
+    admins: (payload.admins ?? []) as MosqueAdmin[],
+    muezzins: (payload.muezzins ?? []) as MuezzinRow[],
+    people: (payload.people ?? []) as AssignmentUser[],
+  };
+}
 
 export default function MosqueProfilePage() {
   return (
@@ -44,33 +101,43 @@ export default function MosqueProfilePage() {
 }
 
 function MosqueProfileShell() {
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; tab?: string }>();
   const routeIdRaw = params?.id;
   const routeId = Array.isArray(routeIdRaw) ? routeIdRaw[0] : routeIdRaw;
+  const routeTab = parseWorkspaceTab(params?.tab);
   const router = useRouter();
   const { selectedMosqueId, setSelectedMosqueId } = useAdminContext();
-  const { notifyError, notifyInfo, notifySuccess } = useAdminFeedback();
+  const { notifyError, notifySuccess } = useAdminFeedback();
+  const { isCompact, isPhone } = useAdminViewport();
 
   const mosqueId = routeId || selectedMosqueId || '';
+  const [tab, setTab] = useState<MosqueWorkspaceTab>(routeTab);
 
   const [mosque, setMosque] = useState<MosqueRow | null>(null);
   const [mosquesForSelector, setMosquesForSelector] = useState<MosqueRow[]>([]);
-  const [tab, setTab] = useState<'overview' | 'admins' | 'muezzins' | 'campaigns'>('overview');
   const [loading, setLoading] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [admins, setAdmins] = useState<MosqueAdmin[]>([]);
   const [muezzins, setMuezzins] = useState<MuezzinRow[]>([]);
   const [peopleById, setPeopleById] = useState<Record<string, AssignmentUser>>({});
-  const [userOptions, setUserOptions] = useState<AssignmentUser[]>([]);
-  const [assignUserIdAdmin, setAssignUserIdAdmin] = useState('');
-  const [assignUserIdMuezzin, setAssignUserIdMuezzin] = useState('');
   const [addAdminOpen, setAddAdminOpen] = useState(false);
   const [addAdminEmail, setAddAdminEmail] = useState('');
   const [addAdminDisplayName, setAddAdminDisplayName] = useState('');
   const [addAdminError, setAddAdminError] = useState<string | null>(null);
   const [addingAdmin, setAddingAdmin] = useState(false);
+  const [addMuezzinOpen, setAddMuezzinOpen] = useState(false);
+  const [addMuezzinEmail, setAddMuezzinEmail] = useState('');
+  const [addMuezzinDisplayName, setAddMuezzinDisplayName] = useState('');
+  const [addMuezzinError, setAddMuezzinError] = useState<string | null>(null);
+  const [addingMuezzin, setAddingMuezzin] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', city: '', country: '', status: 'pending' });
+  const [editForm, setEditForm] = useState({
+    name: '',
+    city: '',
+    country: '',
+    status: 'pending',
+    allowMultiMosqueLocalAdmins: false,
+  });
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -85,16 +152,6 @@ function MosqueProfileShell() {
     });
   };
 
-  const upsertUserOption = (user: AssignmentUser) => {
-    setUserOptions((prev) => {
-      const index = prev.findIndex((row) => row.id === user.id);
-      if (index === -1) return [user, ...prev];
-      const next = [...prev];
-      next[index] = user;
-      return next;
-    });
-  };
-
   useEffect(() => {
     if (routeId && selectedMosqueId !== routeId) {
       setSelectedMosqueId(routeId);
@@ -102,39 +159,8 @@ function MosqueProfileShell() {
   }, [routeId, selectedMosqueId, setSelectedMosqueId]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const mosquesSelectorRes = await supabase
-        .from('mosques')
-        .select('id, name, city, country, status')
-        .order('name', { ascending: true })
-        .limit(500);
-      if (!mosquesSelectorRes.error && !cancelled) {
-        setMosquesForSelector(mosquesSelectorRes.data ?? []);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const usersRes = await supabase
-        .from('users')
-        .select('id, email, role, created_at')
-        .order('created_at', { ascending: false })
-        .limit(500);
-      if (!usersRes.error && !cancelled) {
-        setUserOptions(usersRes.data ?? []);
-        upsertPeople(usersRes.data ?? []);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setTab((prev) => (prev === routeTab ? prev : routeTab));
+  }, [routeTab]);
 
   useEffect(() => {
     if (!mosqueId) return;
@@ -142,31 +168,31 @@ function MosqueProfileShell() {
     const load = async () => {
       setLoading(true);
       setErrorBanner(null);
+      setMosque(null);
+      setAdmins([]);
+      setMuezzins([]);
+      setPeopleById({});
       try {
-        const [mosqRes, adminsRes, muezzinRes] = await Promise.all([
-          supabase.from('mosques').select('id, name, city, country, status, created_at').eq('id', mosqueId).maybeSingle(),
-          supabase.from('mosque_admins').select('user_id, mosque_id').eq('mosque_id', mosqueId),
-          supabase.from('muezzins').select('user_id, mosque_id, is_active').eq('mosque_id', mosqueId),
-        ]);
-
+        const payload = await loadMosqueWorkspaceViaServer(mosqueId);
         if (!cancelled) {
-          setMosque(mosqRes.data ?? null);
-          setAdmins(adminsRes.data ?? []);
-          setMuezzins(muezzinRes.data ?? []);
-        }
-
-        const ids = new Set<string>();
-        (adminsRes.data ?? []).forEach((a: MosqueAdmin) => ids.add(a.user_id));
-        (muezzinRes.data ?? []).forEach((m: MuezzinRow) => ids.add(m.user_id));
-        if (ids.size) {
-          const peopleRes = await supabase.from('users').select('id, email, role, created_at').in('id', Array.from(ids));
-          if (!peopleRes.error && !cancelled) {
-            upsertPeople(peopleRes.data ?? []);
-          }
+          setMosque(payload.mosque ?? null);
+          setMosquesForSelector(payload.mosques ?? []);
+          setAdmins(payload.admins ?? []);
+          setMuezzins(payload.muezzins ?? []);
+          setPeopleById(() => {
+            const next: Record<string, AssignmentUser> = {};
+            (payload.people ?? []).forEach((person) => {
+              if (person?.id) next[person.id] = person;
+            });
+            return next;
+          });
         }
       } catch (error) {
         console.error('mosque workspace load error', error);
-        if (!cancelled) setErrorBanner('Unable to load data. Check console logs.');
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Unable to load data. Check console logs.';
+          setErrorBanner(message);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -184,6 +210,7 @@ function MosqueProfileShell() {
       city: mosque.city ?? '',
       country: mosque.country ?? '',
       status: mosque.status ?? 'pending',
+      allowMultiMosqueLocalAdmins: !!mosque.allow_multi_mosque_local_admins,
     });
   }, [mosque]);
 
@@ -199,23 +226,27 @@ function MosqueProfileShell() {
     [mosquesForSelector]
   );
 
-  const adminAssignedIds = useMemo(() => new Set(admins.map((a) => a.user_id)), [admins]);
-  const muezzinAssignedIds = useMemo(() => new Set(muezzins.map((m) => m.user_id)), [muezzins]);
-  const adminCandidates = useMemo(
-    () => userOptions.filter((u) => u.role === 'local_admin' || u.role === 'main_admin'),
-    [userOptions]
-  );
-  const muezzinCandidates = useMemo(
-    () => userOptions.filter((u) => u.role === 'muezzin'),
-    [userOptions]
-  );
-
   const locationLabel = [mosque?.city, mosque?.country].filter(Boolean).join(', ');
   const status = mosque?.status ?? null;
   const mosqueName = mosque?.name ?? 'Mosque';
+  const allowMultiMosqueLocalAdmins = !!mosque?.allow_multi_mosque_local_admins;
+  const metaRowStyle = {
+    ...styles.metaRow,
+    ...(isPhone ? styles.metaRowPhone : null),
+  };
+  const idTextStyle = {
+    ...styles.idText,
+    ...(isPhone ? styles.idTextPhone : null),
+  };
 
   const updateSelector = (patch: Partial<MosqueRow>) => {
     setMosquesForSelector((prev) => prev.map((m) => (m.id === mosqueId ? { ...m, ...patch } : m)));
+  };
+
+  const setActiveTab = (nextTab: MosqueWorkspaceTab) => {
+    setTab(nextTab);
+    const query = nextTab === 'overview' ? '' : `?tab=${nextTab}`;
+    router.replace((`/admin/mosques/${mosqueId}${query}`) as any);
   };
 
   const handleApprove = async () => {
@@ -244,50 +275,18 @@ function MosqueProfileShell() {
     notifySuccess('Mosque deactivated.');
   };
 
-  const handleAssignAdmin = async () => {
-    if (!mosqueId || !assignUserIdAdmin) return;
-    if (adminAssignedIds.has(assignUserIdAdmin)) {
-      setAssignUserIdAdmin('');
-      notifyInfo('That user already has local-admin access to this mosque.');
-      return;
-    }
-    const { error } = await supabase.from('mosque_admins').insert({ mosque_id: mosqueId, user_id: assignUserIdAdmin });
-    if (error) {
-      console.error('assign admin error', error);
-      notifyError('Local-admin assignment failed.', 'Check console logs for the Supabase error details.');
-      return;
-    }
-    setAdmins((prev) => [...prev, { mosque_id: mosqueId, user_id: assignUserIdAdmin }]);
-    setAssignUserIdAdmin('');
-    notifySuccess('Local admin assigned.');
-  };
-
-  const handleAssignMuezzin = async () => {
-    if (!mosqueId || !assignUserIdMuezzin) return;
-    if (muezzinAssignedIds.has(assignUserIdMuezzin)) {
-      setAssignUserIdMuezzin('');
-      notifyInfo('That user already has muezzin access to this mosque.');
-      return;
-    }
-    const { error } = await supabase.from('muezzins').insert({ mosque_id: mosqueId, user_id: assignUserIdMuezzin, is_active: true });
-    if (error) {
-      console.error('assign muezzin error', error);
-      notifyError('Muezzin assignment failed.', 'Check console logs for the Supabase error details.');
-      return;
-    }
-    setMuezzins((prev) => [...prev, { mosque_id: mosqueId, user_id: assignUserIdMuezzin, is_active: true }]);
-    setAssignUserIdMuezzin('');
-    notifySuccess('Muezzin assigned.');
-  };
-
   const handleRemoveAdmin = async (userId: string) => {
     if (!mosqueId) return;
     const confirmed = typeof window !== 'undefined' ? window.confirm('Remove this local admin?') : true;
     if (!confirmed) return;
-    const { error } = await supabase.from('mosque_admins').delete().eq('mosque_id', mosqueId).eq('user_id', userId);
-    if (error) {
+    try {
+      await removeLocalAdminMembership({ mosqueId, userId });
+    } catch (error) {
       console.error('remove admin error', error);
-      notifyError('Removing local-admin access failed.', 'Check console logs for the Supabase error details.');
+      notifyError(
+        'Removing local-admin access failed.',
+        error instanceof Error ? error.message : 'The request did not complete cleanly.'
+      );
       return;
     }
     setAdmins((prev) => prev.filter((a) => a.user_id !== userId));
@@ -298,10 +297,14 @@ function MosqueProfileShell() {
     if (!mosqueId) return;
     const confirmed = typeof window !== 'undefined' ? window.confirm('Remove this muezzin?') : true;
     if (!confirmed) return;
-    const { error } = await supabase.from('muezzins').delete().eq('mosque_id', mosqueId).eq('user_id', userId);
-    if (error) {
+    try {
+      await removeMuezzinMembership({ mosqueId, userId });
+    } catch (error) {
       console.error('remove muezzin error', error);
-      notifyError('Removing muezzin access failed.', 'Check console logs for the Supabase error details.');
+      notifyError(
+        'Removing muezzin access failed.',
+        error instanceof Error ? error.message : 'The request did not complete cleanly.'
+      );
       return;
     }
     setMuezzins((prev) => prev.filter((m) => m.user_id !== userId));
@@ -321,13 +324,14 @@ function MosqueProfileShell() {
       status: editForm.status,
       city: editForm.city.trim() || null,
       country: editForm.country.trim() || null,
+      allow_multi_mosque_local_admins: editForm.allowMultiMosqueLocalAdmins,
     };
 
     setSavingEdit(true);
     try {
       const { error } = await supabase.from('mosques').update(payload).eq('id', mosqueId);
       if (error) {
-        setEditError('Save failed. Check console logs.');
+        setEditError(error.message || 'Save failed. Check console logs.');
         return;
       }
       setMosque((prev) => (prev ? { ...prev, ...payload } : prev));
@@ -338,6 +342,28 @@ function MosqueProfileShell() {
     } finally {
       setSavingEdit(false);
     }
+  };
+
+  const handleSetLocalAdminSharingPolicy = async (nextValue: boolean) => {
+    if (!mosqueId || nextValue === allowMultiMosqueLocalAdmins) return;
+    const { error } = await supabase
+      .from('mosques')
+      .update({ allow_multi_mosque_local_admins: nextValue })
+      .eq('id', mosqueId);
+    if (error) {
+      notifyError('Policy update failed.', error.message || 'Check console logs for the Supabase error details.');
+      return;
+    }
+    const patch = { allow_multi_mosque_local_admins: nextValue };
+    setMosque((prev) => (prev ? { ...prev, ...patch } : prev));
+    setEditForm((prev) => ({ ...prev, allowMultiMosqueLocalAdmins: nextValue }));
+    updateSelector(patch);
+    notifySuccess(
+      nextValue ? 'Cross-mosque local-admin access activated.' : 'Cross-mosque local-admin access set to inactive.',
+      nextValue
+        ? 'Local admins assigned here may also manage other mosques that allow the same.'
+        : 'Local admins assigned here are now kept exclusive to this mosque.'
+    );
   };
 
   const handleCopyId = async () => {
@@ -362,6 +388,20 @@ function MosqueProfileShell() {
     setAddAdminError(null);
     setAddAdminEmail('');
     setAddAdminDisplayName('');
+  };
+
+  const openAddMuezzinModal = () => {
+    setAddMuezzinError(null);
+    setAddMuezzinEmail('');
+    setAddMuezzinDisplayName('');
+    setAddMuezzinOpen(true);
+  };
+
+  const closeAddMuezzinModal = () => {
+    setAddMuezzinOpen(false);
+    setAddMuezzinError(null);
+    setAddMuezzinEmail('');
+    setAddMuezzinDisplayName('');
   };
 
   const handleAddLocalAdmin = async () => {
@@ -442,7 +482,6 @@ function MosqueProfileShell() {
 
       const preparedUser = payload.user;
       upsertPeople([preparedUser]);
-      upsertUserOption(preparedUser);
       setAdmins((prev) =>
         prev.some((item) => item.user_id === preparedUser.id)
           ? prev
@@ -466,6 +505,112 @@ function MosqueProfileShell() {
       setAddAdminError('Unable to add or invite this local admin right now.');
     } finally {
       setAddingAdmin(false);
+    }
+  };
+
+  const handleAddMuezzin = async () => {
+    if (!mosqueId) return;
+    const normalizedEmail = addMuezzinEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setAddMuezzinError('Email is required.');
+      return;
+    }
+
+    setAddMuezzinError(null);
+    setAddingMuezzin(true);
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) {
+        setAddMuezzinError('Your session has expired. Refresh the page and sign in again.');
+        return;
+      }
+
+      const endpoint =
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/api/admin/muezzin-invite`
+          : '/api/admin/muezzin-invite';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          displayName: addMuezzinDisplayName.trim(),
+          mosqueId,
+        }),
+      });
+
+      const rawResponse = await response.text();
+      let payload: {
+        error?: string;
+        invited?: boolean;
+        created?: boolean;
+        alreadyAssigned?: boolean;
+        user?: AssignmentUser;
+        mosque?: { id: string; name: string };
+      } = {};
+
+      try {
+        payload = rawResponse ? (JSON.parse(rawResponse) as typeof payload) : {};
+      } catch {
+        payload = {};
+      }
+
+      if (!response.ok || !payload.user) {
+        if (payload.error) {
+          setAddMuezzinError(payload.error);
+          return;
+        }
+
+        if (response.status === 404) {
+          setAddMuezzinError(
+            'The invite endpoint is unavailable. Restart Expo after switching web output to server mode.'
+          );
+          return;
+        }
+
+        if (response.status >= 500) {
+          setAddMuezzinError(
+            rawResponse
+              ? `Server error: ${rawResponse.slice(0, 180)}`
+              : 'Server invite flow failed. Check SUPABASE_SERVICE_ROLE and restart Expo.'
+          );
+          return;
+        }
+
+        setAddMuezzinError('Unable to add or invite this muezzin right now.');
+        return;
+      }
+
+      const preparedUser = payload.user;
+      upsertPeople([preparedUser]);
+      setMuezzins((prev) =>
+        prev.some((item) => item.user_id === preparedUser.id)
+          ? prev.map((item) =>
+              item.user_id === preparedUser.id ? { ...item, is_active: true } : item
+            )
+          : [...prev, { mosque_id: mosqueId, user_id: preparedUser.id, is_active: true }]
+      );
+      closeAddMuezzinModal();
+      if (payload.invited) {
+        notifySuccess(
+          'Muezzin invited.',
+          `${preparedUser.email ?? preparedUser.id} has been invited and assigned to ${mosqueName}.`
+        );
+        return;
+      }
+
+      notifySuccess(
+        payload.alreadyAssigned ? 'Muezzin already assigned.' : 'Muezzin added.',
+        `${preparedUser.email ?? preparedUser.id} now serves ${mosqueName}.`
+      );
+    } catch (error) {
+      console.error('add muezzin exception', error);
+      setAddMuezzinError('Unable to add or invite this muezzin right now.');
+    } finally {
+      setAddingMuezzin(false);
     }
   };
 
@@ -497,8 +642,18 @@ function MosqueProfileShell() {
       description: 'Assign an existing user or send a fresh invite from this mosque workspace.',
       keywords: ['local admin', 'assign', 'invite', 'email'],
       onSelect: () => {
-        setTab('admins');
+        setActiveTab('admins');
         openAddAdminModal();
+      },
+    },
+    {
+      key: 'mosque-add-muezzin',
+      label: 'Add or invite muezzin',
+      description: 'Assign an existing user or send a fresh invite as a mosque muezzin.',
+      keywords: ['muezzin', 'assign', 'invite', 'email'],
+      onSelect: () => {
+        setActiveTab('muezzins');
+        openAddMuezzinModal();
       },
     },
     {
@@ -506,7 +661,14 @@ function MosqueProfileShell() {
       label: 'Manage muezzins',
       description: 'Jump directly to the mosque muezzin assignment tab.',
       keywords: ['muezzin', 'assignments'],
-      onSelect: () => setTab('muezzins'),
+      onSelect: () => setActiveTab('muezzins'),
+    },
+    {
+      key: 'mosque-open-global-users',
+      label: 'Open global user access',
+      description: 'Review the network-wide staff access matrix for cross-mosque context.',
+      keywords: ['users', 'access', 'global', 'matrix'],
+      onSelect: () => router.push('/admin/users' as any),
     },
     {
       key: 'mosque-copy-id',
@@ -567,6 +729,11 @@ function MosqueProfileShell() {
         <AdminMetricCard label="Local admins" value={admins.length} detail="Assigned mosque-scoped admins" />
         <AdminMetricCard label="Muezzins" value={muezzins.length} detail="Assigned muezzin accounts" />
         <AdminMetricCard
+          label="Cross-mosque admins"
+          value={allowMultiMosqueLocalAdmins ? 'active' : 'inactive'}
+          detail="Whether this mosque permits its local admins to hold other mosque assignments"
+        />
+        <AdminMetricCard
           label="Created"
           value={mosque?.created_at ? new Date(mosque.created_at).toLocaleDateString() : '-'}
           detail="Directory registration date"
@@ -575,27 +742,27 @@ function MosqueProfileShell() {
 
       <div style={styles.tabRow}>
         {(['overview', 'admins', 'muezzins', 'campaigns'] as const).map((key) => (
-          <button key={key} style={tab === key ? styles.tabActive : styles.tab} onClick={() => setTab(key)}>
+          <button key={key} style={tab === key ? styles.tabActive : styles.tab} onClick={() => setActiveTab(key)}>
             {key[0].toUpperCase() + key.slice(1)}
           </button>
         ))}
       </div>
 
       {tab === 'overview' ? (
-        <div style={styles.overviewGrid}>
+        <div style={{ ...styles.overviewGrid, ...(isCompact ? styles.overviewGridCompact : null) }}>
           <AdminPanel title="Core profile" subtitle="Key directory data and identifiers for this mosque.">
             <div style={styles.metaList}>
-              <div style={styles.metaRow}>
+              <div style={metaRowStyle}>
                 <span>Status</span>
                 <Pill status={status} />
               </div>
-              <div style={styles.metaRow}>
+              <div style={metaRowStyle}>
                 <span>Location</span>
                 <span>{locationLabel || '-'}</span>
               </div>
-              <div style={styles.metaRow}>
+              <div style={metaRowStyle}>
                 <span>Mosque ID</span>
-                <span style={styles.idText}>{mosque?.id ?? '-'}</span>
+                <span style={idTextStyle}>{mosque?.id ?? '-'}</span>
               </div>
             </div>
             <div style={styles.inlineActions}>
@@ -607,18 +774,51 @@ function MosqueProfileShell() {
 
           <AdminPanel title="Operational posture" subtitle="Assignments and readiness at a glance.">
             <div style={styles.metaList}>
-              <div style={styles.metaRow}>
+              <div style={metaRowStyle}>
                 <span>Admins assigned</span>
                 <strong>{admins.length}</strong>
               </div>
-              <div style={styles.metaRow}>
+              <div style={metaRowStyle}>
                 <span>Muezzins assigned</span>
                 <strong>{muezzins.length}</strong>
               </div>
-              <div style={styles.metaRow}>
+              <div style={metaRowStyle}>
                 <span>Workspace mode</span>
                 <span>{selectedMosqueId === mosqueId ? 'Selected in context' : 'Not selected'}</span>
               </div>
+            </div>
+          </AdminPanel>
+
+          <AdminPanel
+            title="Local admin scope policy"
+            subtitle="Decide whether admins assigned here may also administer other mosques."
+          >
+            <div style={styles.metaList}>
+              <div style={metaRowStyle}>
+                <span>Cross-mosque local-admin access</span>
+                <Pill status={allowMultiMosqueLocalAdmins ? 'active' : 'inactive'} />
+              </div>
+              <div style={styles.helperText}>
+                {allowMultiMosqueLocalAdmins
+                  ? 'Active means local admins from this mosque may also manage other mosques, but only if those mosques also allow it.'
+                  : 'Inactive keeps local admins exclusive to this mosque. They must not hold any other mosque-admin assignments.'}
+              </div>
+            </div>
+            <div style={styles.toggleRow}>
+              <Button
+                variant={allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                onClick={() => handleSetLocalAdminSharingPolicy(true)}
+                disabled={allowMultiMosqueLocalAdmins}
+              >
+                Active
+              </Button>
+              <Button
+                variant={!allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                onClick={() => handleSetLocalAdminSharingPolicy(false)}
+                disabled={!allowMultiMosqueLocalAdmins}
+              >
+                Inactive
+              </Button>
             </div>
           </AdminPanel>
         </div>
@@ -627,13 +827,26 @@ function MosqueProfileShell() {
       {tab === 'admins' ? (
         <AdminPanel
           title="Local admin assignments"
-          subtitle="Keep mosque-scoped access precise and intentional."
+          subtitle={
+            allowMultiMosqueLocalAdmins
+              ? 'This mosque-scoped list mirrors the same assignments shown in the global user access matrix.'
+              : 'This mosque-scoped list mirrors the same assignments shown in the global user access matrix.'
+          }
           action={
-            <Button variant="secondary" onClick={openAddAdminModal}>
-              Add or invite local admin
-            </Button>
+            <>
+              <Button variant="ghost" onClick={() => router.push('/admin/users' as any)}>
+                Global users page
+              </Button>
+              <Button variant="secondary" onClick={openAddAdminModal}>
+                Add or invite local admin
+              </Button>
+            </>
           }
         >
+          <div style={styles.helperText}>
+            This panel only shows local admins assigned to {mosqueName}. New assignments here write to the same
+            mosque-scoped membership data used by the global Users page.
+          </div>
           <div style={styles.chipRow}>
             {admins.map((a) => {
               const user = peopleById[a.user_id];
@@ -648,24 +861,28 @@ function MosqueProfileShell() {
             })}
             {!admins.length ? <span style={styles.muted}>No admins assigned.</span> : null}
           </div>
-          <div style={styles.assignRow}>
-            <Select value={assignUserIdAdmin} onChange={(e) => setAssignUserIdAdmin(e.target.value)} style={{ minWidth: 260 }}>
-              <option value="">Select user</option>
-              {adminCandidates.map((u) => (
-                <option key={u.id} value={u.id} disabled={adminAssignedIds.has(u.id)}>
-                  {u.email ?? u.id} {adminAssignedIds.has(u.id) ? '(assigned)' : ''}
-                </option>
-              ))}
-            </Select>
-            <Button onClick={handleAssignAdmin} disabled={!assignUserIdAdmin || loading}>
-              Assign
-            </Button>
-          </div>
         </AdminPanel>
       ) : null}
 
       {tab === 'muezzins' ? (
-        <AdminPanel title="Muezzin assignments" subtitle="Use explicit role-based assignments without collapsing multi-role support.">
+        <AdminPanel
+          title="Muezzin assignments"
+          subtitle="This mosque-scoped list mirrors the same assignments shown in the global user access matrix."
+          action={
+            <>
+              <Button variant="ghost" onClick={() => router.push('/admin/users' as any)}>
+                Global users page
+              </Button>
+              <Button variant="secondary" onClick={openAddMuezzinModal}>
+                Add or invite muezzin
+              </Button>
+            </>
+          }
+        >
+          <div style={styles.helperText}>
+            This panel only shows muezzins assigned to {mosqueName}. New assignments here write to the same
+            mosque-scoped membership data used by the global Users page.
+          </div>
           <div style={styles.chipRow}>
             {muezzins.map((m) => {
               const user = peopleById[m.user_id];
@@ -680,19 +897,6 @@ function MosqueProfileShell() {
               );
             })}
             {!muezzins.length ? <span style={styles.muted}>No muezzins assigned.</span> : null}
-          </div>
-          <div style={styles.assignRow}>
-            <Select value={assignUserIdMuezzin} onChange={(e) => setAssignUserIdMuezzin(e.target.value)} style={{ minWidth: 260 }}>
-              <option value="">Select user</option>
-              {muezzinCandidates.map((u) => (
-                <option key={u.id} value={u.id} disabled={muezzinAssignedIds.has(u.id)}>
-                  {u.email ?? u.id} {muezzinAssignedIds.has(u.id) ? '(assigned)' : ''}
-                </option>
-              ))}
-            </Select>
-            <Button onClick={handleAssignMuezzin} disabled={!assignUserIdMuezzin || loading}>
-              Assign
-            </Button>
           </div>
         </AdminPanel>
       ) : null}
@@ -709,7 +913,7 @@ function MosqueProfileShell() {
             <label style={styles.label}>Name *</label>
             <TextInput value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} />
           </div>
-          <div style={styles.modalRow}>
+          <div style={{ ...styles.modalRow, ...(isPhone ? styles.modalRowPhone : null) }}>
             <div style={{ flex: 1 }}>
               <label style={styles.label}>City</label>
               <TextInput value={editForm.city} onChange={(e) => setEditForm((prev) => ({ ...prev, city: e.target.value }))} />
@@ -726,6 +930,28 @@ function MosqueProfileShell() {
               <option value="active">active</option>
               <option value="inactive">inactive</option>
             </Select>
+          </div>
+          <div>
+            <label style={styles.label}>Cross-mosque local-admin access</label>
+            <div style={styles.toggleRow}>
+              <Button
+                variant={editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                onClick={() => setEditForm((prev) => ({ ...prev, allowMultiMosqueLocalAdmins: true }))}
+                type="button"
+              >
+                Active
+              </Button>
+              <Button
+                variant={!editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                onClick={() => setEditForm((prev) => ({ ...prev, allowMultiMosqueLocalAdmins: false }))}
+                type="button"
+              >
+                Inactive
+              </Button>
+            </div>
+            <div style={styles.helperText}>
+              Inactive keeps this mosque&apos;s local admins exclusive to this mosque. Active allows sharing, but only with other mosques that also allow it.
+            </div>
           </div>
           {editError ? <div style={styles.errorBanner}>{editError}</div> : null}
           <div style={styles.inlineActions}>
@@ -762,6 +988,9 @@ function MosqueProfileShell() {
           </div>
           <div style={styles.helperText}>
             This assigns an existing account when found, or sends a fresh invite and local-admin assignment for this mosque.
+            {allowMultiMosqueLocalAdmins
+              ? ' Cross-mosque local-admin access is active for this mosque.'
+              : ' Cross-mosque local-admin access is inactive here, so the assigned admin must remain exclusive to this mosque.'}
           </div>
           {addAdminError ? <div style={styles.errorBanner}>{addAdminError}</div> : null}
           <div style={styles.inlineActions}>
@@ -774,6 +1003,46 @@ function MosqueProfileShell() {
             </Button>
             <Button onClick={handleAddLocalAdmin} disabled={addingAdmin}>
               {addingAdmin ? 'Working...' : 'Add or invite'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={addMuezzinOpen} onClose={closeAddMuezzinModal} title="Add or invite muezzin">
+        <div style={styles.modalStack}>
+          <div>
+            <label style={styles.label}>User email *</label>
+            <TextInput
+              value={addMuezzinEmail}
+              onChange={(e) => setAddMuezzinEmail(e.target.value)}
+              placeholder="name@example.com"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
+          <div>
+            <label style={styles.label}>Display name</label>
+            <TextInput
+              value={addMuezzinDisplayName}
+              onChange={(e) => setAddMuezzinDisplayName(e.target.value)}
+              placeholder="Optional name for the invite"
+            />
+          </div>
+          <div style={styles.helperText}>
+            This assigns an existing account when found, or sends a fresh invite and muezzin assignment for this mosque.
+          </div>
+          {addMuezzinError ? <div style={styles.errorBanner}>{addMuezzinError}</div> : null}
+          <div style={styles.inlineActions}>
+            <Button
+              variant="ghost"
+              onClick={closeAddMuezzinModal}
+              disabled={addingMuezzin}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleAddMuezzin} disabled={addingMuezzin}>
+              {addingMuezzin ? 'Working...' : 'Add or invite'}
             </Button>
           </div>
         </div>
@@ -824,6 +1093,9 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
     gap: 16,
   },
+  overviewGridCompact: {
+    gridTemplateColumns: '1fr',
+  },
   metaList: {
     display: 'flex',
     flexDirection: 'column',
@@ -838,10 +1110,18 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #eef2f7',
     color: '#0f172a',
   },
+  metaRowPhone: {
+    alignItems: 'flex-start',
+    flexDirection: 'column',
+  },
   idText: {
     wordBreak: 'break-all',
     textAlign: 'right',
     maxWidth: 280,
+  },
+  idTextPhone: {
+    textAlign: 'left',
+    maxWidth: '100%',
   },
   inlineActions: {
     display: 'flex',
@@ -894,6 +1174,20 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     flexWrap: 'wrap',
   },
+  assignRowPhone: {
+    alignItems: 'stretch',
+  },
+  inlineWarning: {
+    marginTop: 10,
+    padding: '10px 12px',
+    borderRadius: 12,
+    backgroundColor: '#fff7ed',
+    color: '#b45309',
+    border: '1px solid #fdba74',
+    fontSize: 13,
+    lineHeight: 1.5,
+    fontWeight: 700,
+  },
   muted: {
     color: '#64748b',
     fontSize: 13,
@@ -915,9 +1209,17 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     flexWrap: 'wrap',
   },
+  modalRowPhone: {
+    flexDirection: 'column',
+  },
   helperText: {
     fontSize: 13,
     lineHeight: 1.5,
     color: '#475569',
+  },
+  toggleRow: {
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
   },
 };

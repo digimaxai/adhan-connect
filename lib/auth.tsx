@@ -4,6 +4,8 @@ import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
+import { clearRoleEntrySelectionRequirement, requireRoleEntrySelection } from './roleEntrySession';
+import { clearSessionAccessCache } from './sessionAccess';
 
 export const getAuthRedirectUrl = () => {
   const envUrl = process.env.EXPO_PUBLIC_SUPABASE_REDIRECT_URL?.trim();
@@ -38,6 +40,10 @@ const deriveDisplayName = (raw?: string | null, fallbackEmail?: string | null) =
   return 'User';
 };
 
+const resolveGlobalProfileRole = (value: unknown): AppUser['role'] => {
+  return value === 'main_admin' ? 'main_admin' : 'user';
+};
+
 /* ------------------------------------------------------------------
    Types
 ------------------------------------------------------------------- */
@@ -45,7 +51,7 @@ export type AppUser = {
   id: string;
   email: string | null;
   display_name: string | null;
-  role: 'user' | 'local_admin' | 'main_admin';
+  role: 'user' | 'local_admin' | 'main_admin' | 'muezzin';
 };
 
 export type AuthContextType = {
@@ -127,6 +133,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const userId = session.user.id;
+    let hasReadableRow = false;
+    let rowMissing = false;
 
     try {
       const { data: row, error } = await supabase
@@ -138,16 +146,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
 
       if (row) {
+        const authRole = resolveGlobalProfileRole((session.user.app_metadata as any)?.role ?? null);
+        const effectiveRole = row.role === 'main_admin' ? 'main_admin' : authRole;
+        hasReadableRow = true;
         setUser({
           id: row.id,
           email: row.email,
           display_name: row.display_name,
-          role: row.role,
+          role: effectiveRole,
         });
         return;
       }
+      rowMissing = true;
     } catch {
-      // ignore read errors and fall back to auth metadata
+      // ignore read errors and fall back to auth metadata without mutating roles
     }
 
     // fallback if no DB profile exists yet
@@ -159,34 +171,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         (u.user_metadata as any)?.display_name,
         u.email ?? null
       ),
-      role:
-        (u.user_metadata as any)?.role ??
-        (u.app_metadata as any)?.role ??
-        'user',
+      role: resolveGlobalProfileRole((u.app_metadata as any)?.role ?? (u.user_metadata as any)?.role ?? 'user'),
     };
 
     setUser(fallback);
 
-    try {
-      await supabase.from('users').upsert(
-        {
-          id: fallback.id,
-          email: fallback.email,
-          display_name: fallback.display_name,
-          role: fallback.role,
-        },
-        { onConflict: 'id' }
-      );
-    } catch {
-      // ignore profile sync errors
+    if (!hasReadableRow && rowMissing && fallback.role === 'user') {
+      try {
+        await supabase.from('users').upsert(
+          {
+            id: fallback.id,
+            email: fallback.email,
+            display_name: fallback.display_name,
+            role: 'user',
+          },
+          { onConflict: 'id' }
+        );
+      } catch {
+        // ignore profile sync errors
+      }
     }
   };
 
   const signIn: AuthContextType['signIn'] = async (email, password) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { error: error.message };
-      await refreshProfile(); // ensure we have the user mirrored
+      await requireRoleEntrySelection(data.user?.id ?? null);
       return {};
     } catch (e: any) {
       return { error: e?.message ?? 'Unknown error' };
@@ -211,6 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const needsVerification = !data.session;
 
       if (data.user && data.session) {
+        await requireRoleEntrySelection(data.user.id);
         try {
           await supabase.from('users').upsert(
             {
@@ -236,6 +248,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    await clearSessionAccessCache(session?.user?.id ?? null);
+    await clearRoleEntrySelectionRequirement(session?.user?.id ?? null);
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
@@ -253,20 +267,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const value = useMemo<AuthContextType>(
-    () => ({
-      session,
-      user,
-      authUser: session?.user ?? null,
-      loading,
-      signIn,
-      signUp,
-      signOut,
-      resetPassword,
-      refreshProfile,
-    }),
-    [session, user, loading]
-  );
+  const value: AuthContextType = {
+    session,
+    user,
+    authUser: session?.user ?? null,
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    resetPassword,
+    refreshProfile,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

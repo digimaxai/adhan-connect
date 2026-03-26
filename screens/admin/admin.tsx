@@ -16,8 +16,8 @@ export default function AdminDashboard() {
     );
   }
 
-  if (isMuezzin) {
-    return <Redirect href="/(muezzin)" />;
+  if (isMuezzin && !isAdmin) {
+    return <Redirect href={'/' as any} />;
   }
 
   if (!isAdmin) {

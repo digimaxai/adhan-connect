@@ -15,6 +15,7 @@ interface MosqueData {
   contact_email?: string;
   contact_phone?: string;
   website?: string;
+  allow_multi_mosque_local_admins: boolean;
 }
 
 export default function MosqueOnboardingWizard() {
@@ -27,13 +28,14 @@ export default function MosqueOnboardingWizard() {
     city: '',
     country: '',
     timezone: 'Europe/London', // Default for UK
-    contact_email: '',
-    contact_phone: '',
-    website: '',
-  });
+      contact_email: '',
+      contact_phone: '',
+      website: '',
+      allow_multi_mosque_local_admins: false,
+    });
   const [loading, setLoading] = useState(false);
 
-  const updateMosqueData = (field: keyof MosqueData, value: string | number) => {
+  const updateMosqueData = (field: keyof MosqueData, value: string | number | boolean) => {
     setMosqueData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -130,6 +132,47 @@ export default function MosqueOnboardingWizard() {
         value={mosqueData.timezone}
         onChangeText={(value) => updateMosqueData('timezone', value)}
       />
+      <View style={styles.policyCard}>
+        <Text style={styles.policyTitle}>Cross-mosque local admin access</Text>
+        <Text style={styles.policyBody}>
+          Inactive keeps this mosque&apos;s local admins exclusive to this mosque. Active allows sharing, but only with
+          other mosques that also allow it.
+        </Text>
+        <View style={styles.policyToggleRow}>
+          <TouchableOpacity
+            style={[
+              styles.policyToggle,
+              mosqueData.allow_multi_mosque_local_admins ? styles.policyToggleActive : styles.policyToggleInactive,
+            ]}
+            onPress={() => updateMosqueData('allow_multi_mosque_local_admins', true)}
+          >
+            <Text
+              style={[
+                styles.policyToggleText,
+                mosqueData.allow_multi_mosque_local_admins && styles.policyToggleTextActive,
+              ]}
+            >
+              Active
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.policyToggle,
+              !mosqueData.allow_multi_mosque_local_admins ? styles.policyToggleActive : styles.policyToggleInactive,
+            ]}
+            onPress={() => updateMosqueData('allow_multi_mosque_local_admins', false)}
+          >
+            <Text
+              style={[
+                styles.policyToggleText,
+                !mosqueData.allow_multi_mosque_local_admins && styles.policyToggleTextActive,
+              ]}
+            >
+              Inactive
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 
@@ -166,6 +209,9 @@ export default function MosqueOnboardingWizard() {
         <Text>Name: {mosqueData.name}</Text>
         <Text>Address: {mosqueData.address}, {mosqueData.city}, {mosqueData.country}</Text>
         <Text>Timezone: {mosqueData.timezone}</Text>
+        <Text>
+          Cross-mosque local admin access: {mosqueData.allow_multi_mosque_local_admins ? 'Active' : 'Inactive'}
+        </Text>
         {mosqueData.contact_email && <Text>Email: {mosqueData.contact_email}</Text>}
         {mosqueData.contact_phone && <Text>Phone: {mosqueData.contact_phone}</Text>}
         {mosqueData.website && <Text>Website: {mosqueData.website}</Text>}
@@ -226,6 +272,22 @@ const styles = StyleSheet.create({
   step: { flex: 1 },
   stepTitle: { fontSize: 20, fontWeight: '600', marginBottom: 20 },
   input: { borderWidth: 1, borderColor: '#ddd', padding: 15, marginBottom: 15, borderRadius: 8, fontSize: 16 },
+  policyCard: { borderWidth: 1, borderColor: '#dbe4ec', borderRadius: 12, padding: 16, backgroundColor: '#f8fafc' },
+  policyTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 6 },
+  policyBody: { fontSize: 14, lineHeight: 20, color: '#475569', marginBottom: 12 },
+  policyToggleRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  policyToggle: {
+    minWidth: 120,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  policyToggleActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
+  policyToggleInactive: { backgroundColor: '#fff', borderColor: '#cbd5e1' },
+  policyToggleText: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  policyToggleTextActive: { color: '#fff' },
   review: { backgroundColor: '#f9f9f9', padding: 15, borderRadius: 8, marginBottom: 20 },
   footer: { flexDirection: 'row', justifyContent: 'space-between' },
   button: { paddingVertical: 15, paddingHorizontal: 30, borderRadius: 8, minWidth: 100 },

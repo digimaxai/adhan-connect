@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AdminMosqueSummary, getAdminMosquesForCurrentUser } from '../api/admin/adminMosques';
+import { useAuth } from '../auth';
 
 type State = {
   mosques: AdminMosqueSummary[];
@@ -8,7 +9,7 @@ type State = {
   error: string | null;
 };
 
-let lastSelectedMosqueId: string | null = null;
+const lastSelectedMosqueIdByUser = new Map<string, string | null>();
 
 type UseAdminMosqueOptions = {
   preferredMosqueId?: string | null;
@@ -16,6 +17,8 @@ type UseAdminMosqueOptions = {
 };
 
 export function useAdminMosque(options?: UseAdminMosqueOptions) {
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? 'anonymous';
   const preferredMosqueId = options?.preferredMosqueId ?? null;
   const autoSelectFirst = options?.autoSelectFirst ?? true;
   const [state, setState] = useState<State>({
@@ -38,6 +41,7 @@ export function useAdminMosque(options?: UseAdminMosqueOptions) {
           if (preferred) return preferred;
         }
         if (!autoSelectFirst) return null;
+        const lastSelectedMosqueId = lastSelectedMosqueIdByUser.get(userId) ?? null;
         if (lastSelectedMosqueId) {
           const found = mosques.find((m) => m.mosqueId === lastSelectedMosqueId);
           if (found) return found;
@@ -45,14 +49,14 @@ export function useAdminMosque(options?: UseAdminMosqueOptions) {
         if (mosques.length === 1) return mosques[0];
         return mosques[0] ?? null;
       })();
-      lastSelectedMosqueId = selected?.mosqueId ?? null;
+      lastSelectedMosqueIdByUser.set(userId, selected?.mosqueId ?? null);
       setState({ mosques, selectedMosque: selected, loading: false, error });
     };
     load();
     return () => {
       cancelled = true;
     };
-  }, [autoSelectFirst, preferredMosqueId]);
+  }, [autoSelectFirst, preferredMosqueId, userId]);
 
   useEffect(() => {
     if (__DEV__) {
@@ -63,7 +67,7 @@ export function useAdminMosque(options?: UseAdminMosqueOptions) {
   const setSelectedMosque = (mosqueId: string) => {
     setState((prev) => {
       const found = prev.mosques.find((m) => m.mosqueId === mosqueId) ?? prev.selectedMosque;
-      lastSelectedMosqueId = found?.mosqueId ?? null;
+      lastSelectedMosqueIdByUser.set(userId, found?.mosqueId ?? null);
       return { ...prev, selectedMosque: found ?? null };
     });
   };

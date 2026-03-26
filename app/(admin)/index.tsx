@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth';
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const { loading: roleLoading, isAdmin, isMuezzin, isLocalAdmin, isMainAdmin } = useRoleFlags();
+  const { loading: roleLoading, isAdmin, isMuezzin, isLocalAdmin, isMainAdmin, role } = useRoleFlags();
   const { mosques, selectedMosque, loading: mosqueLoading, error, setSelectedMosque } = useAdminMosque();
   const { session } = useAuth();
   const [refreshing, setRefreshing] = React.useState(false);
@@ -25,7 +25,7 @@ export default function AdminDashboard() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      router.replace('/(admin)');
+      // This screen is already the workspace landing page; avoid dispatching a grouped-route jump.
     } finally {
       setRefreshing(false);
     }
@@ -43,7 +43,7 @@ export default function AdminDashboard() {
   }
 
   if (isMuezzin && !isAdmin) {
-    return <Redirect href="/(muezzin)" />;
+    return <Redirect href={'/' as any} />;
   }
 
   if (!isAdmin) {
@@ -182,6 +182,14 @@ export default function AdminDashboard() {
           disabled={disableActions}
           accent="Operations"
         />
+        <AdminCard
+          router={router}
+          title="Muezzins"
+          description="Invite mosque muezzins, control account activity, and review cover requests."
+          href="/(admin)/muezzins"
+          disabled={disableActions}
+          accent="Team"
+        />
       </View>
       {isMainAdmin && (
         <View style={styles.sectionHeader}>
@@ -233,7 +241,7 @@ export default function AdminDashboard() {
             Environment snapshot
           </AppText>
           <AppText variant="caption" style={styles.debugLine}>User ID: {session?.user?.id ?? 'unknown'}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>Role: {session?.user?.role ?? 'unknown'}</AppText>
+          <AppText variant="caption" style={styles.debugLine}>Role: {role ?? session?.user?.role ?? 'unknown'}</AppText>
           <AppText variant="caption" style={styles.debugLine}>Email: {(session?.user as any)?.email ?? 'unknown'}</AppText>
           <AppText variant="caption" style={styles.debugLine}>isAdmin: {isAdmin ? 'true' : 'false'}</AppText>
           <AppText variant="caption" style={styles.debugLine}>isLocalAdmin: {isLocalAdmin ? 'true' : 'false'}</AppText>

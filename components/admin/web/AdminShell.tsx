@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAdminContext } from '../../../lib/admin-web/adminContext';
 import { AdminToastViewport } from '../../../lib/admin-web/adminFeedback';
+import { useAdminViewport } from '../../../lib/admin-web/useAdminViewport';
 import AdminCommandPalette, { type AdminCommandAction } from './AdminCommandPalette';
 import AdminSidebar from './AdminSidebar';
 import AdminTopBar, { MosqueOption } from './AdminTopBar';
@@ -33,6 +34,7 @@ export default function AdminShell({
 }: Props) {
   const router = useRouter();
   const { selectedMosqueId, setSelectedMosqueId, isMosqueMode } = useAdminContext();
+  const { isComfortable, isStacked, isCompact, isPhone } = useAdminViewport();
   const [commandOpen, setCommandOpen] = useState(false);
 
   useEffect(() => {
@@ -130,24 +132,75 @@ export default function AdminShell({
   );
 
   return (
-    <div style={styles.layout}>
-      <AdminSidebar />
+    <div style={{ ...styles.layout, ...(isStacked ? styles.layoutStacked : null) }}>
+      <AdminSidebar compact={isStacked} isPhone={isPhone} />
       <main style={styles.main}>
         <AdminTopBar
           mosques={mosques}
           onSearch={onSearch}
           onOpenCommandPalette={() => setCommandOpen(true)}
+          stacked={isStacked}
+          compact={isCompact}
+          isPhone={isPhone}
         />
-        <div style={styles.canvas}>
-          <div style={styles.hero}>
+        <div
+          style={{
+            ...styles.canvas,
+            ...(isComfortable ? styles.canvasComfortable : null),
+            ...(isCompact ? styles.canvasCompact : null),
+            ...(isPhone ? styles.canvasPhone : null),
+          }}
+        >
+          <div
+            style={{
+              ...styles.hero,
+              ...(isComfortable ? styles.heroComfortable : null),
+            }}
+          >
             <div style={styles.heroGlow} />
-            <div style={styles.heroInner}>
-              <div style={styles.heroCopy}>
+            <div
+              style={{
+                ...styles.heroInner,
+                ...(isCompact ? styles.heroInnerCompact : null),
+              }}
+            >
+              <div
+                style={{
+                  ...styles.heroCopy,
+                  ...(isCompact ? styles.heroCopyCompact : null),
+                }}
+              >
                 {eyebrow ? <div style={styles.eyebrow}>{eyebrow}</div> : null}
-                <h1 style={styles.title}>{title}</h1>
-                {description ? <p style={styles.description}>{description}</p> : null}
+                <h1
+                  style={{
+                    ...styles.title,
+                    ...(isCompact ? styles.titleCompact : null),
+                    ...(isPhone ? styles.titlePhone : null),
+                  }}
+                >
+                  {title}
+                </h1>
+                {description ? (
+                  <p
+                    style={{
+                      ...styles.description,
+                      ...(isCompact ? styles.descriptionCompact : null),
+                    }}
+                  >
+                    {description}
+                  </p>
+                ) : null}
               </div>
-              {actions ? <div style={styles.actions}>{actions}</div> : null}
+              {actions ? (
+                <div
+                  style={{
+                    ...styles.actions,
+                    ...(isCompact ? styles.actionsCompact : null),
+                  }}
+                >
+                  {actions}
+                </div>
+              ) : null}
             </div>
           </div>
           {notices ? <div style={styles.notices}>{notices}</div> : null}
@@ -164,8 +217,14 @@ const styles: Record<string, React.CSSProperties> = {
   layout: {
     display: 'flex',
     minHeight: '100vh',
+    width: '100%',
+    boxSizing: 'border-box',
+    overflowX: 'hidden',
     background:
       'radial-gradient(circle at top left, rgba(14,165,233,0.16), transparent 28%), linear-gradient(180deg, #f8fbff 0%, #eef4f7 100%)',
+  },
+  layoutStacked: {
+    flexDirection: 'column',
   },
   main: {
     flex: 1,
@@ -173,24 +232,41 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     minHeight: '100vh',
     minWidth: 0,
+    boxSizing: 'border-box',
   },
   canvas: {
     width: '100%',
-    maxWidth: 1480,
-    margin: '0 auto',
-    padding: '20px',
+    maxWidth: 1720,
+    margin: '0 auto 0 0',
+    padding: '24px 28px 32px',
+    boxSizing: 'border-box',
+    alignSelf: 'stretch',
     display: 'flex',
     flexDirection: 'column',
-    gap: 16,
+    gap: 20,
+  },
+  canvasComfortable: {
+    padding: '22px 24px 28px',
+  },
+  canvasCompact: {
+    padding: '16px',
+  },
+  canvasPhone: {
+    padding: '12px',
+    gap: 12,
   },
   hero: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 28,
+    width: '100%',
+    borderRadius: 32,
     border: '1px solid rgba(148, 163, 184, 0.22)',
     background:
       'linear-gradient(135deg, rgba(15,23,42,0.96) 0%, rgba(15,118,110,0.92) 55%, rgba(14,165,233,0.88) 100%)',
     boxShadow: '0 24px 60px rgba(15, 23, 42, 0.14)',
+  },
+  heroComfortable: {
+    borderRadius: 28,
   },
   heroGlow: {
     position: 'absolute',
@@ -207,15 +283,23 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    gap: 18,
-    padding: '28px 30px',
+    gap: 20,
+    padding: '32px 34px',
     flexWrap: 'wrap',
+    boxSizing: 'border-box',
+  },
+  heroInnerCompact: {
+    alignItems: 'flex-start',
+    padding: '24px 22px',
   },
   heroCopy: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
-    maxWidth: 860,
+    gap: 10,
+    maxWidth: 980,
+  },
+  heroCopyCompact: {
+    maxWidth: '100%',
   },
   eyebrow: {
     fontSize: 11,
@@ -226,32 +310,48 @@ const styles: Record<string, React.CSSProperties> = {
   },
   title: {
     margin: 0,
-    fontSize: 34,
-    lineHeight: 1.05,
+    fontSize: 'clamp(2.25rem, 1.95rem + 0.85vw, 3.1rem)',
+    lineHeight: 1.02,
     fontWeight: 900,
     color: '#f8fafc',
   },
+  titleCompact: {
+    fontSize: 'clamp(2rem, 1.7rem + 0.7vw, 2.5rem)',
+  },
+  titlePhone: {
+    fontSize: 'clamp(1.7rem, 1.45rem + 0.8vw, 2.1rem)',
+  },
   description: {
     margin: 0,
-    maxWidth: 760,
-    fontSize: 14,
-    lineHeight: 1.6,
+    maxWidth: 820,
+    fontSize: 15,
+    lineHeight: 1.65,
     color: 'rgba(226, 232, 240, 0.88)',
+  },
+  descriptionCompact: {
+    maxWidth: '100%',
+    fontSize: 14,
   },
   actions: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'flex-end',
+    gap: 12,
     flexWrap: 'wrap',
+  },
+  actionsCompact: {
+    width: '100%',
+    justifyContent: 'flex-start',
   },
   notices: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
+    gap: 12,
   },
   content: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 16,
+    width: '100%',
+    gap: 18,
   },
 };

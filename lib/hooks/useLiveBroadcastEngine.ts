@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../supabase';
 import { PrayerName } from '../adhans';
+import {
+  fetchMuezzinLiveBroadcastState,
+  type LiveBroadcastStreamRow,
+  updateMuezzinLiveBroadcast,
+} from '../api/muezzin/liveBroadcast';
 import { MuezzinScheduleEntry } from './useMuezzinSchedule';
 
 type LiveStatus = 'TOO_EARLY' | 'READY' | 'LIVE' | 'LATE' | 'NO_ADHAN';
@@ -13,6 +17,7 @@ type StreamRow = {
   started_at?: string | null;
   ended_at?: string | null;
   stream_url?: string | null;
+  url?: string | null;
   status?: string | null;
 };
 
@@ -34,12 +39,17 @@ export type LiveBroadcastEngineState = {
 const WINDOW_BEFORE_MS = 3 * 60 * 1000;
 const WINDOW_AFTER_MS = 2 * 60 * 1000;
 
+function normalizeStreamRow(stream: LiveBroadcastStreamRow | null): StreamRow | null {
+  return stream ? { ...stream } : null;
+}
+
 export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: MuezzinScheduleEntry | null): LiveBroadcastEngineState {
   const [stream, setStream] = useState<StreamRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const scheduledAt = nextAdhan?.scheduled_at ? new Date(nextAdhan.scheduled_at) : null;
   const windowStart = scheduledAt ? scheduledAt.getTime() - WINDOW_BEFORE_MS : null;
@@ -54,44 +64,51 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
     let cancelled = false;
     if (!mosqueId) {
       setStream(null);
+      setErrorMessage(null);
       return;
     }
 
-    const fetchStream = async () => {
+    const fetchStream = async (showRetryBanner = true) => {
       try {
-        const { data, error } = await supabase
-          .from('streams')
-          .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, status')
-          .eq('mosque_id', mosqueId)
-          .maybeSingle<StreamRow>();
-        if (error) throw error;
-        if (!cancelled) setStream(data ?? null);
+        const data = await fetchMuezzinLiveBroadcastState(mosqueId);
+        if (!cancelled) {
+          setStream(normalizeStreamRow(data));
+          setErrorMessage(null);
+        }
       } catch (err: any) {
         console.warn('[useLiveBroadcastEngine] fetchStream', err?.message ?? err);
-        if (!cancelled) setErrorMessage('Connection error. Retrying…');
+        if (!cancelled && showRetryBanner) {
+          setErrorMessage('Connection error. Retrying...');
+        }
+        if (!cancelled) {
+          if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = setTimeout(() => {
+            void fetchStream(false);
+          }, 3000);
+        }
       }
     };
 
-    fetchStream();
-
-    const channel = supabase
-      .channel(`live-engine-${mosqueId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'streams', filter: `mosque_id=eq.${mosqueId}` }, (payload) => {
-        const row = (payload.new as StreamRow) ?? null;
-        setStream(row);
-      })
-      .subscribe();
-
-    channelRef.current = channel;
+    void fetchStream();
+    pollTimerRef.current = setInterval(() => {
+      void fetchStream(false);
+    }, 15000);
 
     return () => {
       cancelled = true;
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
     };
   }, [mosqueId]);
 
   const derived = useMemo(() => {
-    const isLive = !!(stream?.is_live);
+    const isLive = !!stream?.is_live;
     if (!nextAdhan && !stream?.is_live) {
       return { status: 'NO_ADHAN' as LiveStatus, isLive: false, isEarly: false, isLate: false, canStart: false, timeUntilSeconds: null };
     }
@@ -126,60 +143,18 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
 
     setLoading(true);
     setErrorMessage(null);
-    const startedAt = new Date().toISOString();
     const prayer = (nextAdhan.prayer ?? nextAdhan.prayer_name ?? 'adhan') as PrayerName | string;
 
     try {
-      // Ensure a row exists; update if found, insert if missing (avoid upsert without unique constraint).
-      const { data: existing, error: fetchErr } = await supabase
-        .from('streams')
-        .select('id')
-        .eq('mosque_id', mosqueId)
-        .maybeSingle<{ id: string }>();
-      if (fetchErr && fetchErr.code !== 'PGRST116') throw fetchErr;
-
-      let streamRow: StreamRow | null = null;
-      if (existing?.id) {
-        const { data, error } = await supabase
-          .from('streams')
-          .update({
-            is_live: true,
-            current_prayer: prayer,
-            started_at: startedAt,
-            ended_at: null,
-            status: 'live',
-          } as any)
-          .eq('id', existing.id)
-          .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, status')
-          .maybeSingle<StreamRow>();
-        if (error) throw error;
-        streamRow = data ?? null;
-      } else {
-        const { data, error } = await supabase
-          .from('streams')
-          .insert({
-            mosque_id: mosqueId,
-            is_live: true,
-            current_prayer: prayer,
-            started_at: startedAt,
-            ended_at: null,
-            status: 'live',
-          } as any)
-          .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, status')
-          .maybeSingle<StreamRow>();
-        if (error) throw error;
-        streamRow = data ?? null;
-      }
-
-      if (nextAdhan.id) {
-        const { error: adhanErr } = await supabase
-          .from('adhans')
-          .update({ status: 'live', started_at: startedAt, stream_id: streamRow?.id ?? null })
-          .eq('id', nextAdhan.id);
-        if (adhanErr) throw adhanErr;
-      }
-
-      setStream(streamRow ?? null);
+      const streamRow = await updateMuezzinLiveBroadcast({
+        action: 'start',
+        mosqueId,
+        prayer: prayer.toString().toLowerCase(),
+        scheduledAt: nextAdhan.scheduled_at ?? null,
+        adhanId: nextAdhan.id ?? null,
+      });
+      setStream(normalizeStreamRow(streamRow));
+      setErrorMessage(null);
     } catch (err: any) {
       const msg = err?.message ?? err;
       console.warn('[useLiveBroadcastEngine] start', msg);
@@ -193,25 +168,14 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
     if (!mosqueId) return;
     setLoading(true);
     setErrorMessage(null);
-    const endedAt = new Date().toISOString();
     try {
-      const { data: streamRow, error: streamErr } = await supabase
-        .from('streams')
-        .update({ is_live: false, ended_at: endedAt, status: 'active' })
-        .eq('mosque_id', mosqueId)
-        .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, status')
-        .maybeSingle<StreamRow>();
-      if (streamErr && streamErr.code !== 'PGRST116') throw streamErr;
-
-      if (nextAdhan?.id) {
-        const { error: adhanErr } = await supabase
-          .from('adhans')
-          .update({ status: 'completed', ended_at: endedAt })
-          .eq('id', nextAdhan.id);
-        if (adhanErr) throw adhanErr;
-      }
-
-      setStream(streamRow ?? null);
+      const streamRow = await updateMuezzinLiveBroadcast({
+        action: 'end',
+        mosqueId,
+        adhanId: nextAdhan?.id ?? null,
+      });
+      setStream(normalizeStreamRow(streamRow));
+      setErrorMessage(null);
     } catch (err: any) {
       console.warn('[useLiveBroadcastEngine] end', err?.message ?? err);
       setErrorMessage('Unable to update live status. Please try again.');

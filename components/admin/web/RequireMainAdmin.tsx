@@ -1,8 +1,9 @@
 'use client';
 
-import React, { ReactNode, useEffect, useMemo } from 'react';
+import React, { ReactNode, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../../lib/auth';
+import { useRoleFlags } from '../../../lib/roles';
 
 type Props = {
   children: ReactNode;
@@ -18,13 +19,13 @@ type Props = {
 export function RequireMainAdmin({ children, redirectTo }: Props) {
   const router = useRouter();
   const { user, loading } = useAuth();
-
-  const isMainAdmin = useMemo(() => user?.role === 'main_admin', [user?.role]);
+  const roles = useRoleFlags();
+  const isMainAdmin = roles.isMainAdmin;
 
   // Debug log fires for both authorized and unauthorized users so we can inspect role resolution.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (loading) return;
+    if (loading || roles.loading) return;
     try {
       const payload = {
         ts: new Date().toISOString(),
@@ -37,6 +38,8 @@ export function RequireMainAdmin({ children, redirectTo }: Props) {
         auth: {
           userId: user?.id ?? null,
           role: user?.role ?? null,
+          resolvedRole: roles.role ?? null,
+          isMainAdmin,
           email: user?.email ?? null,
           sessionPresent: Boolean(user),
         },
@@ -52,17 +55,22 @@ export function RequireMainAdmin({ children, redirectTo }: Props) {
     } catch {
       // swallow
     }
-  }, [loading, user]);
+  }, [isMainAdmin, loading, roles.loading, roles.role, user]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || roles.loading) return;
     if (!isMainAdmin && redirectTo) {
       router.replace(redirectTo as any);
     }
-  }, [loading, isMainAdmin, redirectTo, router]);
+  }, [loading, roles.loading, isMainAdmin, redirectTo, router]);
 
-  if (loading) {
-    return null;
+  if (loading || roles.loading) {
+    return (
+      <div style={styles.loading}>
+        <div style={styles.loadingTitle}>Checking access...</div>
+        <div style={styles.loadingText}>Loading your admin permissions.</div>
+      </div>
+    );
   }
 
   if (!isMainAdmin) {
@@ -78,6 +86,26 @@ export function RequireMainAdmin({ children, redirectTo }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  loading: {
+    width: '100%',
+    maxWidth: 720,
+    margin: '48px auto',
+    padding: '32px 24px',
+    borderRadius: 12,
+    border: '1px solid #e5e7eb',
+    backgroundColor: '#fff',
+    textAlign: 'center',
+  },
+  loadingTitle: {
+    fontSize: 20,
+    fontWeight: 800,
+    color: '#0f172a',
+    marginBottom: 8,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#475569',
+  },
   forbidden: {
     width: '100%',
     maxWidth: 720,

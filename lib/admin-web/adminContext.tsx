@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../auth';
 
 type AdminContextValue = {
   selectedMosqueId: string | null;
@@ -7,7 +8,6 @@ type AdminContextValue = {
   isMosqueMode: boolean;
 };
 
-const STORAGE_KEY = 'admin:selected_mosque_id';
 const QUERY_KEY = 'mosqueId';
 
 const AdminContext = createContext<AdminContextValue | undefined>(undefined);
@@ -25,23 +25,28 @@ function readFromQuery(): string | null {
   }
 }
 
-function readFromStorage(): string | null {
+function getStorageKey(userId: string | null) {
+  return `admin:selected_mosque_id:${userId ?? 'anonymous'}`;
+}
+
+function readFromStorage(userId: string | null): string | null {
   if (!isBrowser || !('localStorage' in window)) return null;
   try {
-    const value = window.localStorage.getItem(STORAGE_KEY);
+    const value = window.localStorage.getItem(getStorageKey(userId));
     return value && value.trim().length ? value : null;
   } catch {
     return null;
   }
 }
 
-function writeToStorage(value: string | null) {
+function writeToStorage(userId: string | null, value: string | null) {
   if (!isBrowser || !('localStorage' in window)) return;
   try {
+    const key = getStorageKey(userId);
     if (value) {
-      window.localStorage.setItem(STORAGE_KEY, value);
+      window.localStorage.setItem(key, value);
     } else {
-      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(key);
     }
   } catch {
     // ignore storage errors
@@ -65,14 +70,20 @@ function writeToQuery(value: string | null) {
 }
 
 export function AdminContextProvider({ children }: { children: React.ReactNode }) {
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
   const [selectedMosqueId, setSelectedMosqueIdState] = useState<string | null>(() => {
-    return readFromQuery() ?? readFromStorage();
+    return readFromQuery() ?? readFromStorage(userId);
   });
 
   useEffect(() => {
-    writeToStorage(selectedMosqueId);
+    writeToStorage(userId, selectedMosqueId);
     writeToQuery(selectedMosqueId);
-  }, [selectedMosqueId]);
+  }, [selectedMosqueId, userId]);
+
+  useEffect(() => {
+    setSelectedMosqueIdState(readFromStorage(userId) ?? readFromQuery());
+  }, [userId]);
 
   useEffect(() => {
     if (!isBrowser) return;

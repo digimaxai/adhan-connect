@@ -6,6 +6,7 @@ type StreamRow = {
   id: string;
   mosque_id: string;
   url?: string | null;
+  stream_url?: string | null;
   is_live?: boolean | null;
   status?: string | null;
   last_health_check?: string | null;
@@ -30,8 +31,13 @@ export function useLiveStreamForMosque(mosqueId?: string | null): LiveState {
 
     const fetchLive = async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const [{ data: streamData }, { data: adhanData }] = await Promise.all([
-        supabase.from('streams').select('*').eq('mosque_id', mosqueId).maybeSingle<StreamRow>(),
+      const [{ data: streamRows }, { data: adhanData }] = await Promise.all([
+        supabase
+          .from('streams')
+          .select('id, mosque_id, url, stream_url, is_live, status, last_health_check')
+          .eq('mosque_id', mosqueId)
+          .order('started_at', { ascending: false, nullsFirst: false })
+          .limit(1),
         supabase
           .from('adhans')
           .select('*')
@@ -43,11 +49,12 @@ export function useLiveStreamForMosque(mosqueId?: string | null): LiveState {
       ]);
 
       if (!mounted) return;
+      const streamData = ((streamRows ?? []) as StreamRow[])[0] ?? null;
       const isLive = !!(streamData?.is_live || adhanData?.status === 'live');
       setState({
         isLive,
         currentAdhan: (adhanData as any) ?? null,
-        streamUrl: streamData?.url ?? null,
+        streamUrl: streamData?.stream_url ?? streamData?.url ?? null,
       });
     };
 

@@ -61,7 +61,7 @@ export default function SignUpScreen() {
       );
       router.replace('/sign-in'); // group folders are stripped from the path
     } else {
-      router.replace('/(tabs)');
+      router.replace('/listener-home' as any);
     }
   };
 

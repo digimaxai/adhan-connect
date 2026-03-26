@@ -3,27 +3,26 @@ import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, StyleSheet,
 import { useRouter } from 'expo-router';
 import { AdminScreenShell } from '@/components/admin/AdminScreenShell';
 import { AdminBanner } from '@/components/admin/AdminBanner';
-import DateSelector from '@/components/admin/DateSelector';
+import AdminDateSelector from '@/components/admin/DateSelector';
 import { AppCard } from '@/components/ui/app-card';
 import { AppText } from '@/components/ui/app-text';
 import { AppButton } from '@/components/ui/app-button';
 import { tokens } from '@/theme/tokens';
 import { useRoleFlags } from '@/lib/roles';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
-import { getPrayerTimesByDate } from '@/lib/api/admin/prayerTimes';
 import {
-  getMuezzinsForMosque,
-  getStaffRotaForDate,
   MuezzinSummary,
   saveStaffRotaForDate,
   StaffRotaForDay,
 } from '@/lib/api/admin/staffRota';
+import { loadStaffRotaWorkspace } from '@/lib/api/admin/staffRotaWorkspace';
+import { loadMosqueMuezzinWorkspace } from '@/lib/api/admin/muezzinWorkspace';
 import { normalizePrayerTimes, NormalizedPrayerTimes } from '@/lib/api/prayerTimesUnified';
 import { PrayerName } from '@/lib/adhans';
 import { supabase } from '@/lib/supabase';
 import { persistentStorage } from '@/lib/persistentStorage';
 
-const prayers: Array<{ key: PrayerName; label: string }> = [
+const prayers: { key: PrayerName; label: string }[] = [
   { key: 'fajr', label: 'Fajr' },
   { key: 'dhuhr', label: 'Dhuhr' },
   { key: 'asr', label: 'Asr' },
@@ -122,12 +121,27 @@ export default function StaffRotaScreen() {
       setRota(cached);
     }
     try {
-      const [timesRow, rotaMap, muezzinList] = await Promise.all([
-        getPrayerTimesByDate(selectedMosque.mosqueId, dateIso),
-        getStaffRotaForDate(selectedMosque.mosqueId, selectedDate),
-        getMuezzinsForMosque(selectedMosque.mosqueId),
-      ]);
-      const normalizedTimes = normalizePrayerTimes(timesRow as any);
+      const workspace = await loadStaffRotaWorkspace(selectedMosque.mosqueId, dateIso);
+      const normalizedTimes = normalizePrayerTimes(
+        (workspace.prayerTimesRow ?? workspace.fallbackPrayerTimesRow) as any
+      );
+      const rotaMap = workspace.rota;
+      let muezzinList = workspace.muezzins;
+      if ((muezzinList?.length ?? 0) === 0) {
+        try {
+          const mosqueWorkspace = await loadMosqueMuezzinWorkspace(selectedMosque.mosqueId);
+          muezzinList = mosqueWorkspace.members
+            .filter((member) => member.isActive)
+            .map((member) => ({
+              userId: member.userId,
+              displayName: member.displayName,
+              user_id: member.userId,
+              name: member.displayName,
+            }));
+        } catch (muezzinError) {
+          console.warn('[StaffRotaScreen.loadData] mosque muezzin recovery failed', muezzinError);
+        }
+      }
       setPrayerTimes(normalizedTimes);
       setMuezzins(muezzinList);
       const profileNameMap = await buildNameMap(muezzinList, rotaMap);
@@ -146,7 +160,7 @@ export default function StaffRotaScreen() {
           setNotice('No assignments returned from the server for this date yet.');
         }
       }
-      if (!timesRow) {
+      if (!workspace.prayerTimesRow && !workspace.fallbackPrayerTimesRow) {
         setError('Please create prayer times for this date before assigning staff.');
       }
       if ((muezzinList ?? []).length === 0) {
@@ -160,7 +174,7 @@ export default function StaffRotaScreen() {
     } finally {
       setLoadingData(false);
     }
-  }, [selectedMosque, dateIso, selectedDate, getCachedRota, setCachedRota]);
+  }, [selectedMosque, dateIso, getCachedRota, setCachedRota]);
 
   useEffect(() => {
     loadData();
@@ -222,11 +236,15 @@ export default function StaffRotaScreen() {
         setError('Unable to verify your account. Please re-login.');
         return;
       }
-      const result = await saveStaffRotaForDate(selectedMosque.mosqueId, selectedDate, rota, assignedBy);
+      const result = await saveStaffRotaForDate(selectedMosque.mosqueId, selectedDate, rota, assignedBy, selectedMosque.name);
       if (!result.success) {
         setError(result.error ?? 'Unable to save assignments.');
       } else {
-        setNotice(`Saved staff rota for ${dateIso} (${selectedMosque.name}).`);
+        const notifySuffix =
+          typeof result.notificationCount === 'number' && result.notificationCount > 0
+            ? ` ${result.notificationCount} notification${result.notificationCount === 1 ? '' : 's'} sent.`
+            : '';
+        setNotice(`Saved staff rota for ${dateIso} (${selectedMosque.name}).${notifySuffix}`);
         Alert.alert('Saved', 'Staff rota saved.');
         setCachedRota(rota);
         await loadData();
@@ -282,7 +300,7 @@ export default function StaffRotaScreen() {
           </AppText>
           <AppText variant="title">Rota date</AppText>
         </View>
-        <DateSelector
+        <AdminDateSelector
           date={selectedDate}
           onChange={(d) => {
             setSelectedDate(d);

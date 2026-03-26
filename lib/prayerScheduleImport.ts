@@ -1,7 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { PrayerTimesRow, PrayerTimesWriteMeta } from './api/admin/prayerTimes';
 import { publishPrayerScheduleImportAudit } from './api/admin/prayerScheduleImports';
+import { readNativeFileAsText } from './nativeFileText';
 
 type PrayerKey = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
 type Slot = { adhan: string | null; iqama: string | null };
@@ -302,6 +302,9 @@ export function parsePrayerScheduleCsv(
   const parsedRows = lines.map((line) => splitCsvLine(line, delimiter.value));
   const headerDetection = detectHeaderRows(parsedRows);
   const headers = headerDetection.headers;
+  const dataSampleRows = parsedRows
+    .slice(headerDetection.startRow + headerDetection.depth, headerDetection.startRow + headerDetection.depth + 40)
+    .filter((row) => !isIgnorableRow(row));
   const issues: PrayerScheduleImportIssue[] = [];
   const mode = options?.mode ?? 'smart_auto';
   const dateSource = findDateSource(headers, parsedRows, headerDetection, fileName, options);
@@ -318,8 +321,8 @@ export function parsePrayerScheduleCsv(
   const columnMap = PRAYER_KEYS.reduce<Record<PrayerKey, { adhan: number; iqama: number }>>(
     (acc, prayer) => {
       acc[prayer] = {
-        adhan: findBestColumnIndex(headers, prayer, 'adhan'),
-        iqama: findBestColumnIndex(headers, prayer, 'iqama'),
+        adhan: findBestColumnIndex(headers, dataSampleRows, prayer, 'adhan'),
+        iqama: findBestColumnIndex(headers, dataSampleRows, prayer, 'iqama'),
       };
       if (acc[prayer].adhan === -1) {
         issues.push({
@@ -680,14 +683,20 @@ function detectHeaderRows(rows: string[][]): HeaderDetection {
         headers: buildCombinedHeaders(firstRow, secondRow),
         rawHeaders: buildRawHeaders(firstRow, secondRow),
       });
+      candidates.push({
+        startRow,
+        depth: 2,
+        headers: buildSequentialRoleHeaders(firstRow, secondRow),
+        rawHeaders: buildSequentialRawHeaders(firstRow, secondRow),
+      });
     }
 
     candidates.forEach((candidate) => {
-      const sampleRows = rows
-        .slice(candidate.startRow + candidate.depth, candidate.startRow + candidate.depth + 8)
-        .filter((row) => !isIgnorableRow(row));
-      const score = scoreHeaderDetectionCandidate(
-        candidate,
+  const sampleRows = rows
+    .slice(candidate.startRow + candidate.depth, candidate.startRow + candidate.depth + 8)
+    .filter((row) => !isIgnorableRow(row));
+  const score = scoreHeaderDetectionCandidate(
+    candidate,
         firstRow,
         useSecondRow ? secondRow : [],
         sampleRows
@@ -722,8 +731,8 @@ function scoreHeaderDetectionCandidate(
     countTimeCells(firstRow) -
     (candidate.depth > 1 ? countTimeCells(secondRow) : 0);
   const prayerScore = PRAYER_KEYS.reduce((score, prayer) => {
-    const adhanIndex = findBestColumnIndex(candidate.headers, prayer, 'adhan');
-    const iqamaIndex = findBestColumnIndex(candidate.headers, prayer, 'iqama');
+    const adhanIndex = findBestColumnIndex(candidate.headers, sampleRows, prayer, 'adhan');
+    const iqamaIndex = findBestColumnIndex(candidate.headers, sampleRows, prayer, 'iqama');
     const adhanSignal = adhanIndex !== -1 ? countRecognizedTimes(sampleRows, adhanIndex) : 0;
     const iqamaSignal = iqamaIndex !== -1 ? countRecognizedTimes(sampleRows, iqamaIndex) : 0;
 
@@ -735,17 +744,34 @@ function scoreHeaderDetectionCandidate(
       Math.min(iqamaSignal, 4)
     );
   }, 0);
+  const orderPenalty = PRAYER_KEYS.reduce((penalty, prayer) => {
+    const adhanIndex = findBestColumnIndex(candidate.headers, sampleRows, prayer, 'adhan');
+    const iqamaIndex = findBestColumnIndex(candidate.headers, sampleRows, prayer, 'iqama');
+    if (adhanIndex === -1 || iqamaIndex === -1) return penalty;
+    return penalty + countIqamaBeforeAdhan(sampleRows, adhanIndex, iqamaIndex) * 5;
+  }, 0);
   const dateScore =
     (candidate.headers.some((header) => FULL_DATE_ALIASES.includes(header)) ? 10 : 0) +
     (candidate.headers.some((header) => DAY_OF_MONTH_ALIASES.includes(header)) ? 8 : 0) +
     (candidate.depth > 1 ? 3 : 0);
 
-  return baseScore + prayerScore + dateScore;
+  return baseScore + prayerScore + dateScore - orderPenalty;
 }
 
 function countRecognizedTimes(rows: string[][], index: number) {
   if (index < 0) return 0;
   return rows.filter((row) => normalizeTimeInput(readCell(row, index))).length;
+}
+
+function countIqamaBeforeAdhan(rows: string[][], adhanIndex: number, iqamaIndex: number) {
+  if (adhanIndex < 0 || iqamaIndex < 0) return 0;
+
+  return rows.reduce((count, row) => {
+    const adhan = normalizeTimeInput(readCell(row, adhanIndex));
+    const iqama = normalizeTimeInput(readCell(row, iqamaIndex));
+    if (!adhan || !iqama) return count;
+    return compareTimes(iqama, adhan) < 0 ? count + 1 : count;
+  }, 0);
 }
 
 function headerHasExplicitRole(header: string) {
@@ -804,6 +830,95 @@ function buildRawHeaders(primary: string[], secondary: string[]) {
   }
 
   return headers;
+}
+
+function buildSequentialRoleHeaders(primary: string[], secondary: string[]) {
+  const width = Math.max(primary.length, secondary.length);
+  const prayerSequence = extractPrayerHeaderSequence(primary);
+  const headers: string[] = [];
+  let prayerIndex = 0;
+
+  for (let index = 0; index < width; index += 1) {
+    const bottom = normalizeHeader(secondary[index] ?? '');
+    const top = normalizeHeader(primary[index] ?? '');
+
+    if (
+      !bottom ||
+      FULL_DATE_ALIASES.includes(bottom) ||
+      DAY_OF_MONTH_ALIASES.includes(bottom) ||
+      MONTH_COLUMN_ALIASES.includes(bottom) ||
+      YEAR_COLUMN_ALIASES.includes(bottom) ||
+      OPTIONAL_NON_PUBLISHED_COLUMNS.some((column) => column.aliases.includes(bottom))
+    ) {
+      headers.push(bottom || top);
+      continue;
+    }
+
+    const roleToken = resolveHeaderRoleToken(bottom);
+    const prayerLabel = prayerSequence[prayerIndex] ?? null;
+    if (roleToken && prayerLabel) {
+      headers.push(`${prayerLabel}_${bottom}`);
+      if (roleToken === 'iqama') {
+        prayerIndex += 1;
+      }
+      continue;
+    }
+
+    headers.push(top || bottom);
+  }
+
+  return headers;
+}
+
+function buildSequentialRawHeaders(primary: string[], secondary: string[]) {
+  const width = Math.max(primary.length, secondary.length);
+  const prayerSequence = extractPrayerHeaderSequence(primary, false);
+  const headers: string[] = [];
+  let prayerIndex = 0;
+
+  for (let index = 0; index < width; index += 1) {
+    const bottomRaw = secondary[index]?.trim() ?? '';
+    const bottom = normalizeHeader(bottomRaw);
+    const topRaw = primary[index]?.trim() ?? '';
+
+    if (
+      !bottom ||
+      FULL_DATE_ALIASES.includes(bottom) ||
+      DAY_OF_MONTH_ALIASES.includes(bottom) ||
+      MONTH_COLUMN_ALIASES.includes(bottom) ||
+      YEAR_COLUMN_ALIASES.includes(bottom) ||
+      OPTIONAL_NON_PUBLISHED_COLUMNS.some((column) => column.aliases.includes(bottom))
+    ) {
+      headers.push(bottomRaw || topRaw || `Column ${index + 1}`);
+      continue;
+    }
+
+    const roleToken = resolveHeaderRoleToken(bottom);
+    const prayerLabel = prayerSequence[prayerIndex] ?? null;
+    if (roleToken && prayerLabel) {
+      headers.push(`${prayerLabel} / ${bottomRaw || secondary[index] || 'Value'}`);
+      if (roleToken === 'iqama') {
+        prayerIndex += 1;
+      }
+      continue;
+    }
+
+    headers.push(topRaw || bottomRaw || `Column ${index + 1}`);
+  }
+
+  return headers;
+}
+
+function extractPrayerHeaderSequence(primary: string[], normalized = true) {
+  return primary
+    .map((cell) => (normalized ? normalizeHeader(cell) : cell.trim()))
+    .filter((header) => headerIncludesPrayerToken(normalized ? header : normalizeHeader(header)));
+}
+
+function resolveHeaderRoleToken(header: string) {
+  if (headerIncludesAnyToken(header, IQAMA_ROLE_TOKENS)) return 'iqama';
+  if (headerIncludesAnyToken(header, ADHAN_ROLE_TOKENS)) return 'adhan';
+  return null;
 }
 
 function fillForwardPrayerHeaders(primary: string[], secondary: string[]) {
@@ -1086,6 +1201,10 @@ function resolveYearHint(
     if (yearMatch) return Number(yearMatch[1]);
   }
 
+  if (rowsContainMonthNameDayDates(rows)) {
+    return new Date().getFullYear();
+  }
+
   return null;
 }
 
@@ -1128,13 +1247,7 @@ function parsePartialDateWithContext(raw: string, context: MonthYearContext) {
     return joinDateParts(context.year, context.month, first);
   }
 
-  const monthNameMatch = value.match(/^(\d{1,2})\s+([a-z]{3,9})$|^([a-z]{3,9})\s+(\d{1,2})$/);
-  if (!monthNameMatch) return null;
-
-  const day = Number(monthNameMatch[1] ?? monthNameMatch[4]);
-  const monthName = (monthNameMatch[2] ?? monthNameMatch[3] ?? '').toLowerCase();
-  const month = MONTH_NAME_TO_NUMBER[monthName];
-  return month ? joinDateParts(context.year, month, day) : null;
+  return parseMonthNameDayWithYear(value, context.year);
 }
 
 function parsePartialDateWithYearHint(raw: string, yearHint: number) {
@@ -1150,13 +1263,7 @@ function parsePartialDateWithYearHint(raw: string, yearHint: number) {
     return joinDateParts(yearHint, second, first);
   }
 
-  const monthNameMatch = value.match(/^(\d{1,2})\s+([a-z]{3,9})$|^([a-z]{3,9})\s+(\d{1,2})$/);
-  if (!monthNameMatch) return null;
-
-  const day = Number(monthNameMatch[1] ?? monthNameMatch[4]);
-  const monthName = (monthNameMatch[2] ?? monthNameMatch[3] ?? '').toLowerCase();
-  const month = MONTH_NAME_TO_NUMBER[monthName];
-  return month ? joinDateParts(yearHint, month, day) : null;
+  return parseMonthNameDayWithYear(value, yearHint);
 }
 
 function parseFlexiblePartialDate(
@@ -1274,12 +1381,22 @@ function isMonthContextOnlyRow(cols: string[]) {
   return countTimeCells(cols) === 0 && populated.length <= 4;
 }
 
-function findBestColumnIndex(headers: string[], prayer: PrayerKey, role: 'adhan' | 'iqama') {
+function findBestColumnIndex(
+  headers: string[],
+  rows: string[][],
+  prayer: PrayerKey,
+  role: 'adhan' | 'iqama'
+) {
   let bestIndex = -1;
   let bestScore = -1;
+  const explicitAlternativeExists = headers.some(
+    (header) =>
+      headerIncludesPrayer(header, prayer) &&
+      headerHasDesiredRole(header, role)
+  );
 
   headers.forEach((header, index) => {
-    const score = scorePrayerHeader(header, prayer, role);
+    const score = scorePrayerHeader(header, rows, prayer, role, explicitAlternativeExists, index);
     if (score > bestScore) {
       bestIndex = index;
       bestScore = score;
@@ -1289,11 +1406,23 @@ function findBestColumnIndex(headers: string[], prayer: PrayerKey, role: 'adhan'
   return bestScore > 0 ? bestIndex : -1;
 }
 
-function scorePrayerHeader(header: string, prayer: PrayerKey, role: 'adhan' | 'iqama') {
+function scorePrayerHeader(
+  header: string,
+  rows: string[][],
+  prayer: PrayerKey,
+  role: 'adhan' | 'iqama',
+  explicitAlternativeExists: boolean,
+  index: number
+) {
   if (!headerIncludesPrayer(header, prayer)) return -1;
 
+  const validTimeCount = countRecognizedTimes(rows, index);
+  const populatedCellCount = countPopulatedCells(rows, index);
+  const hasDesiredRole = headerHasDesiredRole(header, role);
+
   if (COLUMN_ALIASES[prayer][role].includes(header)) {
-    return 20;
+    const aliasScore = hasDesiredRole ? 20 : 10;
+    return finalizePrayerHeaderScore(aliasScore, validTimeCount, populatedCellCount, explicitAlternativeExists && !hasDesiredRole);
   }
 
   const hasAdhanRole = headerIncludesAnyToken(header, ADHAN_ROLE_TOKENS);
@@ -1301,11 +1430,54 @@ function scorePrayerHeader(header: string, prayer: PrayerKey, role: 'adhan' | 'i
 
   if (role === 'adhan') {
     if (hasIqamaRole) return -1;
-    return hasAdhanRole ? 12 : 8;
+    return finalizePrayerHeaderScore(
+      hasAdhanRole ? 12 : 8,
+      validTimeCount,
+      populatedCellCount,
+      explicitAlternativeExists && !hasAdhanRole
+    );
   }
 
   if (!hasIqamaRole) return -1;
-  return 12;
+  return finalizePrayerHeaderScore(
+    12,
+    validTimeCount,
+    populatedCellCount,
+    false
+  );
+}
+
+function finalizePrayerHeaderScore(
+  baseScore: number,
+  validTimeCount: number,
+  populatedCellCount: number,
+  shouldPenalizeForAmbiguity: boolean
+) {
+  let score = baseScore;
+
+  score += Math.min(validTimeCount, 12);
+  if (populatedCellCount > 0 && validTimeCount === 0) {
+    score -= 18;
+  }
+  if (populatedCellCount === 0) {
+    score -= 8;
+  }
+  if (shouldPenalizeForAmbiguity) {
+    score -= 6;
+  }
+
+  return score;
+}
+
+function countPopulatedCells(rows: string[][], index: number) {
+  if (index < 0) return 0;
+  return rows.filter((row) => readCell(row, index).length > 0).length;
+}
+
+function headerHasDesiredRole(header: string, role: 'adhan' | 'iqama') {
+  return role === 'adhan'
+    ? headerIncludesAnyToken(header, ADHAN_ROLE_TOKENS)
+    : headerIncludesAnyToken(header, IQAMA_ROLE_TOKENS);
 }
 
 function headerIncludesPrayer(header: string, prayer: PrayerKey) {
@@ -1392,6 +1564,10 @@ function normalizeDateInput(raw: string) {
     return joinDateParts(Number(ukMatch[3]), Number(ukMatch[2]), Number(ukMatch[1]));
   }
 
+  if (looksLikeMonthNameDayWithoutYear(value)) {
+    return null;
+  }
+
   if (!/[a-z]/i.test(value) && !/\d{4}/.test(value)) {
     return null;
   }
@@ -1399,6 +1575,42 @@ function normalizeDateInput(raw: string) {
   const parsed = new Date(value);
   if (isNaN(parsed.getTime())) return null;
   return joinDateParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+}
+
+function looksLikeMonthNameDayWithoutYear(value: string) {
+  return /^(?:[a-z]{3,9}[\/.\-\s]+\d{1,2}|\d{1,2}[\/.\-\s]+[a-z]{3,9})$/i.test(
+    value.trim()
+  );
+}
+
+function parseMonthNameDayWithYear(raw: string, year: number) {
+  const value = raw.trim().toLowerCase();
+  const monthNameMatch =
+    value.match(/^(\d{1,2})[\/.\-\s]+([a-z]{3,9})$/) ??
+    value.match(/^([a-z]{3,9})[\/.\-\s]+(\d{1,2})$/);
+  if (!monthNameMatch) return null;
+
+  const day = Number(monthNameMatch[1] && /^\d+$/.test(monthNameMatch[1]) ? monthNameMatch[1] : monthNameMatch[2]);
+  const monthName = (
+    monthNameMatch[1] && /^\d+$/.test(monthNameMatch[1])
+      ? monthNameMatch[2]
+      : monthNameMatch[1]
+  ).toLowerCase();
+  const month = MONTH_NAME_TO_NUMBER[monthName];
+  return month ? joinDateParts(year, month, day) : null;
+}
+
+function rowsContainMonthNameDayDates(rows: string[][]) {
+  const limit = Math.min(rows.length, 40);
+  for (let rowIndex = 0; rowIndex < limit; rowIndex += 1) {
+    const cols = rows[rowIndex] ?? [];
+    for (let colIndex = 0; colIndex < cols.length; colIndex += 1) {
+      if (looksLikeMonthNameDayWithoutYear(readCell(cols, colIndex))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function joinDateParts(year: number, month: number, day: number) {
@@ -1460,6 +1672,12 @@ function normalizeTimeInput(raw: string) {
   if (hours < 0 || hours > 23) return null;
 
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
+function compareTimes(left: string, right: string) {
+  const [leftHours, leftMinutes] = left.split(':').map((part) => Number(part));
+  const [rightHours, rightMinutes] = right.split(':').map((part) => Number(part));
+  return leftHours * 60 + leftMinutes - (rightHours * 60 + rightMinutes);
 }
 
 function validatePrayerOrder(
@@ -1547,5 +1765,5 @@ async function readPickedDocumentAsText(asset: DocumentPicker.DocumentPickerAsse
     return await response.text();
   }
 
-  return await FileSystem.readAsStringAsync(asset.uri);
+  return await readNativeFileAsText(asset.uri);
 }

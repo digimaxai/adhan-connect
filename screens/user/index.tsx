@@ -14,19 +14,26 @@ import {
 } from '../../lib/adhans';
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
-import AppLogo from '../../components/AppLogo';
+import { AppLogo } from '../../components/AppLogo';
 import { AppButton } from '../../components/ui/app-button';
 import { AppCard } from '../../components/ui/app-card';
 import { ScreenContainer } from '../../components/ui/screen-container';
 import { AppText } from '../../components/ui/app-text';
-import { persistentStorage } from '../../lib/persistentStorage';
+import { getDefaultMosqueId } from '../../lib/mosquePreferences';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
 import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 import { tokens } from '../../theme/tokens';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
 type Subscription = { mosque_id: string };
-type StreamRow = { mosque_id: string; type?: string | null; is_live: boolean; status?: string | null };
+type StreamRow = {
+  id?: string;
+  mosque_id: string;
+  type?: string | null;
+  is_live: boolean;
+  status?: string | null;
+  started_at?: string | null;
+};
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
 
 const fallbackTimes: Record<PrayerName, string> = {
@@ -60,27 +67,31 @@ export default function HomeScreen() {
   const [nextPrayer, setNextPrayer] = useState<ReturnType<typeof computeNextPrayer> | null>(null);
   const [defaultMosqueId, setDefaultMosqueId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const staffPrimaryMosqueId = useMemo(
+    () => (roles.isMainAdmin ? null : roles.primaryAdminMosqueId ?? roles.primaryMuezzinMosqueId ?? null),
+    [roles.isMainAdmin, roles.primaryAdminMosqueId, roles.primaryMuezzinMosqueId]
+  );
 
   const primaryMosque = useMemo(() => {
-    const preferredId = defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
+    const preferredId = staffPrimaryMosqueId ?? defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
     const found = mosques.find((m) => m.id === preferredId);
     if (found) return found;
-    const altId = subs[0]?.mosque_id ?? mosques[0]?.id;
+    const altId = staffPrimaryMosqueId ?? defaultMosqueId ?? subs[0]?.mosque_id ?? mosques[0]?.id;
     return mosques.find((m) => m.id === altId) ?? null;
-  }, [subs, mosques, defaultMosqueId]);
+  }, [subs, mosques, defaultMosqueId, staffPrimaryMosqueId]);
 
   const subscribedIds = useMemo(() => new Set(subs.map((s) => s.mosque_id)), [subs]);
 
   const loadDefault = React.useCallback(async () => {
     try {
-      const stored = await persistentStorage.getItem('default_mosque_id');
+      const stored = await getDefaultMosqueId(userId);
       setDefaultMosqueId(stored ?? null);
       return stored ?? null;
     } catch {
       setDefaultMosqueId(null);
       return null;
     }
-  }, []);
+  }, [userId]);
 
   const loadHomeData = React.useCallback(async () => {
     const [mosqueRes, subsRes, streamsRes] = await Promise.all([
@@ -88,14 +99,18 @@ export default function HomeScreen() {
       userId
         ? supabase.from('subscriptions').select('mosque_id').eq('user_id', userId)
         : Promise.resolve({ data: [] as Subscription[], error: null }),
-      supabase.from('streams').select('mosque_id, type, is_live, status').eq('is_live', true).eq('status', 'active'),
+      supabase
+        .from('streams')
+        .select('id, mosque_id, type, is_live, status, started_at')
+        .eq('is_live', true)
+        .order('started_at', { ascending: false, nullsFirst: false }),
     ]);
     if (!mosqueRes.error && mosqueRes.data) setMosques(mosqueRes.data);
     if (!subsRes.error && subsRes.data) setSubs(subsRes.data);
     if (!streamsRes.error && streamsRes.data) {
       const map: Record<string, StreamRow> = {};
       (streamsRes.data as StreamRow[]).forEach((s) => {
-        if (s.is_live) map[s.mosque_id] = s;
+        if (s.is_live && !map[s.mosque_id]) map[s.mosque_id] = s;
       });
       setLiveStreams(map);
     } else {
@@ -151,26 +166,18 @@ export default function HomeScreen() {
     try {
       const storedDefaultId = await loadDefault();
       const { mosques: latestMosques, subs: latestSubs } = await loadHomeData();
-      const preferredId = storedDefaultId ?? latestSubs[0]?.mosque_id ?? latestMosques[0]?.id ?? null;
+      const preferredId = staffPrimaryMosqueId ?? storedDefaultId ?? latestSubs[0]?.mosque_id ?? latestMosques[0]?.id ?? null;
       await Promise.all([loadPrayerTimes(preferredId), loadMuezzin()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadDefault, loadHomeData, loadMuezzin, loadPrayerTimes]);
-
-  useEffect(() => {
-    loadHomeData();
-  }, [userId]);
-
-  useEffect(() => {
-    loadDefault();
-  }, [loadDefault]);
+  }, [loadDefault, loadHomeData, loadMuezzin, loadPrayerTimes, staffPrimaryMosqueId]);
 
   useFocusEffect(
     React.useCallback(() => {
-      loadHomeData();
-      loadDefault();
-    }, [userId, loadDefault])
+      void loadHomeData();
+      void loadDefault();
+    }, [loadDefault, loadHomeData])
   );
 
   useEffect(() => {
@@ -212,7 +219,7 @@ export default function HomeScreen() {
 
   const computeNextPrayer = (times: PrayerTimes | null) => {
     const now = new Date();
-    const entries: Array<{ name: PrayerName; time: string }> = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
+    const entries: { name: PrayerName; time: string }[] = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
       .map((name) => ({ name, time: (times?.[name] as string) ?? fallbackTimes[name] }))
       .filter((p) => p.time);
 
@@ -259,6 +266,7 @@ export default function HomeScreen() {
   }, [prayerTimes]);
 
   const topPad = Platform.OS === 'android' ? 8 : 0;
+  const liveInfo = useLiveStreamForMosque(primaryMosque?.id);
 
   const MuezzinHero = () => {
     const broadcast = nextBroadcast;
@@ -317,7 +325,7 @@ export default function HomeScreen() {
                 <Text style={styles.heroButtonText}>{startable ? 'Go live' : 'View details'}</Text>
               </Pressable>
               <Pressable
-                onPress={() => router.push('/(muezzin)/muezzin')}
+                onPress={() => router.push('/(muezzin)/muezzin-home')}
                 style={({ pressed }) => [styles.heroButton, { backgroundColor: '#E0F2FE', opacity: pressed ? 0.85 : 1 }]}
               >
                 <Text style={[styles.heroButtonText, { color: '#0369A1' }]}>Schedule</Text>
@@ -395,7 +403,7 @@ export default function HomeScreen() {
             <AppText variant="title" style={styles.appTitle}>
               Adhan Connect
             </AppText>
-            <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12}>
+            <Pressable onPress={() => router.push('/(user)/settings')} hitSlop={12}>
               <Ionicons name="settings-outline" size={22} color="#0F172A" />
             </Pressable>
           </View>
@@ -404,8 +412,6 @@ export default function HomeScreen() {
     );
   }
 
-  const primaryLive = primaryMosque ? liveStreams[primaryMosque.id] : null;
-  const liveInfo = useLiveStreamForMosque(primaryMosque?.id);
   const otherLive = Object.entries(liveStreams).filter(
     ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
   );
@@ -420,7 +426,7 @@ export default function HomeScreen() {
           <AppText variant="title" style={styles.appTitle}>
             Adhan Connect
           </AppText>
-          <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12}>
+          <Pressable onPress={() => router.push('/(user)/settings')} hitSlop={12}>
             <Ionicons name="settings-outline" size={22} color="#0F172A" />
           </Pressable>
         </View>
@@ -467,7 +473,14 @@ export default function HomeScreen() {
                 </View>
                 <Ionicons name="radio-outline" size={20} color="#E2E8F0" />
                 <Pressable
-                  onPress={() => router.push('/(user)/now')}
+                  onPress={() =>
+                    primaryMosque
+                      ? router.push({
+                          pathname: '/(user)/now',
+                          params: { mosqueId: primaryMosque.id },
+                        })
+                      : null
+                  }
                   style={({ pressed }) => [styles.listenBtn, { opacity: pressed ? 0.9 : 1 }]}
                 >
                   <AppText variant="caption" color={tokens.color.text.inverse} style={styles.listenText}>
@@ -481,7 +494,7 @@ export default function HomeScreen() {
 
         <AppCard style={styles.cardContainer}>
           <View style={styles.sectionHeader}>
-            <AppText variant="sectionTitle">Today's Prayer Times</AppText>
+            <AppText variant="sectionTitle">Today&apos;s Prayer Times</AppText>
           </View>
           {primaryMosque?.name ? (
             <AppText variant="caption" style={styles.cardSubtitle}>
@@ -527,7 +540,15 @@ export default function HomeScreen() {
                       </AppText>
                     </View>
                   </View>
-                  <Pressable onPress={() => router.push('/(user)/now')} hitSlop={6}>
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(user)/now',
+                        params: { mosqueId },
+                      })
+                    }
+                    hitSlop={6}
+                  >
                     <AppText variant="body" color={tokens.color.text.accent} style={styles.listenLink}>
                       Listen
                     </AppText>

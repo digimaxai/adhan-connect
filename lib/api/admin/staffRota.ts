@@ -2,6 +2,8 @@ import { PrayerName } from '../../adhans';
 import { normalizePrayerTimes } from '../prayerTimesUnified';
 import { getPrayerTimesByDate } from './prayerTimes';
 import { supabase } from '../../supabase';
+import { insertAppNotifications } from '../appNotifications';
+import { resolveApiUrl, supportsServerApi } from '../apiBaseUrl';
 
 const PRAYERS: PrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
@@ -181,9 +183,15 @@ export async function saveStaffRotaForDate(
   mosqueId: string,
   date: Date,
   assignments: StaffRotaForDay,
-  assignedByUserId: string
-): Promise<{ success: boolean; error?: string | null }> {
+  assignedByUserId: string,
+  mosqueName?: string | null
+): Promise<{ success: boolean; error?: string | null; notificationCount?: number }> {
   const dateIso = formatLocalDate(date);
+  const serverResult = await saveStaffRotaForDateViaServer(mosqueId, dateIso, assignments, mosqueName ?? null);
+  if (serverResult) {
+    return serverResult;
+  }
+  const previousRows = await getStaffRotaByDate(mosqueId, dateIso).catch(() => []);
   const normalizedTimes = await loadPrayerTimesSlotMap(mosqueId, date);
   const rows = PRAYERS.map((prayer) => {
     const assignment = assignments?.[prayer];
@@ -205,27 +213,38 @@ export async function saveStaffRotaForDate(
     };
   }).filter(Boolean) as StaffRotaRow[];
 
-  if (!rows.length) {
-    return { success: true };
-  }
-
   try {
-    // Replace rows for this mosque/date/prayer set to avoid onConflict inconsistencies across environments.
-    const prayers = rows.map((r) => r.prayer_name);
+    // Treat the full day as the source of truth so clearing an assignment removes the old row.
     const { error: delError } = await supabase
       .from('staff_rota')
       .delete()
       .eq('mosque_id', mosqueId)
-      .eq('date', dateIso)
-      .in('prayer_name', prayers);
+      .eq('date', dateIso);
     if (delError && delError.code !== 'PGRST116') throw delError;
 
-    const { data: inserted, error } = await supabase.from('staff_rota').insert(rows).select('*');
-    if (error) throw error;
-    if (!inserted || inserted.length === 0) {
-      return { success: false, error: 'Save failed: no rows persisted (check RLS permissions for staff_rota).' };
+    let inserted: StaffRotaRow[] = [];
+    if (rows.length) {
+      const insertResult = await supabase.from('staff_rota').insert(rows).select('*');
+      if (insertResult.error) throw insertResult.error;
+      inserted = (insertResult.data ?? []) as StaffRotaRow[];
+      if (inserted.length === 0) {
+        return { success: false, error: 'Save failed: no rows persisted (check RLS permissions for staff_rota).' };
+      }
     }
-    return { success: true };
+
+    const notificationCount = await notifyRotaChanges({
+      mosqueId,
+      mosqueName: mosqueName ?? null,
+      dateIso,
+      previousRows,
+      nextRows: rows,
+      assignedByUserId,
+    }).catch((notificationError) => {
+      console.warn('[saveStaffRotaForDate] notification fallback', notificationError);
+      return 0;
+    });
+
+    return { success: true, notificationCount };
   } catch (e: any) {
     // If schema lacks adhan/iqama columns, retry without them.
     const msg = e?.message ?? '';
@@ -257,22 +276,34 @@ export async function saveStaffRotaForDate(
       }));
 
       try {
-        // Clean slate for these prayers on this date.
-        const prayers = rowsLegacyFk.map((r) => r.prayer_name);
         const { error: delError } = await supabase
           .from('staff_rota')
           .delete()
           .eq('mosque_id', rowsLegacyFk[0].mosque_id)
-          .eq('date', rowsLegacyFk[0].date)
-          .in('prayer_name', prayers);
+          .eq('date', rowsLegacyFk[0].date);
         if (delError && delError.code !== 'PGRST116') throw delError;
 
-        const { data: insertedFallback, error: insertError } = await supabase.from('staff_rota').insert(rowsLegacyFk as any).select('*');
-        if (insertError) throw insertError;
-        if (!insertedFallback || insertedFallback.length === 0) {
-          return { success: false, error: 'Legacy save failed: no rows persisted (check RLS permissions).' };
+        let insertedFallback: StaffRotaRow[] = [];
+        if (rowsLegacyFk.length) {
+          const fallbackResult = await supabase.from('staff_rota').insert(rowsLegacyFk as any).select('*');
+          if (fallbackResult.error) throw fallbackResult.error;
+          insertedFallback = (fallbackResult.data ?? []) as StaffRotaRow[];
+          if (insertedFallback.length === 0) {
+            return { success: false, error: 'Legacy save failed: no rows persisted (check RLS permissions).' };
+          }
         }
-        return { success: true };
+        const notificationCount = await notifyRotaChanges({
+          mosqueId,
+          mosqueName: mosqueName ?? null,
+          dateIso,
+          previousRows,
+          nextRows: rowsLegacyFk,
+          assignedByUserId,
+        }).catch((notificationError) => {
+          console.warn('[saveStaffRotaForDate:retry] notification fallback', notificationError);
+          return 0;
+        });
+        return { success: true, notificationCount };
       } catch (retryErr: any) {
         console.warn('[saveStaffRotaForDate:retry]', retryErr?.message ?? retryErr);
         return { success: false, error: retryErr?.message ?? 'Unable to save staff rota.' };
@@ -280,6 +311,61 @@ export async function saveStaffRotaForDate(
     }
     console.warn('[saveStaffRotaForDate]', e?.message ?? e);
     return { success: false, error: e?.message ?? 'Unable to save staff rota.' };
+  }
+}
+
+async function saveStaffRotaForDateViaServer(
+  mosqueId: string,
+  dateIso: string,
+  assignments: StaffRotaForDay,
+  mosqueName?: string | null
+): Promise<{ success: boolean; error?: string | null; notificationCount?: number } | null> {
+  if (!supportsServerApi()) {
+    return null;
+  }
+
+  const endpoint = resolveApiUrl('/api/admin/staff-rota-save');
+  if (!endpoint) {
+    return null;
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session?.access_token) {
+    return { success: false, error: 'Your session has expired. Refresh and sign in again.' };
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionData.session.access_token}`,
+      },
+      body: JSON.stringify({
+        mosqueId,
+        date: dateIso,
+        mosqueName: mosqueName ?? null,
+        assignments,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        success: false,
+        error: payload?.error || 'Unable to save staff rota.',
+      };
+    }
+
+    return {
+      success: payload?.success !== false,
+      error: payload?.error ?? null,
+      notificationCount:
+        typeof payload?.notificationCount === 'number' ? payload.notificationCount : undefined,
+    };
+  } catch (error) {
+    console.warn('[saveStaffRotaForDateViaServer] fallback', error);
+    return null;
   }
 }
 
@@ -321,4 +407,89 @@ function formatLocalDate(date: Date) {
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const day = date.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+async function notifyRotaChanges(args: {
+  mosqueId: string;
+  mosqueName?: string | null;
+  dateIso: string;
+  previousRows: StaffRotaRow[];
+  nextRows: StaffRotaRow[];
+  assignedByUserId: string;
+}) {
+  const previousMap = new Map<string, StaffRotaRow>();
+  const nextMap = new Map<string, StaffRotaRow>();
+
+  args.previousRows.forEach((row) => previousMap.set(row.prayer_name, row));
+  args.nextRows.forEach((row) => nextMap.set(row.prayer_name, row));
+
+  const notifications: Array<{
+    user_id: string;
+    mosque_id: string;
+    actor_user_id: string;
+    type: string;
+    title: string;
+    body: string;
+    metadata: Record<string, unknown>;
+  }> = [];
+
+  PRAYERS.forEach((prayerName) => {
+    const previous = previousMap.get(prayerName);
+    const next = nextMap.get(prayerName);
+    const previousUserId = previous?.muezzin_user_id ?? previous?.staff_user_id ?? null;
+    const nextUserId = next?.muezzin_user_id ?? next?.staff_user_id ?? null;
+    if (previousUserId === nextUserId) return;
+
+    const prayerLabel = prayerName.charAt(0).toUpperCase() + prayerName.slice(1);
+    const dateLabel = formatNotificationDate(args.dateIso);
+    const mosqueLabel = args.mosqueName?.trim() || 'your mosque';
+
+    if (nextUserId) {
+      notifications.push({
+        user_id: nextUserId,
+        mosque_id: args.mosqueId,
+        actor_user_id: args.assignedByUserId,
+        type: previousUserId ? 'rota_reassigned' : 'rota_assigned',
+        title: previousUserId ? `${prayerLabel} rota updated` : `${prayerLabel} rota assigned`,
+        body: `${dateLabel} at ${mosqueLabel} now includes you for ${prayerLabel}.`,
+        metadata: {
+          prayerName,
+          date: args.dateIso,
+          previousUserId,
+          nextUserId,
+        },
+      });
+    }
+
+    if (previousUserId) {
+      notifications.push({
+        user_id: previousUserId,
+        mosque_id: args.mosqueId,
+        actor_user_id: args.assignedByUserId,
+        type: 'rota_unassigned',
+        title: `${prayerLabel} rota changed`,
+        body: `${dateLabel} at ${mosqueLabel} no longer has you assigned for ${prayerLabel}.`,
+        metadata: {
+          prayerName,
+          date: args.dateIso,
+          previousUserId,
+          nextUserId,
+        },
+      });
+    }
+  });
+
+  if (!notifications.length) return 0;
+  await insertAppNotifications(notifications);
+  return notifications.length;
+}
+
+function formatNotificationDate(dateIso: string) {
+  const parsed = new Date(`${dateIso}T00:00:00`);
+  if (isNaN(parsed.getTime())) return dateIso;
+  return parsed.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
 }

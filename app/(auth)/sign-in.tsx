@@ -1,12 +1,11 @@
 // app/(auth)/sign-in.tsx
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { useAuth } from '../../lib/auth';
 
 export default function SignInScreen() {
   const { signIn } = useAuth();
-  const router = useRouter();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +24,6 @@ export default function SignInScreen() {
       Alert.alert('Sign in failed', error);
       return;
     }
-    router.replace('/(tabs)');
   };
 
   return (

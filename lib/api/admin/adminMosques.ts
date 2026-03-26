@@ -1,3 +1,4 @@
+import { fetchSessionAccess } from '../../sessionAccess';
 import { supabase } from '../../supabase';
 
 export type AdminMosqueSummary = {
@@ -15,6 +16,17 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
       return { mosques: [], error: authError?.message ?? 'No authenticated user.' };
     }
     const userId = authData.user.id;
+    const appMetadataRole = (((authData.user.app_metadata as any)?.role ?? null) || null) as string | null;
+
+    try {
+      const payload = await fetchSessionAccess({ preferCache: true });
+      return {
+        mosques: ((payload.adminMosques ?? []) as AdminMosqueSummary[]).sort((a, b) => a.name.localeCompare(b.name)),
+        error: null,
+      };
+    } catch (serverError: any) {
+      console.warn('[adminMosques] server access fallback', serverError?.message ?? serverError);
+    }
 
     const { data: userRow, error: userError } = await supabase
       .from('users')
@@ -22,7 +34,13 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
       .eq('id', userId)
       .maybeSingle<{ role?: string | null }>();
 
-    if (!userError && userRow?.role === 'main_admin') {
+    const resolvedRole = userRow?.role ?? appMetadataRole ?? null;
+
+    if (userError) {
+      console.warn('[adminMosques] role lookup error', userError);
+    }
+
+    if (resolvedRole === 'main_admin') {
       const { data: mosquesData, error: mosquesError } = await supabase
         .from('mosques')
         .select('id, name, city, country')

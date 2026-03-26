@@ -44,9 +44,10 @@ export function AdminFeedbackProvider({ children }: { children: React.ReactNode 
   );
 
   useEffect(() => {
+    const timeouts = timeoutMapRef.current;
     return () => {
-      timeoutMapRef.current.forEach((timeout) => clearTimeout(timeout));
-      timeoutMapRef.current.clear();
+      timeouts.forEach((timeout) => clearTimeout(timeout));
+      timeouts.clear();
     };
   }, []);
 
@@ -111,6 +112,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 10,
     width: 'min(360px, calc(100vw - 24px))',
+    boxSizing: 'border-box',
   },
   toast: {
     borderRadius: 18,
@@ -120,6 +122,7 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'left',
     cursor: 'pointer',
     backgroundColor: '#fff',
+    boxSizing: 'border-box',
   },
   success: {
     borderColor: '#86efac',

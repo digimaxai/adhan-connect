@@ -1,11 +1,11 @@
 // app/(tabs)/manage-mosques.tsx
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
-import { persistentStorage } from '../../lib/persistentStorage';
+import { clearDefaultMosqueId, getDefaultMosqueId, setDefaultMosqueId } from '../../lib/mosquePreferences';
 import { supabase } from '../../lib/supabase';
 
 type FollowedMosque = {
@@ -27,7 +27,7 @@ export default function ManageMosques() {
 
   const count = items.length;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     try {
@@ -47,21 +47,21 @@ export default function ManageMosques() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
 
   useEffect(() => {
     load();
-  }, [userId]);
+  }, [load]);
 
   useEffect(() => {
     const getDefault = async () => {
       try {
-        const stored = await persistentStorage.getItem('default_mosque_id');
-        if (stored) setDefaultId(stored);
+        const stored = await getDefaultMosqueId(userId);
+        setDefaultId(stored ?? null);
       } catch {}
     };
     getDefault();
-  }, []);
+  }, [userId]);
 
   const moveItem = (index: number, newIndex: number) => {
     if (newIndex < 0 || newIndex >= items.length) return;
@@ -90,13 +90,13 @@ export default function ManageMosques() {
     setItems((prev) => prev.filter((i) => i.mosque_id !== mosqueId));
     if (defaultId === mosqueId) {
       setDefaultId(null);
-      await persistentStorage.removeItem('default_mosque_id');
+      await clearDefaultMosqueId(userId);
     }
   };
 
   const setDefault = async (mosqueId: string) => {
     try {
-      await persistentStorage.setItem('default_mosque_id', mosqueId);
+      await setDefaultMosqueId(userId, mosqueId);
       setDefaultId(mosqueId);
     } catch {
       setDefaultId(mosqueId);
@@ -156,7 +156,7 @@ export default function ManageMosques() {
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTitle}>You are not following any mosques yet.</Text>
           <Text style={styles.emptySubtitle}>Discover mosques to get live adhans.</Text>
-          <Pressable onPress={() => router.push('/(tabs)/discover')} style={({ pressed }) => [styles.discoverBtn, { opacity: pressed ? 0.9 : 1 }]}>
+          <Pressable onPress={() => router.push('/(user)/discover')} style={({ pressed }) => [styles.discoverBtn, { opacity: pressed ? 0.9 : 1 }]}>
             <Text style={styles.discoverText}>Discover Mosques</Text>
           </Pressable>
         </View>
