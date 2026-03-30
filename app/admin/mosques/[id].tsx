@@ -10,6 +10,15 @@ import { useAdminViewport } from '../../../lib/admin-web/useAdminViewport';
 import { resolveApiUrl, supportsServerApi } from '../../../lib/api/apiBaseUrl';
 import { removeLocalAdminMembership } from '../../../lib/api/admin/localAdminAssignments';
 import { removeMuezzinMembership } from '../../../lib/api/admin/muezzinAssignments';
+import {
+  getLiveStreamProviderProfile,
+  normalizeIcecastMountPath,
+  normalizeIngestUrl,
+  normalizeLiveStreamProvider,
+  normalizePlaybackUrl,
+  resolveLiveStreamListenerSecret,
+  resolveLiveStreamMountPath,
+} from '../../../lib/liveStreamProviders';
 import type { MosqueOption } from '../../../components/admin/web/AdminTopBar';
 import AdminShell from '../../../components/admin/web/AdminShell';
 import { AdminMetricCard, AdminPanel } from '../../../components/admin/web/AdminPrimitives';
@@ -22,6 +31,15 @@ type MosqueRow = {
   country?: string | null;
   status?: string | null;
   allow_multi_mosque_local_admins?: boolean | null;
+  live_stream_enabled?: boolean | null;
+  live_stream_provider?: string | null;
+  live_stream_playback_url?: string | null;
+  live_stream_ingest_url?: string | null;
+  live_stream_mount_path?: string | null;
+  live_stream_username?: string | null;
+  live_stream_stream_key?: string | null;
+  live_stream_status_secret?: string | null;
+  live_stream_listener_secret?: string | null;
   created_at?: string | null;
 };
 
@@ -35,19 +53,47 @@ type AssignmentUser = {
 
 type MosqueAdmin = { user_id: string; mosque_id: string };
 type MuezzinRow = { user_id: string; mosque_id: string; is_active?: boolean | null };
+type UpstreamStateRow = {
+  mosque_id: string;
+  provider_status?: string | null;
+  encoder_connected?: boolean | null;
+  playback_active?: boolean | null;
+  provider_stream_id?: string | null;
+  provider_message?: string | null;
+  last_seen_at?: string | null;
+  updated_at?: string | null;
+};
 type MosqueWorkspaceTab = 'overview' | 'admins' | 'muezzins' | 'campaigns';
+type EditMosqueMode = 'profile' | 'live-stream';
 type MosqueWorkspacePayload = {
   mosque: MosqueRow;
   mosques: MosqueRow[];
   admins: MosqueAdmin[];
   muezzins: MuezzinRow[];
   people: AssignmentUser[];
+  upstreamState: UpstreamStateRow | null;
 };
 
 function parseWorkspaceTab(value: string | string[] | undefined): MosqueWorkspaceTab {
   const raw = Array.isArray(value) ? value[0] : value;
   if (raw === 'admins' || raw === 'muezzins' || raw === 'campaigns') return raw;
   return 'overview';
+}
+
+function generateLiveStreamSecret(prefix: string) {
+  const randomId =
+    typeof globalThis !== 'undefined' && 'crypto' in globalThis && typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID().replace(/-/g, '')
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  return `${prefix}_${randomId}`;
+}
+
+function generateLiveStreamStatusSecret() {
+  return generateLiveStreamSecret('ls');
+}
+
+function generateLiveStreamListenerSecret() {
+  return generateLiveStreamSecret('ll');
 }
 
 async function loadMosqueWorkspaceViaServer(mosqueId: string): Promise<MosqueWorkspacePayload> {
@@ -85,6 +131,7 @@ async function loadMosqueWorkspaceViaServer(mosqueId: string): Promise<MosqueWor
     admins: (payload.admins ?? []) as MosqueAdmin[],
     muezzins: (payload.muezzins ?? []) as MuezzinRow[],
     people: (payload.people ?? []) as AssignmentUser[],
+    upstreamState: (payload.upstreamState ?? null) as UpstreamStateRow | null,
   };
 }
 
@@ -120,6 +167,7 @@ function MosqueProfileShell() {
   const [admins, setAdmins] = useState<MosqueAdmin[]>([]);
   const [muezzins, setMuezzins] = useState<MuezzinRow[]>([]);
   const [peopleById, setPeopleById] = useState<Record<string, AssignmentUser>>({});
+  const [upstreamState, setUpstreamState] = useState<UpstreamStateRow | null>(null);
   const [addAdminOpen, setAddAdminOpen] = useState(false);
   const [addAdminEmail, setAddAdminEmail] = useState('');
   const [addAdminDisplayName, setAddAdminDisplayName] = useState('');
@@ -131,12 +179,22 @@ function MosqueProfileShell() {
   const [addMuezzinError, setAddMuezzinError] = useState<string | null>(null);
   const [addingMuezzin, setAddingMuezzin] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editMode, setEditMode] = useState<EditMosqueMode>('profile');
   const [editForm, setEditForm] = useState({
     name: '',
     city: '',
     country: '',
     status: 'pending',
     allowMultiMosqueLocalAdmins: false,
+    liveStreamEnabled: false,
+    liveStreamProvider: 'external',
+    liveStreamPlaybackUrl: '',
+    liveStreamIngestUrl: '',
+    liveStreamMountPath: '',
+    liveStreamUsername: '',
+    liveStreamStreamKey: '',
+    liveStreamStatusSecret: '',
+    liveStreamListenerSecret: '',
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -172,6 +230,7 @@ function MosqueProfileShell() {
       setAdmins([]);
       setMuezzins([]);
       setPeopleById({});
+      setUpstreamState(null);
       try {
         const payload = await loadMosqueWorkspaceViaServer(mosqueId);
         if (!cancelled) {
@@ -179,6 +238,7 @@ function MosqueProfileShell() {
           setMosquesForSelector(payload.mosques ?? []);
           setAdmins(payload.admins ?? []);
           setMuezzins(payload.muezzins ?? []);
+          setUpstreamState(payload.upstreamState ?? null);
           setPeopleById(() => {
             const next: Record<string, AssignmentUser> = {};
             (payload.people ?? []).forEach((person) => {
@@ -211,6 +271,15 @@ function MosqueProfileShell() {
       country: mosque.country ?? '',
       status: mosque.status ?? 'pending',
       allowMultiMosqueLocalAdmins: !!mosque.allow_multi_mosque_local_admins,
+      liveStreamEnabled: !!mosque.live_stream_enabled,
+      liveStreamProvider: normalizeLiveStreamProvider(mosque.live_stream_provider),
+      liveStreamPlaybackUrl: mosque.live_stream_playback_url ?? '',
+      liveStreamIngestUrl: mosque.live_stream_ingest_url ?? '',
+      liveStreamMountPath: mosque.live_stream_mount_path ?? '',
+      liveStreamUsername: mosque.live_stream_username ?? '',
+      liveStreamStreamKey: mosque.live_stream_stream_key ?? '',
+      liveStreamStatusSecret: mosque.live_stream_status_secret ?? '',
+      liveStreamListenerSecret: mosque.live_stream_listener_secret ?? '',
     });
   }, [mosque]);
 
@@ -230,6 +299,38 @@ function MosqueProfileShell() {
   const status = mosque?.status ?? null;
   const mosqueName = mosque?.name ?? 'Mosque';
   const allowMultiMosqueLocalAdmins = !!mosque?.allow_multi_mosque_local_admins;
+  const liveStreamEnabled = !!mosque?.live_stream_enabled;
+  const liveStreamProvider = normalizeLiveStreamProvider(mosque?.live_stream_provider);
+  const liveStreamProviderProfile = getLiveStreamProviderProfile(liveStreamProvider);
+  const liveStreamPlaybackUrl = mosque?.live_stream_playback_url?.trim() || '';
+  const liveStreamIngestUrl = mosque?.live_stream_ingest_url?.trim() || '';
+  const liveStreamMountPath = mosque ? resolveLiveStreamMountPath(mosque) || '' : '';
+  const liveStreamUsername = mosque?.live_stream_username?.trim() || '';
+  const liveStreamStreamKeyConfigured = !!mosque?.live_stream_stream_key?.trim();
+  const liveStreamStatusSecret = mosque?.live_stream_status_secret?.trim() || '';
+  const liveStreamListenerSecret = mosque ? resolveLiveStreamListenerSecret(mosque) || '' : '';
+  const editProviderProfile = useMemo(
+    () => getLiveStreamProviderProfile(editForm.liveStreamProvider),
+    [editForm.liveStreamProvider]
+  );
+  const liveStreamCallbackUrl = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const resolved = supportsServerApi() ? resolveApiUrl('/api/integrations/live-stream-provider-status') : null;
+      return resolved || `${window.location.origin}/api/integrations/live-stream-provider-status`;
+    }
+    return '/api/integrations/live-stream-provider-status';
+  }, []);
+  const upstreamStatusLabel = upstreamState?.provider_status
+    ? `${upstreamState.provider_status.charAt(0).toUpperCase()}${upstreamState.provider_status.slice(1)}`
+    : 'No signal';
+  const upstreamLastSeenLabel = upstreamState?.last_seen_at
+    ? new Date(upstreamState.last_seen_at).toLocaleString([], {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
   const metaRowStyle = {
     ...styles.metaRow,
     ...(isPhone ? styles.metaRowPhone : null),
@@ -237,6 +338,20 @@ function MosqueProfileShell() {
   const idTextStyle = {
     ...styles.idText,
     ...(isPhone ? styles.idTextPhone : null),
+  };
+  const openProfileEditModal = () => {
+    setEditMode('profile');
+    setEditError(null);
+    setEditOpen(true);
+  };
+  const openLiveStreamEditModal = () => {
+    setEditMode('live-stream');
+    setEditError(null);
+    setEditOpen(true);
+  };
+  const closeEditModal = () => {
+    setEditOpen(false);
+    setEditError(null);
   };
 
   const updateSelector = (patch: Partial<MosqueRow>) => {
@@ -318,6 +433,62 @@ function MosqueProfileShell() {
       setEditError('Name is required.');
       return;
     }
+    const liveStreamProvider = normalizeLiveStreamProvider(editForm.liveStreamProvider);
+    const liveStreamProviderProfile = getLiveStreamProviderProfile(liveStreamProvider);
+    const liveStreamUsername = editForm.liveStreamUsername.trim();
+    const liveStreamStreamKey = editForm.liveStreamStreamKey.trim();
+    const liveStreamStatusSecret =
+      editForm.liveStreamStatusSecret.trim() || (editForm.liveStreamEnabled ? generateLiveStreamStatusSecret() : '');
+    const liveStreamListenerSecret =
+      editForm.liveStreamListenerSecret.trim() || (editForm.liveStreamEnabled ? generateLiveStreamListenerSecret() : '');
+
+    let liveStreamPlaybackUrl: string | null;
+    let liveStreamIngestUrl: string | null;
+    let liveStreamMountPath: string | null = null;
+    try {
+      liveStreamPlaybackUrl = normalizePlaybackUrl(editForm.liveStreamPlaybackUrl);
+      liveStreamIngestUrl = normalizeIngestUrl(liveStreamProvider, editForm.liveStreamIngestUrl);
+      liveStreamMountPath =
+        liveStreamProvider === 'icecast'
+          ? normalizeIcecastMountPath(editForm.liveStreamMountPath) ||
+            (liveStreamPlaybackUrl ? resolveLiveStreamMountPath({
+              id: mosqueId,
+              live_stream_provider: liveStreamProvider,
+              live_stream_playback_url: liveStreamPlaybackUrl,
+            }) : null)
+          : null;
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Live stream settings are invalid.');
+      return;
+    }
+
+    if (editForm.liveStreamEnabled && !liveStreamPlaybackUrl) {
+      setEditError('A playback URL is required when live streaming is active.');
+      return;
+    }
+    if (liveStreamProviderProfile.requiresIngestUrl && !liveStreamIngestUrl) {
+      setEditError(`${liveStreamProviderProfile.label} requires an ingest URL.`);
+      return;
+    }
+    if (liveStreamProviderProfile.requiresUsername && !liveStreamUsername) {
+      setEditError(`${liveStreamProviderProfile.usernameLabel ?? 'Username'} is required for ${liveStreamProviderProfile.label}.`);
+      return;
+    }
+    if (liveStreamProviderProfile.requiresStreamKey && !liveStreamStreamKey) {
+      setEditError(`${liveStreamProviderProfile.credentialLabel} is required for ${liveStreamProviderProfile.label}.`);
+      return;
+    }
+    if (liveStreamProvider === 'icecast' && !liveStreamMountPath) {
+      setEditError('Icecast requires a mount path or a playback URL with a valid path.');
+      return;
+    }
+    if (
+      liveStreamProvider === 'external' &&
+      ((liveStreamUsername || liveStreamStreamKey) && !liveStreamIngestUrl)
+    ) {
+      setEditError('Provide an ingest URL when storing external encoder credentials.');
+      return;
+    }
 
     const payload: Record<string, any> = {
       name: nextName,
@@ -325,8 +496,18 @@ function MosqueProfileShell() {
       city: editForm.city.trim() || null,
       country: editForm.country.trim() || null,
       allow_multi_mosque_local_admins: editForm.allowMultiMosqueLocalAdmins,
+      live_stream_enabled: editForm.liveStreamEnabled,
+      live_stream_provider: liveStreamProvider,
+      live_stream_playback_url: liveStreamPlaybackUrl,
+      live_stream_ingest_url: liveStreamIngestUrl,
+      live_stream_mount_path: liveStreamMountPath,
+      live_stream_username: liveStreamUsername || null,
+      live_stream_stream_key: liveStreamStreamKey || null,
+      live_stream_status_secret: liveStreamStatusSecret || null,
+      live_stream_listener_secret: liveStreamListenerSecret || null,
     };
 
+    setEditError(null);
     setSavingEdit(true);
     try {
       const { error } = await supabase.from('mosques').update(payload).eq('id', mosqueId);
@@ -373,6 +554,16 @@ function MosqueProfileShell() {
       notifySuccess('Mosque ID copied.');
     } catch {
       notifyError('Unable to copy the mosque ID in this browser.');
+    }
+  };
+
+  const handleCopyText = async (value: string, successMessage: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard?.writeText(value);
+      notifySuccess(successMessage);
+    } catch {
+      notifyError('Unable to copy this value in this browser.');
     }
   };
 
@@ -750,15 +941,43 @@ function MosqueProfileShell() {
 
       {tab === 'overview' ? (
         <div style={{ ...styles.overviewGrid, ...(isCompact ? styles.overviewGridCompact : null) }}>
-          <AdminPanel title="Core profile" subtitle="Key directory data and identifiers for this mosque.">
+          <AdminPanel
+            title="Core profile"
+            subtitle="Key directory data and identifiers for this mosque."
+            action={
+              <Button variant="ghost" onClick={openProfileEditModal}>
+                Edit profile
+              </Button>
+            }
+          >
             <div style={styles.metaList}>
+              <div style={metaRowStyle}>
+                <span>Name</span>
+                <strong>{mosqueName}</strong>
+              </div>
               <div style={metaRowStyle}>
                 <span>Status</span>
                 <Pill status={status} />
               </div>
               <div style={metaRowStyle}>
+                <span>City</span>
+                <span>{mosque?.city?.trim() || '-'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Country</span>
+                <span>{mosque?.country?.trim() || '-'}</span>
+              </div>
+              <div style={metaRowStyle}>
                 <span>Location</span>
                 <span>{locationLabel || '-'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Registered</span>
+                <span>{mosque?.created_at ? new Date(mosque.created_at).toLocaleString() : '-'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Live stream provider</span>
+                <span>{liveStreamProviderProfile.label}</span>
               </div>
               <div style={metaRowStyle}>
                 <span>Mosque ID</span>
@@ -819,6 +1038,126 @@ function MosqueProfileShell() {
               >
                 Inactive
               </Button>
+            </div>
+          </AdminPanel>
+
+          <AdminPanel
+            title="Live stream config"
+            subtitle="Each mosque needs its own playback URL for follower listening and provider-specific encoder details where required."
+            action={
+              <Button variant="ghost" onClick={openLiveStreamEditModal}>
+                Edit live stream
+              </Button>
+            }
+          >
+            <div style={styles.metaList}>
+              <div style={metaRowStyle}>
+                <span>Live streaming</span>
+                <Pill status={liveStreamEnabled ? 'active' : 'inactive'} />
+              </div>
+              <div style={metaRowStyle}>
+                <span>Provider</span>
+                <span>{liveStreamProviderProfile.label}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Playback URL</span>
+                <span style={idTextStyle}>{liveStreamPlaybackUrl || '-'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Ingest URL</span>
+                <span style={idTextStyle}>{liveStreamIngestUrl || '-'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Mount path</span>
+                <span style={idTextStyle}>{liveStreamMountPath || '-'}</span>
+              </div>
+              {liveStreamProviderProfile.usernameLabel ? (
+                <div style={metaRowStyle}>
+                  <span>{liveStreamProviderProfile.usernameLabel}</span>
+                  <span>{liveStreamUsername || '-'}</span>
+                </div>
+              ) : null}
+              <div style={metaRowStyle}>
+                <span>{liveStreamProviderProfile.credentialLabel}</span>
+                <span>{liveStreamStreamKeyConfigured ? 'Configured' : 'Not set'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Listener access secret</span>
+                <span>{liveStreamListenerSecret ? 'Configured' : 'Not set'}</span>
+              </div>
+            </div>
+            <div style={styles.helperText}>
+              {liveStreamProviderProfile.summary} Listener playback is now intended to flow through short-lived signed URLs, so each mosque should keep its listener access secret private. If this mosque is active but missing required provider credentials, the muezzin cannot start a live broadcast.
+            </div>
+            <div style={styles.inlineActions}>
+              {liveStreamMountPath ? (
+                <Button variant="ghost" onClick={() => handleCopyText(liveStreamMountPath, 'Icecast mount path copied.')}>
+                  Copy mount path
+                </Button>
+              ) : null}
+              <Button variant="ghost" onClick={() => handleCopyText(liveStreamCallbackUrl, 'Provider callback URL copied.')}>
+                Copy callback URL
+              </Button>
+              {liveStreamStatusSecret ? (
+                <Button variant="ghost" onClick={() => handleCopyText(liveStreamStatusSecret, 'Provider callback secret copied.')}>
+                  Copy callback secret
+                </Button>
+              ) : null}
+              {liveStreamListenerSecret ? (
+                <Button variant="ghost" onClick={() => handleCopyText(liveStreamListenerSecret, 'Listener access secret copied.')}>
+                  Copy listener access secret
+                </Button>
+              ) : null}
+            </div>
+            <div style={styles.metaList}>
+              <div style={metaRowStyle}>
+                <span>Provider callback URL</span>
+                <span style={idTextStyle}>{liveStreamCallbackUrl}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Callback secret</span>
+                <span>{liveStreamStatusSecret ? 'Configured' : 'Not set'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Signed listener access</span>
+                <span>{liveStreamListenerSecret ? 'Ready' : 'Needs secret'}</span>
+              </div>
+            </div>
+            <div style={styles.helperText}>
+              Configure your streaming vendor or integration middleware to `POST` to this callback with the mosque ID and callback secret so the app can reflect encoder-connected state. Listener playback is now expected to go through a short-lived signed access layer instead of exposing the raw mosque feed directly.
+            </div>
+          </AdminPanel>
+
+          <AdminPanel
+            title="Provider callback state"
+            subtitle="This reflects the latest upstream encoder or vendor signal received for this mosque."
+          >
+            <div style={styles.metaList}>
+              <div style={metaRowStyle}>
+                <span>Provider status</span>
+                <span>{upstreamStatusLabel}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Encoder connected</span>
+                <span>{upstreamState?.encoder_connected ? 'Yes' : 'No'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Playback active</span>
+                <span>{upstreamState?.playback_active ? 'Yes' : 'No'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Last provider signal</span>
+                <span>{upstreamLastSeenLabel || '-'}</span>
+              </div>
+              <div style={metaRowStyle}>
+                <span>Provider stream ID</span>
+                <span style={idTextStyle}>{upstreamState?.provider_stream_id?.trim() || '-'}</span>
+              </div>
+            </div>
+            <div style={styles.helperText}>
+              {upstreamState?.provider_message?.trim()
+                ? upstreamState.provider_message.trim()
+                : 'No provider callback has been received yet. RTMP workflows remain manual-check only until your encoder or vendor integration starts reporting state here.'}
             </div>
           </AdminPanel>
         </div>
@@ -907,55 +1246,277 @@ function MosqueProfileShell() {
         </AdminPanel>
       ) : null}
 
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Mosque">
+      <Modal
+        open={editOpen}
+        onClose={closeEditModal}
+        title={editMode === 'live-stream' ? 'Edit Live Stream Config' : 'Edit Mosque'}
+      >
         <div style={styles.modalStack}>
-          <div>
-            <label style={styles.label}>Name *</label>
-            <TextInput value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} />
-          </div>
-          <div style={{ ...styles.modalRow, ...(isPhone ? styles.modalRowPhone : null) }}>
-            <div style={{ flex: 1 }}>
-              <label style={styles.label}>City</label>
-              <TextInput value={editForm.city} onChange={(e) => setEditForm((prev) => ({ ...prev, city: e.target.value }))} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={styles.label}>Country</label>
-              <TextInput value={editForm.country} onChange={(e) => setEditForm((prev) => ({ ...prev, country: e.target.value }))} />
-            </div>
-          </div>
-          <div>
-            <label style={styles.label}>Status</label>
-            <Select value={editForm.status} onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}>
-              <option value="pending">pending</option>
-              <option value="active">active</option>
-              <option value="inactive">inactive</option>
-            </Select>
-          </div>
-          <div>
-            <label style={styles.label}>Cross-mosque local-admin access</label>
+          {editMode === 'profile' ? (
+            <>
+              <div>
+                <label style={styles.label}>Name *</label>
+                <TextInput value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} />
+              </div>
+              <div style={{ ...styles.modalRow, ...(isPhone ? styles.modalRowPhone : null) }}>
+                <div style={{ flex: 1 }}>
+                  <label style={styles.label}>City</label>
+                  <TextInput value={editForm.city} onChange={(e) => setEditForm((prev) => ({ ...prev, city: e.target.value }))} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={styles.label}>Country</label>
+                  <TextInput value={editForm.country} onChange={(e) => setEditForm((prev) => ({ ...prev, country: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label style={styles.label}>Status</label>
+                <Select value={editForm.status} onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}>
+                  <option value="pending">pending</option>
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </Select>
+              </div>
+              <div>
+                <label style={styles.label}>Cross-mosque local-admin access</label>
+                <div style={styles.toggleRow}>
+                  <Button
+                    variant={editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                    onClick={() => setEditForm((prev) => ({ ...prev, allowMultiMosqueLocalAdmins: true }))}
+                    type="button"
+                  >
+                    Active
+                  </Button>
+                  <Button
+                    variant={!editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
+                    onClick={() => setEditForm((prev) => ({ ...prev, allowMultiMosqueLocalAdmins: false }))}
+                    type="button"
+                  >
+                    Inactive
+                  </Button>
+                </div>
+                <div style={styles.helperText}>
+                  Inactive keeps this mosque&apos;s local admins exclusive to this mosque. Active allows sharing, but only with other mosques that also allow it.
+                </div>
+              </div>
+            </>
+          ) : null}
+          {editMode === 'live-stream' ? (
+            <div>
+            <label style={styles.label}>Live streaming</label>
             <div style={styles.toggleRow}>
               <Button
-                variant={editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
-                onClick={() => setEditForm((prev) => ({ ...prev, allowMultiMosqueLocalAdmins: true }))}
+                variant={editForm.liveStreamEnabled ? 'primary' : 'ghost'}
+                onClick={() => setEditForm((prev) => ({ ...prev, liveStreamEnabled: true }))}
                 type="button"
               >
                 Active
               </Button>
               <Button
-                variant={!editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'}
-                onClick={() => setEditForm((prev) => ({ ...prev, allowMultiMosqueLocalAdmins: false }))}
+                variant={!editForm.liveStreamEnabled ? 'primary' : 'ghost'}
+                onClick={() => setEditForm((prev) => ({ ...prev, liveStreamEnabled: false }))}
                 type="button"
               >
                 Inactive
               </Button>
             </div>
             <div style={styles.helperText}>
-              Inactive keeps this mosque&apos;s local admins exclusive to this mosque. Active allows sharing, but only with other mosques that also allow it.
+              Active means this mosque is ready to publish a follower-facing live audio stream.
             </div>
           </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>Live stream provider</label>
+            <Select value={editForm.liveStreamProvider} onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamProvider: e.target.value }))}>
+              <option value="external">external</option>
+              <option value="rtmp">rtmp / hls</option>
+              <option value="icecast">icecast</option>
+              <option value="test">test</option>
+            </Select>
+            <div style={styles.helperText}>
+              {editProviderProfile.summary} Use `test` only for staged verification.
+            </div>
+          </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>Live stream playback URL</label>
+            <TextInput
+              value={editForm.liveStreamPlaybackUrl}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamPlaybackUrl: e.target.value }))}
+              placeholder="https://..."
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <div style={styles.helperText}>
+              This is the audio URL listener clients will consume while the mosque is live.
+            </div>
+          </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>Icecast mount path</label>
+            <TextInput
+              value={editForm.liveStreamMountPath}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamMountPath: e.target.value }))}
+              placeholder="/live/harrow-mosque.aac"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <div style={styles.helperText}>
+              Recommended for Icecast. If you leave this blank and the playback URL already contains a path, the path is derived automatically.
+            </div>
+          </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>Live stream ingest URL</label>
+            <TextInput
+              value={editForm.liveStreamIngestUrl}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamIngestUrl: e.target.value }))}
+              placeholder={editProviderProfile.ingestProtocolHint === 'rtmp(s)' ? 'rtmp://...' : 'https://...'}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <div style={styles.helperText}>
+              {editProviderProfile.requiresIngestUrl
+                ? `Required for ${editProviderProfile.label}.`
+                : 'Optional unless your provider gave you a dedicated encoder endpoint.'}
+            </div>
+          </div>
+          ) : null}
+          {editMode === 'live-stream' && editProviderProfile.usernameLabel ? (
+            <div>
+              <label style={styles.label}>{editProviderProfile.usernameLabel}</label>
+              <TextInput
+                value={editForm.liveStreamUsername}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamUsername: e.target.value }))}
+                placeholder="Required provider username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <div style={styles.helperText}>
+                Required for provider modes that authenticate the encoder with a username.
+              </div>
+            </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>{editProviderProfile.credentialLabel}</label>
+            <TextInput
+              type="password"
+              value={editForm.liveStreamStreamKey}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamStreamKey: e.target.value }))}
+              placeholder={
+                editProviderProfile.requiresStreamKey
+                  ? `Required ${editProviderProfile.credentialLabel.toLowerCase()}`
+                  : `Optional ${editProviderProfile.credentialLabel.toLowerCase()}`
+              }
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <div style={styles.helperText}>
+              {editProviderProfile.encoderInstructions}
+            </div>
+          </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>Provider callback URL</label>
+            <TextInput value={liveStreamCallbackUrl} readOnly />
+            <div style={styles.helperText}>
+              Point your provider webhook or integration middleware to this endpoint so the app can receive encoder connection updates.
+            </div>
+          </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>Provider callback secret</label>
+            <TextInput
+              type="password"
+              value={editForm.liveStreamStatusSecret}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamStatusSecret: e.target.value }))}
+              placeholder="Generated automatically on save if left empty"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <div style={styles.helperText}>
+              Send this as `x-live-stream-secret` or `secret` in the provider callback payload. Regenerate it if vendor access changes.
+            </div>
+            <div style={styles.inlineActions}>
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    liveStreamStatusSecret: generateLiveStreamStatusSecret(),
+                  }))
+                }
+                type="button"
+              >
+                Generate secret
+              </Button>
+              {editForm.liveStreamStatusSecret ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => handleCopyText(editForm.liveStreamStatusSecret, 'Provider callback secret copied.')}
+                  type="button"
+                >
+                  Copy secret
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          ) : null}
+          {editMode === 'live-stream' ? (
+          <div>
+            <label style={styles.label}>Listener access secret</label>
+            <TextInput
+              type="password"
+              value={editForm.liveStreamListenerSecret}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, liveStreamListenerSecret: e.target.value }))}
+              placeholder="Generated automatically on save if left empty"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <div style={styles.helperText}>
+              This secret is used to mint short-lived signed playback access per mosque so follower devices do not need the raw stream URL.
+            </div>
+            <div style={styles.inlineActions}>
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    liveStreamListenerSecret: generateLiveStreamListenerSecret(),
+                  }))
+                }
+                type="button"
+              >
+                Generate secret
+              </Button>
+              {editForm.liveStreamListenerSecret ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => handleCopyText(editForm.liveStreamListenerSecret, 'Listener access secret copied.')}
+                  type="button"
+                >
+                  Copy secret
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          ) : null}
           {editError ? <div style={styles.errorBanner}>{editError}</div> : null}
           <div style={styles.inlineActions}>
-            <Button variant="ghost" onClick={() => setEditOpen(false)} disabled={savingEdit}>
+            <Button variant="ghost" onClick={closeEditModal} disabled={savingEdit}>
               Cancel
             </Button>
             <Button onClick={handleSaveEdit} disabled={savingEdit}>

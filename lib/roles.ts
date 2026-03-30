@@ -107,7 +107,7 @@ export function useRoleFlags(): RoleFlags {
         let resolvedError: string | null = null;
 
         try {
-          const access = await fetchSessionAccess();
+          const access = await fetchSessionAccess({ preferCache: true, maxAgeMs: 5 * 60_000 });
           if (cancelled) return;
 
           const isMainAdmin = !!access.isMainAdmin;

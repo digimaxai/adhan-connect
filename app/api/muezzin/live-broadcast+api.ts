@@ -1,5 +1,16 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
+import {
+  normalizeLiveStreamProvider,
+  normalizePlaybackUrl,
+  summarizeMosqueLiveBroadcastConfig,
+  type MosqueLiveStreamConfigRow,
+} from '../../../lib/liveStreamProviders';
+import { attachMosqueLiveHealthChecks } from '../../../lib/server/liveStreamHealth';
+import {
+  attachMosqueLiveUpstreamState,
+  fetchMosqueLiveStreamUpstreamState,
+} from '../../../lib/server/liveStreamUpstreamState';
 import { resolveMuezzinMosquesForUser } from '../../../lib/server/muezzinAccess';
 
 type StreamRow = {
@@ -118,6 +129,50 @@ async function fetchLatestStreamRow(
 
   if (error) throw error;
   return ((data ?? []) as StreamRow[])[0] ?? null;
+}
+
+async function fetchMosqueLiveStreamConfig(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string
+): Promise<MosqueLiveStreamConfigRow> {
+  const { data, error } = await supabaseAdmin
+    .from('mosques')
+    .select('id, name, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_username, live_stream_stream_key, live_stream_status_secret')
+    .eq('id', mosqueId)
+    .maybeSingle<MosqueLiveStreamConfigRow>();
+
+  if (error) throw error;
+  if (!data) {
+    throw new Error('The selected mosque could not be found.');
+  }
+  return data;
+}
+
+async function requireMosquePlaybackUrl(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string
+) {
+  const config = await fetchMosqueLiveStreamConfig(supabaseAdmin, mosqueId);
+  const mosqueName = config.name?.trim() || 'This mosque';
+  const summary = summarizeMosqueLiveBroadcastConfig(config);
+
+  if (!summary.streaming_enabled) {
+    throw new Error(`${mosqueName} does not have live streaming enabled yet.`);
+  }
+  if (!summary.is_ready_for_broadcast) {
+    throw new Error(summary.issues[0] ?? `${mosqueName} is not ready for broadcast.`);
+  }
+  const playbackUrl = normalizePlaybackUrl(config.live_stream_playback_url);
+  if (!playbackUrl) {
+    throw new Error(`${mosqueName} is missing a live stream playback URL.`);
+  }
+
+  return {
+    mosqueName,
+    playbackUrl,
+    provider: normalizeLiveStreamProvider(config.live_stream_provider),
+    summary,
+  };
 }
 
 function isUuid(value?: string | null) {
@@ -290,7 +345,8 @@ async function startOrCreateStream(
   supabaseAdmin: SupabaseClient<any, any, any>,
   mosqueId: string,
   prayer: string,
-  startedAt: string
+  startedAt: string,
+  playbackUrl: string
 ) {
   const existing = await fetchLatestStreamRow(supabaseAdmin, mosqueId);
 
@@ -302,6 +358,8 @@ async function startOrCreateStream(
         current_prayer: prayer,
         started_at: startedAt,
         ended_at: null,
+        stream_url: playbackUrl,
+        url: playbackUrl,
         status: 'active',
       } as any)
       .eq('id', existing.id)
@@ -315,6 +373,8 @@ async function startOrCreateStream(
       current_prayer: prayer,
       started_at: startedAt,
       ended_at: null,
+      stream_url: playbackUrl,
+      url: playbackUrl,
       status: 'active',
     };
   }
@@ -327,6 +387,8 @@ async function startOrCreateStream(
       current_prayer: prayer,
       started_at: startedAt,
       ended_at: null,
+      stream_url: playbackUrl,
+      url: playbackUrl,
       status: 'active',
     } as any)
     .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, url, status')
@@ -480,8 +542,16 @@ export const GET: RequestHandler = async (request) => {
 
   try {
     await ensureMuezzinMosqueAccess(auth.supabaseAdmin, auth.userId, mosqueId);
-    const stream = await fetchLatestStreamRow(auth.supabaseAdmin, mosqueId);
-    return json({ stream });
+    const [stream, mosqueConfig, upstreamState] = await Promise.all([
+      fetchLatestStreamRow(auth.supabaseAdmin, mosqueId),
+      fetchMosqueLiveStreamConfig(auth.supabaseAdmin, mosqueId),
+      fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId),
+    ]);
+    const config = attachMosqueLiveUpstreamState(
+      await attachMosqueLiveHealthChecks(summarizeMosqueLiveBroadcastConfig(mosqueConfig)),
+      upstreamState
+    );
+    return json({ stream, config });
   } catch (error: any) {
     const message = error?.message ?? 'Unable to load the current broadcast state.';
     const status = message === 'You do not have muezzin access to this mosque.' ? 403 : 500;
@@ -519,15 +589,26 @@ export const POST: RequestHandler = async (request) => {
       const startedAt = new Date().toISOString();
       const prayer = normalizePrayer(body.prayer);
       const scheduledAt = normalizeScheduledAt(body.scheduledAt);
-      const stream = await startOrCreateStream(auth.supabaseAdmin, mosqueId, prayer, startedAt);
+      const { playbackUrl, summary } = await requireMosquePlaybackUrl(auth.supabaseAdmin, mosqueId);
+      const stream = await startOrCreateStream(auth.supabaseAdmin, mosqueId, prayer, startedAt, playbackUrl);
       await startOrCreateAdhan(auth.supabaseAdmin, mosqueId, prayer, scheduledAt, body.adhanId ?? null, startedAt, stream?.id ?? null);
-      return json({ stream });
+      const upstreamState = await fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId);
+      const config = attachMosqueLiveUpstreamState(await attachMosqueLiveHealthChecks(summary), upstreamState);
+      return json({ stream, config });
     }
 
     const endedAt = new Date().toISOString();
-    const stream = await endCurrentStream(auth.supabaseAdmin, mosqueId, endedAt);
+    const [stream, mosqueConfig, upstreamState] = await Promise.all([
+      endCurrentStream(auth.supabaseAdmin, mosqueId, endedAt),
+      fetchMosqueLiveStreamConfig(auth.supabaseAdmin, mosqueId),
+      fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId),
+    ]);
     await completeAdhan(auth.supabaseAdmin, mosqueId, body.adhanId ?? null, endedAt);
-    return json({ stream });
+    const config = attachMosqueLiveUpstreamState(
+      await attachMosqueLiveHealthChecks(summarizeMosqueLiveBroadcastConfig(mosqueConfig)),
+      upstreamState
+    );
+    return json({ stream, config });
   } catch (error: any) {
     const message = error?.message ?? 'Unable to update the live broadcast state.';
     const status = message === 'You do not have muezzin access to this mosque.' ? 403 : 500;

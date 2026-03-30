@@ -2,6 +2,8 @@ import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+const DEFAULT_SERVER_API_TIMEOUT_MS = 1500;
+
 function normalizePath(path: string) {
   if (!path) return '/';
   if (/^https?:\/\//i.test(path)) return path;
@@ -106,6 +108,47 @@ function resolveNativeDevBaseUrl() {
 
 export function resolveApiUrl(path: string): string | null {
   return resolveApiUrls(path)[0] ?? null;
+}
+
+export function createFetchTimeoutSignal(timeoutMs = DEFAULT_SERVER_API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timeoutId),
+  };
+}
+
+export async function fetchServerApi(
+  input: string | URL,
+  init?: RequestInit,
+  timeoutMs = DEFAULT_SERVER_API_TIMEOUT_MS
+) {
+  const controller = new AbortController();
+  const timeoutError = new Error(`Server API request timed out after ${timeoutMs}ms.`);
+  timeoutError.name = 'AbortError';
+  const timeoutId = setTimeout(() => controller.abort(timeoutError), timeoutMs);
+  try {
+    return await Promise.race([
+      fetch(input, {
+        ...init,
+        signal: controller.signal,
+      }),
+      new Promise<Response>((_, reject) => {
+        const rejectId = setTimeout(() => reject(timeoutError), timeoutMs);
+        controller.signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(rejectId);
+            reject(timeoutError);
+          },
+          { once: true }
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function resolveApiUrls(path: string): string[] {

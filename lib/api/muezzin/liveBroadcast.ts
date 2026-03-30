@@ -13,8 +13,60 @@ export type LiveBroadcastStreamRow = {
   status?: string | null;
 };
 
+export type MosqueLiveBroadcastConfig = {
+  streaming_enabled: boolean;
+  provider?: string | null;
+  provider_label?: string | null;
+  provider_summary?: string | null;
+  playback_url_configured: boolean;
+  playback_url?: string | null;
+  ingest_url_configured: boolean;
+  username_configured?: boolean;
+  username_label?: string | null;
+  username?: string | null;
+  stream_key_configured: boolean;
+  credential_label?: string | null;
+  is_ready_for_broadcast: boolean;
+  is_ready_for_external_encoder: boolean;
+  supports_external_encoder?: boolean;
+  requires_ingest_url?: boolean;
+  requires_username?: boolean;
+  requires_stream_key?: boolean;
+  ingest_url?: string | null;
+  ingest_protocol_hint?: string | null;
+  stream_key?: string | null;
+  masked_stream_key?: string | null;
+  playback_health?: {
+    target: 'playback' | 'ingest';
+    status: 'reachable' | 'auth_required' | 'failing' | 'manual_check_required' | 'not_configured' | 'not_required' | 'unknown';
+    message: string;
+    url: string | null;
+    checked_at: string | null;
+    http_status: number | null;
+  } | null;
+  ingest_health?: {
+    target: 'playback' | 'ingest';
+    status: 'reachable' | 'auth_required' | 'failing' | 'manual_check_required' | 'not_configured' | 'not_required' | 'unknown';
+    message: string;
+    url: string | null;
+    checked_at: string | null;
+    http_status: number | null;
+  } | null;
+  encoder_preflight_status?: 'ready' | 'attention' | 'manual_check_required' | 'not_configured';
+  encoder_preflight_summary?: string | null;
+  upstream_status?: string | null;
+  upstream_encoder_connected?: boolean;
+  upstream_playback_active?: boolean;
+  upstream_last_seen_at?: string | null;
+  upstream_stream_id?: string | null;
+  upstream_message?: string | null;
+  encoder_instructions?: string | null;
+  issues: string[];
+};
+
 type LiveBroadcastPayload = {
   stream?: LiveBroadcastStreamRow | null;
+  config?: MosqueLiveBroadcastConfig | null;
   error?: string | null;
 };
 
@@ -59,7 +111,7 @@ async function requestLiveBroadcast(input: string | URL, init: RequestInit): Pro
   return payload;
 }
 
-export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<LiveBroadcastStreamRow | null> {
+export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<LiveBroadcastPayload> {
   const endpoints = resolveApiUrls('/api/muezzin/live-broadcast');
   if (!endpoints.length) {
     throw new Error('Could not resolve the live broadcast endpoint.');
@@ -77,7 +129,7 @@ export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<
           Authorization: `Bearer ${accessToken}`,
         },
       });
-      return payload.stream ?? null;
+      return payload;
     } catch (error: any) {
       lastError = error instanceof Error ? error : new Error(error?.message ?? String(error));
     }
@@ -86,7 +138,7 @@ export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<
   throw lastError ?? new Error('Unable to load the live broadcast state.');
 }
 
-export async function updateMuezzinLiveBroadcast(args: UpdateLiveBroadcastArgs): Promise<LiveBroadcastStreamRow | null> {
+export async function updateMuezzinLiveBroadcast(args: UpdateLiveBroadcastArgs): Promise<LiveBroadcastPayload> {
   const endpoints = resolveApiUrls('/api/muezzin/live-broadcast');
   if (!endpoints.length) {
     throw new Error('Could not resolve the live broadcast endpoint.');
@@ -111,7 +163,7 @@ export async function updateMuezzinLiveBroadcast(args: UpdateLiveBroadcastArgs):
           adhanId: args.adhanId ?? null,
         }),
       });
-      return payload.stream ?? null;
+      return payload;
     } catch (error: any) {
       lastError = error instanceof Error ? error : new Error(error?.message ?? String(error));
     }

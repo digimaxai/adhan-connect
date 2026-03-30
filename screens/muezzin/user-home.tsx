@@ -9,7 +9,6 @@ import { AppButton } from '../../components/ui/app-button';
 import { AppCard } from '../../components/ui/app-card';
 import { ScreenContainer } from '../../components/ui/screen-container';
 import { AppText } from '../../components/ui/app-text';
-import { tokens } from '../../theme/tokens';
 
 const PAGE_PADDING = 14;
 const WINDOW_START_MS = 3 * 60 * 1000;
@@ -17,7 +16,7 @@ const WINDOW_END_MS = 2 * 60 * 1000;
 
 export default function MuezzinToolsScreen() {
   const router = useRouter();
-  const { schedule, nextAssignedSlot, loading, refresh } = useMuezzinSchedule();
+  const { schedule, loading, refresh } = useMuezzinSchedule();
   const roles = useRoleFlags();
   const primaryMuezzinMosque = roles.muezzinMosques[0] ?? null;
   const hasSchedulePayload = !!schedule?.mosqueId || !!schedule?.mosqueName || !!schedule?.slots.length;
@@ -32,9 +31,15 @@ export default function MuezzinToolsScreen() {
 
   const primaryMosqueId = resolvedSchedule.mosqueId;
   const isInitialScheduleLoad = !!loading && !hasSchedulePayload;
+  const safeNextAssignedSlot = hasConcreteSlotTime(resolvedSchedule.nextAssignedSlot ?? null)
+    ? resolvedSchedule.nextAssignedSlot ?? null
+    : null;
+  const safeNextMosqueSlot = hasConcreteSlotTime(resolvedSchedule.nextMosqueSlot ?? null)
+    ? resolvedSchedule.nextMosqueSlot ?? null
+    : null;
   const nextPrayerSlot = useMemo(
-    () => nextAssignedSlot ?? resolvedSchedule.nextMosqueSlot ?? resolvedSchedule.nextAssignedSlot ?? null,
-    [nextAssignedSlot, resolvedSchedule.nextMosqueSlot, resolvedSchedule.nextAssignedSlot]
+    () => safeNextAssignedSlot ?? safeNextMosqueSlot ?? null,
+    [safeNextAssignedSlot, safeNextMosqueSlot]
   );
 
   const handleOpenLiveBroadcast = (slot: MuezzinSlot | null) => {
@@ -53,15 +58,15 @@ export default function MuezzinToolsScreen() {
   };
 
   const handleManageLivePress = () => {
-    if (nextAssignedSlot) {
+    if (safeNextAssignedSlot) {
       router.push({
         pathname: '/(muezzin)/live-broadcast',
         params: {
           mosqueId: primaryMosqueId ?? '',
-          slotId: nextAssignedSlot.id,
-          mosqueName: nextAssignedSlot.mosqueName ?? '',
-          prayerName: nextAssignedSlot.prayerName,
-          adhanTime: nextAssignedSlot.adhanTime ? nextAssignedSlot.adhanTime.toISOString() : '',
+          slotId: safeNextAssignedSlot.id,
+          mosqueName: safeNextAssignedSlot.mosqueName ?? '',
+          prayerName: safeNextAssignedSlot.prayerName,
+          adhanTime: safeNextAssignedSlot.adhanTime ? safeNextAssignedSlot.adhanTime.toISOString() : '',
         },
       });
       return;
@@ -84,7 +89,8 @@ export default function MuezzinToolsScreen() {
 
         <NextAdhanCard
           slot={nextPrayerSlot}
-          assignedSlot={nextAssignedSlot}
+          assignedSlot={safeNextAssignedSlot}
+          scheduleSlots={resolvedSchedule.slots}
           mosqueName={resolvedSchedule.mosqueName}
           loading={isInitialScheduleLoad}
           onPressStatusStrip={handleOpenLiveBroadcast}
@@ -102,12 +108,20 @@ export default function MuezzinToolsScreen() {
 interface NextAdhanCardProps {
   slot: MuezzinSlot | null;
   assignedSlot: MuezzinSlot | null;
+  scheduleSlots: MuezzinSlot[];
   mosqueName: string | null;
   loading: boolean;
   onPressStatusStrip: (slot: MuezzinSlot | null) => void;
 }
 
-const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqueName, loading, onPressStatusStrip }) => {
+const NextAdhanCard: React.FC<NextAdhanCardProps> = ({
+  slot,
+  assignedSlot,
+  scheduleSlots,
+  mosqueName,
+  loading,
+  onPressStatusStrip,
+}) => {
   const router = useRouter();
   const [now, setNow] = useState(() => new Date());
 
@@ -116,13 +130,22 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqu
     return () => clearInterval(id);
   }, []);
 
-  const liveWindowStart = slot?.liveWindowStart ?? (slot?.adhanTime ? new Date(slot.adhanTime.getTime() - WINDOW_START_MS) : null);
-  const liveWindowEnd = slot?.liveWindowEnd ?? (slot?.adhanTime ? new Date(slot.adhanTime.getTime() + WINDOW_END_MS) : null);
+  const safeAssignedSlot = hasConcreteSlotTime(assignedSlot) ? assignedSlot : null;
+  const safeSlot = hasConcreteSlotTime(slot) ? slot : null;
+  const nextAssignedFromSlots = useMemo(() => pickUpcomingSlot(scheduleSlots, now, true), [scheduleSlots, now]);
+  const nextMosqueFromSlots = useMemo(() => pickUpcomingSlot(scheduleSlots, now, false), [scheduleSlots, now]);
+  const resolvedAssignedSlot = nextAssignedFromSlots ?? safeAssignedSlot ?? (safeSlot?.isAssignedToMe ? safeSlot : null);
+  const resolvedSlot = resolvedAssignedSlot ?? nextMosqueFromSlots ?? safeSlot ?? null;
+
+  const liveWindowStart =
+    resolvedSlot?.liveWindowStart ?? (resolvedSlot?.adhanTime ? new Date(resolvedSlot.adhanTime.getTime() - WINDOW_START_MS) : null);
+  const liveWindowEnd =
+    resolvedSlot?.liveWindowEnd ?? (resolvedSlot?.adhanTime ? new Date(resolvedSlot.adhanTime.getTime() + WINDOW_END_MS) : null);
   const isAfterWindow = !!liveWindowEnd && now > liveWindowEnd;
   const liveOpensIn = liveWindowStart ? formatDuration(liveWindowStart, now) : null;
-  const countdownText = getNextAdhanCountdown(slot, now, liveWindowEnd);
-  const slotIsTomorrow = isTomorrow(slot?.adhanTime ?? null, now);
-  const activeAssignedSlot = assignedSlot ?? (slot?.isAssignedToMe ? slot : null);
+  const countdownText = getNextAdhanCountdown(resolvedSlot, now, liveWindowEnd);
+  const slotDayLabel = getFutureSlotLabel(resolvedSlot?.adhanTime ?? null, now);
+  const activeAssignedSlot = resolvedAssignedSlot ?? (resolvedSlot?.isAssignedToMe ? resolvedSlot : null);
   const assignedLiveWindowStart =
     activeAssignedSlot?.liveWindowStart ??
     (activeAssignedSlot?.adhanTime ? new Date(activeAssignedSlot.adhanTime.getTime() - WINDOW_START_MS) : null);
@@ -135,32 +158,32 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqu
     !!assignedLiveWindowEnd &&
     (now >= assignedLiveWindowStart || activeAssignedSlot.status === 'ready' || activeAssignedSlot.status === 'live') &&
     now <= assignedLiveWindowEnd;
-  const assignedSlotDiffers = !!slot && !!activeAssignedSlot && slot.id !== activeAssignedSlot.id;
+  const assignedSlotDiffers = !!resolvedSlot && !!activeAssignedSlot && resolvedSlot.id !== activeAssignedSlot.id;
 
   const statusLabel =
-    slot?.status === 'live'
+    resolvedSlot?.status === 'live'
       ? 'Live'
-      : slot?.status === 'ready'
+      : resolvedSlot?.status === 'ready'
       ? 'Ready'
-      : slot?.status === 'completed'
+      : resolvedSlot?.status === 'completed'
       ? 'Completed'
       : 'Scheduled';
 
   const statusPillStyle =
-    slot?.status === 'live'
+    resolvedSlot?.status === 'live'
       ? styles.statusPillLive
-      : slot?.status === 'ready'
+      : resolvedSlot?.status === 'ready'
       ? styles.statusPillReady
       : styles.statusPillNeutral;
-  const assignmentSummary = slot
-    ? slot.isAssignedToMe
+  const assignmentSummary = resolvedSlot
+    ? resolvedSlot.isAssignedToMe
       ? 'Assigned to you'
-      : slot.assignedMuezzinName
-      ? `Assigned to ${slot.assignedMuezzinName}`
+      : resolvedSlot.assignedMuezzinName
+      ? `Assigned to ${resolvedSlot.assignedMuezzinName}`
       : 'No muezzin assigned yet'
     : null;
-  const liveWindowSummary = !slot
-    ? 'Use test mode to verify the live broadcast flow.'
+  const liveWindowSummary = !resolvedSlot
+    ? 'No upcoming adhans are published in the timetable yet. Use test mode to verify the live broadcast flow.'
     : canManageLive
     ? 'Broadcast window is open now.'
     : isAfterWindow
@@ -186,10 +209,10 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqu
   };
 
   const resolvedMosqueName =
-    slot?.mosqueName ??
+    resolvedSlot?.mosqueName ??
     mosqueName ??
     (loading ? 'Loading assigned mosque...' : 'No mosque assigned');
-  const showLoadingState = loading && !slot;
+  const showLoadingState = loading && !resolvedSlot && !scheduleSlots.length;
 
   return (
     <AppCard padded={false} style={styles.heroCard}>
@@ -201,12 +224,12 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqu
           </AppText>
         </View>
         <View style={styles.heroBadgeWrap}>
-          {slotIsTomorrow ? (
+          {slotDayLabel ? (
             <View style={[styles.statusPill, styles.statusPillTomorrow]}>
-              <AppText variant="caption" style={styles.statusPillTomorrowText}>Tomorrow</AppText>
+              <AppText variant="caption" style={styles.statusPillTomorrowText}>{slotDayLabel}</AppText>
             </View>
           ) : null}
-          {slot ? (
+          {resolvedSlot ? (
             <View style={[styles.statusPill, statusPillStyle]}>
               <AppText variant="caption" style={styles.statusPillText}>{statusLabel}</AppText>
             </View>
@@ -228,20 +251,20 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqu
               </View>
             </View>
           </>
-        ) : slot ? (
+        ) : resolvedSlot ? (
           <>
             <View style={styles.heroPrimaryRow}>
               <View style={styles.heroPrayerPill}>
-                <AppText variant="body" style={styles.heroPrayerName}>{slot.prayerName}</AppText>
+                <AppText variant="body" style={styles.heroPrayerName}>{resolvedSlot.prayerName}</AppText>
               </View>
-              <AppText variant="hero" style={styles.heroTime}>{formatTime(slot.adhanTime)}</AppText>
+              <AppText variant="hero" style={styles.heroTime}>{formatTime(resolvedSlot.adhanTime)}</AppText>
             </View>
             {!!countdownText && <AppText variant="body" style={styles.heroCountdown}>{countdownText}</AppText>}
             <View style={styles.heroDetailsCard}>
               {assignmentSummary ? (
                 <View style={styles.heroDetailRow}>
                   <Ionicons
-                    name={slot.isAssignedToMe ? 'mic-outline' : slot.assignedMuezzinName ? 'person-outline' : 'alert-circle-outline'}
+                    name={resolvedSlot.isAssignedToMe ? 'mic-outline' : resolvedSlot.assignedMuezzinName ? 'person-outline' : 'alert-circle-outline'}
                     size={16}
                     color="#8CCBFF"
                   />
@@ -271,14 +294,16 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({ slot, assignedSlot, mosqu
         <View style={styles.heroFooterNote}>
           <AppText variant="caption" style={styles.heroFooterText}>Checking your rota and prayer times now.</AppText>
         </View>
-      ) : !slot ? (
+      ) : !resolvedSlot ? (
         <AppButton title="Start test live adhan" onPress={handleStartTest} style={styles.primaryButton} />
       ) : canManageLive ? (
         <AppButton title="Manage Live Broadcast" onPress={handleManage} style={styles.primaryButton} />
       ) : (
         <View style={styles.heroFooterNote}>
           <AppText variant="caption" style={styles.heroFooterText}>
-            {slot.isAssignedToMe ? 'You can manage this slot when the broadcast window opens.' : 'You can monitor this slot and open test mode if needed.'}
+            {resolvedSlot?.isAssignedToMe
+              ? 'You can manage this slot when the broadcast window opens.'
+              : 'You can monitor this slot and open test mode if needed.'}
           </AppText>
         </View>
       )}
@@ -406,16 +431,65 @@ function getNextAdhanCountdown(slot: MuezzinSlot | null, now: Date, liveWindowEn
   return '';
 }
 
-function isTomorrow(date: Date | null, now: Date) {
-  if (!date) return false;
+function getFutureSlotLabel(date: Date | null, now: Date) {
+  if (!date) return null;
   const tomorrow = new Date(now);
   tomorrow.setHours(0, 0, 0, 0);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  return (
+  if (
     date.getFullYear() === tomorrow.getFullYear() &&
     date.getMonth() === tomorrow.getMonth() &&
     date.getDate() === tomorrow.getDate()
-  );
+  ) {
+    return 'Tomorrow';
+  }
+
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  if (target.getTime() <= today.getTime()) {
+    return null;
+  }
+
+  return date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function pickUpcomingSlot(slots: MuezzinSlot[], now: Date, assignedOnly: boolean) {
+  const nowMs = now.getTime();
+  const prayerOrder: MuezzinSlot['prayerName'][] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+  return [...slots]
+    .filter((slot) => hasConcreteSlotTime(slot))
+    .filter((slot) => !assignedOnly || slot.isAssignedToMe)
+    .filter((slot) => {
+      const cutoff = slot.liveWindowEnd?.getTime() ?? slot.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      return cutoff >= nowMs;
+    })
+    .sort((left, right) => {
+      const leftOpen =
+        !!left.liveWindowStart &&
+        !!left.liveWindowEnd &&
+        nowMs >= left.liveWindowStart.getTime() &&
+        nowMs <= left.liveWindowEnd.getTime();
+      const rightOpen =
+        !!right.liveWindowStart &&
+        !!right.liveWindowEnd &&
+        nowMs >= right.liveWindowStart.getTime() &&
+        nowMs <= right.liveWindowEnd.getTime();
+
+      if (leftOpen !== rightOpen) return leftOpen ? -1 : 1;
+
+      const leftTime = left.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const rightTime = right.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      if (leftTime !== rightTime) return leftTime - rightTime;
+
+      return prayerOrder.indexOf(left.prayerName) - prayerOrder.indexOf(right.prayerName);
+    })[0] ?? null;
+}
+
+function hasConcreteSlotTime(slot: MuezzinSlot | null | undefined) {
+  return !!slot?.adhanTime || !!slot?.liveWindowStart || !!slot?.liveWindowEnd;
 }
 
 const styles = StyleSheet.create({

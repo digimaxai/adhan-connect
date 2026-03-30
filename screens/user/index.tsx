@@ -1,15 +1,16 @@
 // app/(tabs)/index.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../../lib/auth';
 import {
   AdhanBroadcast,
-  PrayerName,
   canStartBroadcast,
   fetchUpcomingBroadcasts,
   formatTimeWithTz,
+  labelForPrayer,
+  PrayerName,
   statusBadge,
 } from '../../lib/adhans';
 import { useRoleFlags } from '../../lib/roles';
@@ -21,7 +22,9 @@ import { ScreenContainer } from '../../components/ui/screen-container';
 import { AppText } from '../../components/ui/app-text';
 import { getDefaultMosqueId } from '../../lib/mosquePreferences';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
-import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
+import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/prayerTimesUnified';
+import { computeNextPrayerSummaryAcrossDays, mapNormalizedPrayerTimesToDisplay } from '../../lib/prayerTimesDisplay';
+import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
 import { tokens } from '../../theme/tokens';
 
 type Mosque = { id: string; name: string; city?: string | null; country?: string | null; status?: string | null };
@@ -33,16 +36,20 @@ type StreamRow = {
   is_live: boolean;
   status?: string | null;
   started_at?: string | null;
+  current_prayer?: string | null;
 };
-type PrayerTimes = Partial<Record<PrayerName, string | null>>;
 
-const fallbackTimes: Record<PrayerName, string> = {
-  fajr: '05:18',
-  dhuhr: '12:58',
-  asr: '15:27',
-  maghrib: '17:42',
-  isha: '19:05',
-};
+const LIVE_REFRESH_MS = 15000;
+
+function buildLiveStreamMap(rows: StreamRow[] | null | undefined) {
+  const map: Record<string, StreamRow> = {};
+  (rows ?? []).forEach((stream) => {
+    if (isFreshLiveStream(stream) && !map[stream.mosque_id]) {
+      map[stream.mosque_id] = stream;
+    }
+  });
+  return map;
+}
 
 const formatHm = (val?: string | null) => {
   if (!val) return '--:--';
@@ -60,13 +67,16 @@ export default function HomeScreen() {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [liveStreams, setLiveStreams] = useState<Record<string, StreamRow>>({});
   const [nextBroadcast, setNextBroadcast] = useState<AdhanBroadcast | null>(null);
-  const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
+  const [prayerTimes, setPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
+  const [nextDayPrayerTimes, setNextDayPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
+  const [prayerLoading, setPrayerLoading] = useState(false);
   const [prayerError, setPrayerError] = useState<string | null>(null);
   const [muezzinLoading, setMuezzinLoading] = useState(false);
   const [muezzinError, setMuezzinError] = useState<string | null>(null);
-  const [nextPrayer, setNextPrayer] = useState<ReturnType<typeof computeNextPrayer> | null>(null);
   const [defaultMosqueId, setDefaultMosqueId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const prayerRequestIdRef = useRef(0);
   const staffPrimaryMosqueId = useMemo(
     () => (roles.isMainAdmin ? null : roles.primaryAdminMosqueId ?? roles.primaryMuezzinMosqueId ?? null),
     [roles.isMainAdmin, roles.primaryAdminMosqueId, roles.primaryMuezzinMosqueId]
@@ -101,18 +111,14 @@ export default function HomeScreen() {
         : Promise.resolve({ data: [] as Subscription[], error: null }),
       supabase
         .from('streams')
-        .select('id, mosque_id, type, is_live, status, started_at')
+        .select('id, mosque_id, type, is_live, status, started_at, current_prayer')
         .eq('is_live', true)
         .order('started_at', { ascending: false, nullsFirst: false }),
     ]);
     if (!mosqueRes.error && mosqueRes.data) setMosques(mosqueRes.data);
     if (!subsRes.error && subsRes.data) setSubs(subsRes.data);
     if (!streamsRes.error && streamsRes.data) {
-      const map: Record<string, StreamRow> = {};
-      (streamsRes.data as StreamRow[]).forEach((s) => {
-        if (s.is_live && !map[s.mosque_id]) map[s.mosque_id] = s;
-      });
-      setLiveStreams(map);
+      setLiveStreams(buildLiveStreamMap(streamsRes.data as StreamRow[]));
     } else {
       setLiveStreams({});
     }
@@ -124,18 +130,38 @@ export default function HomeScreen() {
 
   const loadPrayerTimes = React.useCallback(
     async (mosqueId?: string | null) => {
+      const requestId = ++prayerRequestIdRef.current;
       if (!mosqueId) {
-        setPrayerTimes(null);
-        setPrayerError(null);
+        if (requestId === prayerRequestIdRef.current) {
+          setPrayerTimes(null);
+          setNextDayPrayerTimes(null);
+          setPrayerError(null);
+          setPrayerLoading(false);
+        }
         return;
       }
       try {
-        const normalized = await getDailyPrayerTimes(mosqueId, new Date());
+        setPrayerLoading(true);
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const [normalized, normalizedTomorrow] = await Promise.all([
+          getDailyPrayerTimes(mosqueId, today),
+          getDailyPrayerTimes(mosqueId, tomorrow),
+        ]);
+        if (requestId !== prayerRequestIdRef.current) return;
         setPrayerError(null);
-        setPrayerTimes(mapNormalizedToLegacyShape(normalized));
+        setPrayerTimes(normalized);
+        setNextDayPrayerTimes(normalizedTomorrow);
       } catch {
+        if (requestId !== prayerRequestIdRef.current) return;
         setPrayerError('Could not load prayer times.');
         setPrayerTimes(null);
+        setNextDayPrayerTimes(null);
+      } finally {
+        if (requestId === prayerRequestIdRef.current) {
+          setPrayerLoading(false);
+        }
       }
     },
     []
@@ -181,6 +207,41 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
+    if (roles.isMuezzin) return;
+
+    let cancelled = false;
+    const refresh = () => {
+      if (!cancelled) {
+        void loadHomeData();
+      }
+    };
+
+    const channel = supabase.channel(`listener-home-live-${userId ?? 'guest'}`);
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'streams' }, refresh);
+    if (userId) {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions', filter: `user_id=eq.${userId}` },
+        refresh
+      );
+    }
+    channel.subscribe();
+
+    const pollId = setInterval(refresh, LIVE_REFRESH_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollId);
+      supabase.removeChannel(channel);
+    };
+  }, [loadHomeData, roles.isMuezzin, userId]);
+
+  useEffect(() => {
+    const id = setInterval(() => setClockMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     if (!defaultMosqueId) return;
     if (mosques.find((m) => m.id === defaultMosqueId)) return;
     let cancelled = false;
@@ -203,70 +264,49 @@ export default function HomeScreen() {
     loadMuezzin();
   }, [loadMuezzin]);
 
-  const mapNormalizedToLegacyShape = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
-    if (!normalized) return null;
-    const toHm = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null);
-    const mapped: PrayerTimes = {};
-    (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
-      mapped[name] = toHm(normalized?.[name]?.adhan ?? null);
-    });
-    return mapped;
-  };
-
   useEffect(() => {
     loadPrayerTimes(primaryMosque?.id);
   }, [loadPrayerTimes, primaryMosque?.id]);
-
-  const computeNextPrayer = (times: PrayerTimes | null) => {
-    const now = new Date();
-    const entries: { name: PrayerName; time: string }[] = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
-      .map((name) => ({ name, time: (times?.[name] as string) ?? fallbackTimes[name] }))
-      .filter((p) => p.time);
-
-    const toDate = (timeStr: string, carryNextDay = false) => {
-      const [h, m] = timeStr.split(':').map((t) => parseInt(t, 10));
-      const d = new Date();
-      d.setHours(h, m, 0, 0);
-      if (carryNextDay && d <= now) d.setDate(d.getDate() + 1);
-      return d;
-    };
-
-    const upcoming = entries
-      .map((p) => ({ ...p, when: toDate(p.time) }))
-      .filter((p) => p.when > now)
-      .sort((a, b) => a.when.getTime() - b.when.getTime());
-
-    const chosen = upcoming[0] ?? (entries.length ? { ...entries[0], when: toDate(entries[0].time, true) } : null);
-    if (!chosen) return null;
-
-    const diffMs = chosen.when.getTime() - now.getTime();
-    const diffMin = Math.max(0, Math.floor(diffMs / 60000));
-    const hours = Math.floor(diffMin / 60)
-      .toString()
-      .padStart(2, '0');
-    const minutes = (diffMin % 60).toString().padStart(2, '0');
-
-    return {
-      name: chosen.name,
-      label: formatTimeWithTz({
-        id: '',
-        mosque_id: '',
-        status: 'scheduled',
-        prayer: chosen.name,
-        scheduled_for: chosen.when.toISOString(),
-      }),
-      remaining: `${hours}:${minutes}`,
-    };
-  };
-
-  useEffect(() => {
-    setNextPrayer(computeNextPrayer(prayerTimes));
-    const id = setInterval(() => setNextPrayer(computeNextPrayer(prayerTimes)), 1000);
-    return () => clearInterval(id);
-  }, [prayerTimes]);
+  const prayerTimesDisplay = useMemo(() => mapNormalizedPrayerTimesToDisplay(prayerTimes), [prayerTimes]);
+  const nextPrayer = useMemo(
+    () => computeNextPrayerSummaryAcrossDays(prayerTimes, nextDayPrayerTimes, new Date(clockMs)),
+    [clockMs, prayerTimes, nextDayPrayerTimes]
+  );
+  const freshLiveStreams = useMemo(() => {
+    const next: Record<string, StreamRow> = {};
+    Object.entries(liveStreams).forEach(([mosqueId, stream]) => {
+      if (isFreshLiveStream(stream, clockMs)) {
+        next[mosqueId] = stream;
+      }
+    });
+    return next;
+  }, [clockMs, liveStreams]);
 
   const topPad = Platform.OS === 'android' ? 8 : 0;
   const liveInfo = useLiveStreamForMosque(primaryMosque?.id);
+  const primaryLiveStream = primaryMosque ? freshLiveStreams[primaryMosque.id] ?? null : null;
+  const primaryIsLive = !!primaryLiveStream || liveInfo.isLive;
+  const primaryLivePrayerLabel = useMemo(() => {
+    const rawPrayer = liveInfo.currentAdhan?.prayer ?? primaryLiveStream?.current_prayer ?? null;
+    if (!rawPrayer) return 'Adhan';
+    const normalized = rawPrayer.toString().trim().toLowerCase();
+    if (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].includes(normalized)) {
+      return labelForPrayer(normalized as PrayerName);
+    }
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }, [liveInfo.currentAdhan?.prayer, primaryLiveStream?.current_prayer]);
+  const primaryLiveStartedLabel = useMemo(() => {
+    const startedAt = primaryLiveStream?.started_at ?? liveInfo.currentAdhan?.started_at ?? null;
+    if (!startedAt) return 'Broadcasting now';
+    return `Started ${new Date(startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  }, [liveInfo.currentAdhan?.started_at, primaryLiveStream?.started_at]);
+  const liveMosqueIds = useMemo(() => {
+    const ids = new Set(Object.keys(freshLiveStreams));
+    if (primaryMosque?.id && primaryIsLive) {
+      ids.add(primaryMosque.id);
+    }
+    return ids;
+  }, [freshLiveStreams, primaryMosque?.id, primaryIsLive]);
 
   const MuezzinHero = () => {
     const broadcast = nextBroadcast;
@@ -357,30 +397,40 @@ export default function HomeScreen() {
           {subs
             .map((s) => mosques.find((m) => m.id === s.mosque_id))
             .filter(Boolean)
-            .map((m) => (
-              <Pressable
-                key={m!.id}
-                style={styles.mosqueChip}
-                onPress={() =>
-                  router.push({
-                    pathname: '/mosque/[id]',
-                    params: { id: m!.id, name: m!.name, city: m!.city ?? '', country: m!.country ?? '' },
-                  })
-                }
-              >
-                <View style={styles.mosqueAvatar}>
-                  <AppText style={styles.mosqueAvatarText}>{m!.name.slice(0, 2).toUpperCase()}</AppText>
-                </View>
-                <AppText style={styles.mosqueLabel} numberOfLines={1}>
-                  {m!.name}
-                </AppText>
-                {m!.city ? (
-                  <AppText variant="caption" style={styles.mosqueCity} numberOfLines={1}>
-                    {m!.city}
+            .map((m) => {
+              const isLive = liveMosqueIds.has(m!.id);
+              return (
+                <Pressable
+                  key={m!.id}
+                  style={styles.mosqueChip}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/mosque/[id]',
+                      params: { id: m!.id, name: m!.name, city: m!.city ?? '', country: m!.country ?? '' },
+                    })
+                  }
+                >
+                  <View style={styles.mosqueAvatar}>
+                    <AppText style={styles.mosqueAvatarText}>{m!.name.slice(0, 2).toUpperCase()}</AppText>
+                  </View>
+                  <AppText style={styles.mosqueLabel} numberOfLines={1}>
+                    {m!.name}
                   </AppText>
-                ) : null}
-              </Pressable>
-            ))}
+                  {m!.city ? (
+                    <AppText variant="caption" style={styles.mosqueCity} numberOfLines={1}>
+                      {m!.city}
+                    </AppText>
+                  ) : null}
+                  {isLive ? (
+                    <View style={styles.mosqueLiveBadge}>
+                      <AppText variant="caption" color={tokens.color.text.inverse} style={styles.mosqueLiveBadgeText}>
+                        LIVE
+                      </AppText>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
         </ScrollView>
       ) : (
         <View style={{ paddingTop: 6 }}>
@@ -412,7 +462,7 @@ export default function HomeScreen() {
     );
   }
 
-  const otherLive = Object.entries(liveStreams).filter(
+  const otherLive = Object.entries(freshLiveStreams).filter(
     ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
   );
 
@@ -435,6 +485,13 @@ export default function HomeScreen() {
           disabled={!primaryMosque}
           onPress={() => {
             if (primaryMosque) {
+              if (primaryIsLive) {
+                router.push({
+                  pathname: '/(user)/now',
+                  params: { mosqueId: primaryMosque.id },
+                });
+                return;
+              }
               router.push({
                 pathname: '/mosque/[id]',
                 params: { id: primaryMosque.id, name: primaryMosque.name, city: primaryMosque.city ?? '', country: primaryMosque.country ?? '' },
@@ -448,7 +505,7 @@ export default function HomeScreen() {
         >
           <View style={{ gap: 4 }}>
             <AppText variant="label" style={styles.eyebrow}>
-              Next Prayer
+              {primaryIsLive ? 'Live Broadcast' : 'Next Prayer'}
             </AppText>
             {primaryMosque?.name ? (
               <AppText variant="heroSubtle" style={styles.heroSource}>
@@ -458,15 +515,29 @@ export default function HomeScreen() {
           </View>
           <View style={{ gap: 6, marginTop: 10 }}>
             <AppText variant="hero" style={styles.nextTime}>
-              {nextPrayer?.label ?? '05:18'}
+              {primaryIsLive ? 'LIVE' : prayerLoading ? 'Loading...' : nextPrayer?.label ?? '--:--'}
             </AppText>
             <AppText style={styles.nextName}>
-              {nextPrayer?.name ? nextPrayer.name.charAt(0).toUpperCase() + nextPrayer.name.slice(1) : 'Fajr'}
+              {primaryIsLive
+                ? primaryLivePrayerLabel
+                : prayerLoading
+                ? 'Loading prayer times'
+                : nextPrayer?.name
+                ? labelForPrayer(nextPrayer.name)
+                : 'Prayer times unavailable'}
             </AppText>
-            <AppText style={styles.nextEta}>{nextPrayer?.remaining ? `In ${nextPrayer.remaining}` : 'In 06:49'}</AppText>
+            <AppText style={styles.nextEta}>
+              {primaryIsLive
+                ? primaryLiveStartedLabel
+                : prayerLoading
+                ? 'Checking today\'s schedule...'
+                : nextPrayer?.remaining
+                ? `In ${nextPrayer.remaining}`
+                : prayerError ?? 'Pull to refresh'}
+            </AppText>
           </View>
           <View style={{ marginTop: 12 }}>
-            {liveInfo.isLive ? (
+            {primaryIsLive ? (
               <View style={styles.heroLiveRow}>
                 <View style={styles.liveBadge}>
                   <Text style={styles.liveBadgeText}>LIVE</Text>
@@ -502,14 +573,20 @@ export default function HomeScreen() {
             </AppText>
           ) : null}
           <View style={styles.titleDivider} />
-          <View style={styles.prayerTable}>
-            {(['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).map((p) => (
-              <View key={p} style={styles.prayerRow}>
-                <AppText style={styles.prayerName}>{p.charAt(0).toUpperCase() + p.slice(1)}</AppText>
-                <AppText style={styles.prayerTimeText}>{formatHm(prayerTimes?.[p] as string) ?? fallbackTimes[p]}</AppText>
-              </View>
-            ))}
-          </View>
+          {prayerLoading && !prayerTimesDisplay ? (
+            <AppText variant="caption" style={styles.cardSubtitle}>
+              Loading today&apos;s prayer times...
+            </AppText>
+          ) : (
+            <View style={styles.prayerTable}>
+              {(['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).map((p) => (
+                <View key={p} style={styles.prayerRow}>
+                  <AppText style={styles.prayerName}>{p.charAt(0).toUpperCase() + p.slice(1)}</AppText>
+                  <AppText style={styles.prayerTimeText}>{formatHm(prayerTimesDisplay?.[p] as string)}</AppText>
+                </View>
+              ))}
+            </View>
+          )}
           {prayerError && <AppText style={styles.errorText}>{prayerError}</AppText>}
         </AppCard>
 
@@ -633,6 +710,19 @@ const styles = StyleSheet.create({
   mosqueAvatarText: { fontWeight: '800', color: '#0369A1', fontSize: 14 },
   mosqueLabel: { fontWeight: '700', fontSize: 13, color: '#0F172A', textAlign: 'center' },
   mosqueCity: { color: '#7A8290', fontSize: 12, textAlign: 'center' },
+  mosqueLiveBadge: {
+    marginTop: 4,
+    backgroundColor: '#F53B57',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  mosqueLiveBadgeText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 0.2,
+  },
 
   prayerTable: { marginTop: 8, gap: 8 },
   prayerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, minHeight: 44 },

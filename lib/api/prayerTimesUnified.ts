@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import { PrayerName } from '../adhans';
-import { resolveApiUrls, supportsServerApi } from './apiBaseUrl';
+import { fetchServerApi, resolveApiUrls, supportsServerApi } from './apiBaseUrl';
 
 export type PrayerTimeSlot = { adhan: Date | null; iqama: Date | null };
 export type NormalizedPrayerTimes = Record<PrayerName, PrayerTimeSlot>;
@@ -86,7 +86,7 @@ async function loadDailyPrayerTimesViaServer(mosqueId: string, dateIso: string):
       url.searchParams.set('mosqueId', mosqueId);
       url.searchParams.set('date', dateIso);
 
-      const response = await fetch(url.toString());
+      const response = await fetchServerApi(url.toString());
       const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
       const payload = await response.json().catch(() => null);
       if (!response.ok) {

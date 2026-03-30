@@ -110,12 +110,14 @@ export const Modal: React.FC<{
       <div
         style={{
           width: 'min(560px, 94vw)',
+          maxHeight: 'min(88vh, 960px)',
           background: '#fff',
           borderRadius: 18,
           border: '1px solid #e2e8f0',
           boxShadow: '0 12px 30px rgba(0,0,0,0.14)',
           padding: 24,
           boxSizing: 'border-box',
+          overflowY: 'auto',
         }}
         onClick={(e) => e.stopPropagation()}
       >

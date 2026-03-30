@@ -1,4 +1,4 @@
-import { resolveApiUrls, supportsServerApi } from './api/apiBaseUrl';
+import { fetchServerApi, resolveApiUrls, supportsServerApi } from './api/apiBaseUrl';
 import { persistentStorage } from './persistentStorage';
 import { supabase } from './supabase';
 
@@ -91,8 +91,6 @@ export async function clearSessionAccessCache(userId: string | null) {
   }
 }
 
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 function isSessionAccessPayload(value: unknown): value is SessionAccessPayload {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Record<string, unknown>;
@@ -135,53 +133,48 @@ export async function fetchSessionAccess(options?: { preferCache?: boolean; maxA
   }
 
   const fetchPromise = (async () => {
-  let lastError: string | null = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      for (const endpoint of endpoints) {
-        try {
-          const response = await fetch(endpoint, {
-            headers: {
-              Authorization: `Bearer ${sessionData.session.access_token}`,
-            },
-          });
+    let lastError: string | null = null;
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetchServerApi(endpoint, {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+        });
 
-          const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-          const payload = await response.json().catch(() => null);
-          if (!response.ok) {
-            lastError =
-              (payload && typeof payload === 'object' && 'error' in payload && typeof (payload as any).error === 'string'
+        const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          lastError =
+            (payload && typeof payload === 'object' && 'error' in payload && typeof (payload as any).error === 'string'
+              ? (payload as any).error
+              : null) || `Unable to resolve the current session access at ${endpoint}.`;
+          console.warn('[fetchSessionAccess] non-ok response', {
+            endpoint,
+            status: response.status,
+            statusText: response.statusText,
+            error:
+              payload && typeof payload === 'object' && 'error' in payload && typeof (payload as any).error === 'string'
                 ? (payload as any).error
-                : null) || `Unable to resolve the current session access at ${endpoint}.`;
-            console.warn('[fetchSessionAccess] non-ok response', {
-              endpoint,
-              status: response.status,
-              statusText: response.statusText,
-              error:
-                payload && typeof payload === 'object' && 'error' in payload && typeof (payload as any).error === 'string'
-                  ? (payload as any).error
-                  : null,
-            });
-            continue;
-          }
-
-          if (!contentType.includes('application/json') || !isSessionAccessPayload(payload)) {
-            lastError = `Unexpected session access payload at ${endpoint}.`;
-            console.warn('[fetchSessionAccess] unexpected payload', {
-              endpoint,
-              status: response.status,
-              contentType,
-            });
-            continue;
-          }
-
-          await cacheSessionAccess(userId, payload);
-          return payload;
-        } catch (error: any) {
-          lastError = error?.message ?? 'Unable to resolve the current session access.';
+                : null,
+          });
+          continue;
         }
-      }
-      if (attempt < 2) {
-        await wait((attempt + 1) * 500);
+
+        if (!contentType.includes('application/json') || !isSessionAccessPayload(payload)) {
+          lastError = `Unexpected session access payload at ${endpoint}.`;
+          console.warn('[fetchSessionAccess] unexpected payload', {
+            endpoint,
+            status: response.status,
+            contentType,
+          });
+          continue;
+        }
+
+        await cacheSessionAccess(userId, payload);
+        return payload;
+      } catch (error: any) {
+        lastError = error?.message ?? 'Unable to resolve the current session access.';
       }
     }
 

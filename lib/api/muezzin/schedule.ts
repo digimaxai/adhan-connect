@@ -2,7 +2,7 @@ import { supabase } from '../../supabase';
 import { LiveStatus, MuezzinSchedule, MuezzinSlot, PrayerName, RotaPrayerName, StaffRotaEntry } from '../../types/muezzin';
 import { getDailyPrayerTimes } from '../prayerTimesUnified';
 import { getMuezzinPrimaryMosque } from '../../liveAdhan';
-import { resolveApiUrls, supportsServerApi } from '../apiBaseUrl';
+import { fetchServerApi, resolveApiUrls, supportsServerApi } from '../apiBaseUrl';
 
 function logMuezzinApiTrace(stage: string, details?: Record<string, unknown>) {
   if (!__DEV__) return;
@@ -63,6 +63,7 @@ const PRAYERS: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 const ROTA_PRAYERS: RotaPrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 const WINDOW_START_MS = 3 * 60 * 1000;
 const WINDOW_END_MS = 2 * 60 * 1000;
+const FUTURE_LOOKAHEAD_DAYS = 14;
 
 const toDate = (value?: string | Date | null): Date | null => {
   if (!value) return null;
@@ -120,7 +121,7 @@ async function loadRotaWorkspaceForRange(startDate: Date, endDate: Date): Promis
       url.searchParams.set('start', startIso);
       url.searchParams.set('end', endIso);
 
-      const response = await fetch(url.toString(), {
+      const response = await fetchServerApi(url.toString(), {
         headers: {
           Authorization: `Bearer ${sessionData.session.access_token}`,
         },
@@ -403,9 +404,14 @@ function getSlotStatus(
   return 'scheduled';
 }
 
+function hasConcreteSlotTime(slot: MuezzinPrayerSlot | null | undefined) {
+  return !!slot?.adhanTime || !!slot?.liveWindowStart || !!slot?.liveWindowEnd;
+}
+
 function pickNextAssignedSlot(slots: MuezzinPrayerSlot[], now: Date) {
   const nowMs = now.getTime();
   const actionable = slots
+    .filter((slot) => hasConcreteSlotTime(slot))
     .filter((slot) => slot.isAssignedToMe)
     .filter((slot) => (slot.liveWindowEnd?.getTime() ?? slot.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER) >= nowMs)
     .sort((a, b) => (a.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER));
@@ -415,6 +421,7 @@ function pickNextAssignedSlot(slots: MuezzinPrayerSlot[], now: Date) {
 function pickNextMosqueSlot(slots: MuezzinPrayerSlot[], now: Date) {
   const nowMs = now.getTime();
   const actionable = slots
+    .filter((slot) => hasConcreteSlotTime(slot))
     .filter((slot) => (slot.liveWindowEnd?.getTime() ?? slot.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER) >= nowMs)
     .sort((a, b) => (a.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER));
   return actionable[0] ?? null;
@@ -633,14 +640,16 @@ export async function getMuezzinScheduleForToday(): Promise<{
     let nextAssignedSlot = pickNextAssignedSlot(slots, now);
     let nextMosqueSlot = pickNextMosqueSlot(slots, now);
     if (!nextAssignedSlot || !nextMosqueSlot) {
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowSlots = await buildSlotsForDate(resolvedMosqueId, mosqueName, user.id, tomorrow);
-      if (!nextAssignedSlot) {
-        nextAssignedSlot = pickNextAssignedSlot(tomorrowSlots, now);
-      }
-      if (!nextMosqueSlot) {
-        nextMosqueSlot = pickNextMosqueSlot(tomorrowSlots, now);
+      for (let offset = 1; offset <= FUTURE_LOOKAHEAD_DAYS && (!nextAssignedSlot || !nextMosqueSlot); offset += 1) {
+        const futureDate = new Date(today);
+        futureDate.setDate(futureDate.getDate() + offset);
+        const futureSlots = await buildSlotsForDate(resolvedMosqueId, mosqueName, user.id, futureDate);
+        if (!nextAssignedSlot) {
+          nextAssignedSlot = pickNextAssignedSlot(futureSlots, now);
+        }
+        if (!nextMosqueSlot) {
+          nextMosqueSlot = pickNextMosqueSlot(futureSlots, now);
+        }
       }
     }
 

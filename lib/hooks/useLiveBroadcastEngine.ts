@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { PrayerName } from '../adhans';
 import {
   fetchMuezzinLiveBroadcastState,
+  type MosqueLiveBroadcastConfig,
   type LiveBroadcastStreamRow,
   updateMuezzinLiveBroadcast,
 } from '../api/muezzin/liveBroadcast';
@@ -29,11 +30,12 @@ export type LiveBroadcastEngineState = {
   canStart: boolean;
   mosqueId: string | null;
   stream: StreamRow | null;
+  config: MosqueLiveBroadcastConfig | null;
   loading: boolean;
   errorMessage: string | null;
   timeUntilSeconds: number | null;
-  startBroadcast: () => Promise<void>;
-  endBroadcast: () => Promise<void>;
+  startBroadcast: () => Promise<boolean>;
+  endBroadcast: () => Promise<boolean>;
 };
 
 const WINDOW_BEFORE_MS = 3 * 60 * 1000;
@@ -45,13 +47,17 @@ function normalizeStreamRow(stream: LiveBroadcastStreamRow | null): StreamRow | 
 
 export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: MuezzinScheduleEntry | null): LiveBroadcastEngineState {
   const [stream, setStream] = useState<StreamRow | null>(null);
+  const [config, setConfig] = useState<MosqueLiveBroadcastConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const scheduledAt = nextAdhan?.scheduled_at ? new Date(nextAdhan.scheduled_at) : null;
+  const scheduledAt = useMemo(() => {
+    if (!nextAdhan?.scheduled_at) return null;
+    return new Date(nextAdhan.scheduled_at);
+  }, [nextAdhan?.scheduled_at]);
   const windowStart = scheduledAt ? scheduledAt.getTime() - WINDOW_BEFORE_MS : null;
   const windowEnd = scheduledAt ? scheduledAt.getTime() + WINDOW_AFTER_MS : null;
 
@@ -64,15 +70,17 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
     let cancelled = false;
     if (!mosqueId) {
       setStream(null);
+      setConfig(null);
       setErrorMessage(null);
       return;
     }
 
     const fetchStream = async (showRetryBanner = true) => {
       try {
-        const data = await fetchMuezzinLiveBroadcastState(mosqueId);
+        const payload = await fetchMuezzinLiveBroadcastState(mosqueId);
         if (!cancelled) {
-          setStream(normalizeStreamRow(data));
+          setStream(normalizeStreamRow(payload.stream ?? null));
+          setConfig(payload.config ?? null);
           setErrorMessage(null);
         }
       } catch (err: any) {
@@ -130,15 +138,15 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
   const startBroadcast = async () => {
     if (!mosqueId) {
       setErrorMessage('Missing mosque information.');
-      return;
+      return false;
     }
     if (!nextAdhan) {
       setErrorMessage('No upcoming adhan found.');
-      return;
+      return false;
     }
     if (!derived.canStart) {
       setErrorMessage('You can start within the live window.');
-      return;
+      return false;
     }
 
     setLoading(true);
@@ -153,19 +161,22 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
         scheduledAt: nextAdhan.scheduled_at ?? null,
         adhanId: nextAdhan.id ?? null,
       });
-      setStream(normalizeStreamRow(streamRow));
+      setStream(normalizeStreamRow(streamRow.stream ?? null));
+      setConfig(streamRow.config ?? null);
       setErrorMessage(null);
+      return true;
     } catch (err: any) {
       const msg = err?.message ?? err;
       console.warn('[useLiveBroadcastEngine] start', msg);
-      setErrorMessage('Unable to update live status. Please try again.');
+      setErrorMessage(typeof msg === 'string' && msg.trim().length > 0 ? msg : 'Unable to update live status. Please try again.');
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
   const endBroadcast = async () => {
-    if (!mosqueId) return;
+    if (!mosqueId) return false;
     setLoading(true);
     setErrorMessage(null);
     try {
@@ -174,11 +185,15 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
         mosqueId,
         adhanId: nextAdhan?.id ?? null,
       });
-      setStream(normalizeStreamRow(streamRow));
+      setStream(normalizeStreamRow(streamRow.stream ?? null));
+      setConfig(streamRow.config ?? null);
       setErrorMessage(null);
+      return true;
     } catch (err: any) {
-      console.warn('[useLiveBroadcastEngine] end', err?.message ?? err);
-      setErrorMessage('Unable to update live status. Please try again.');
+      const msg = err?.message ?? err;
+      console.warn('[useLiveBroadcastEngine] end', msg);
+      setErrorMessage(typeof msg === 'string' && msg.trim().length > 0 ? msg : 'Unable to update live status. Please try again.');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -192,6 +207,7 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
     canStart: derived.canStart,
     mosqueId: mosqueId ?? null,
     stream,
+    config,
     loading,
     errorMessage,
     timeUntilSeconds: derived.timeUntilSeconds,

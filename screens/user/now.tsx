@@ -8,11 +8,13 @@ import { Platform, Pressable, StyleSheet, Text, View, Animated, Easing, ScrollVi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
-import AppLogo from '../../components/AppLogo';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
-import { PrayerName } from '../../lib/adhans';
-import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
+import { labelForPrayer } from '../../lib/adhans';
+import { fetchAuthorizedLiveStreamPlayback } from '../../lib/api/liveStreamAccess';
+import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/prayerTimesUnified';
+import { computeNextPrayerSummaryAcrossDays } from '../../lib/prayerTimesDisplay';
+import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
 
 type StreamRow = {
   id: string;
@@ -26,28 +28,15 @@ type StreamRow = {
   mosques?: { name?: string | null; city?: string | null; country?: string | null };
 };
 
-type PrayerTimes = Partial<Record<PrayerName, string | null>>;
-
-const fallbackTimes: Record<PrayerName, string> = {
-  fajr: '05:18',
-  dhuhr: '12:58',
-  asr: '15:27',
-  maghrib: '17:42',
-  isha: '19:05',
-};
-
-const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
-  if (!normalized) return null;
-  const toHm = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null);
-  const mapped: PrayerTimes = {};
-  (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
-    mapped[name] = toHm(normalized?.[name]?.adhan ?? null);
-  });
-  return mapped;
-};
+const LIVE_REFRESH_MS = 15000;
 
 const heroPatternSvg = `<svg width="320" height="320" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="p" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M20 0 L30 10 L20 20 L10 10 Z M20 20 L30 30 L20 40 L10 30 Z" fill="none" stroke="white" stroke-width="1.2" opacity="0.45"/><circle cx="20" cy="20" r="3" fill="white" opacity="0.45"/></pattern></defs><rect width="320" height="320" fill="url(#p)"/></svg>`;
 const heroPatternUri = `data:image/svg+xml;utf8,${encodeURIComponent(heroPatternSvg)}`;
+
+function clampVolume(value: number, fallback = 0.7) {
+  const normalized = Number.isFinite(value) ? value : fallback;
+  return Math.max(0, Math.min(1, Math.round(normalized * 100) / 100));
+}
 
 export default function NowScreen() {
   const router = useRouter();
@@ -62,23 +51,37 @@ export default function NowScreen() {
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [resolvingStreamId, setResolvingStreamId] = useState<string | null>(null);
   const [volume, setVolume] = useState(0.7);
   const [showVolLabel, setShowVolLabel] = useState(false);
-  const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
+  const [prayerTimes, setPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
+  const [nextDayPrayerTimes, setNextDayPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const webAudioRef = useRef<HTMLAudioElement | null>(null);
+  const playbackStreamIdRef = useRef<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
+  const autoPlayStreamIdRef = useRef<string | null>(null);
   const [sliderWidth, setSliderWidth] = useState(1);
+  const [clockMs, setClockMs] = useState(() => Date.now());
   const playScale = useRef(new Animated.Value(1)).current;
 
   const current = useMemo(() => streams.find((s) => s.id === activeId) ?? streams[0] ?? null, [streams, activeId]);
+  const currentStreamUrl = current?.stream_url ?? current?.url ?? null;
   const followedList = useMemo(() => streams.filter((s) => followedIds.has(s.mosque_id)).slice(0, 3), [streams, followedIds]);
+  const safeVolume = useMemo(() => clampVolume(volume), [volume]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (options?: { background?: boolean }) => {
+    const background = !!options?.background;
+    if (!background || !hasLoadedOnceRef.current) {
+      setLoading(true);
+    }
+    if (!background) {
+      setError(null);
+    }
     try {
       const [subsRes, streamsRes] = await Promise.all([
         userId
-          ? supabase.from('subscriptions').select('mosque_id').eq('user_id', userId).limit(3)
+          ? supabase.from('subscriptions').select('mosque_id').eq('user_id', userId)
           : Promise.resolve({ data: [] as { mosque_id: string }[], error: null }),
         supabase
           .from('streams')
@@ -92,17 +95,26 @@ export default function NowScreen() {
       setFollowedIds(subSet);
       const dedupedByMosque = new Map<string, StreamRow>();
       ((streamsRes.data ?? []) as StreamRow[]).forEach((stream) => {
-        if (!stream.is_live || dedupedByMosque.has(stream.mosque_id)) return;
+        if (!isFreshLiveStream(stream) || dedupedByMosque.has(stream.mosque_id)) return;
         dedupedByMosque.set(stream.mosque_id, stream);
       });
       const streamRows = Array.from(dedupedByMosque.values());
-      const visibleStreams = subSet.size > 0 ? streamRows.filter((stream) => subSet.has(stream.mosque_id)) : streamRows;
+      const visibleStreams =
+        subSet.size > 0
+          ? streamRows.filter((stream) => subSet.has(stream.mosque_id) || stream.mosque_id === requestedMosqueId)
+          : streamRows;
       setStreams(visibleStreams);
       const preferredStream =
         (requestedMosqueId ? visibleStreams.find((stream) => stream.mosque_id === requestedMosqueId) : null) ??
         visibleStreams[0] ??
         null;
-      setActiveId(preferredStream?.id ?? null);
+      setActiveId((prev) => {
+        if (prev && visibleStreams.some((stream) => stream.id === prev)) {
+          return prev;
+        }
+        return preferredStream?.id ?? null;
+      });
+      hasLoadedOnceRef.current = true;
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load live stream.');
       setStreams([]);
@@ -117,6 +129,39 @@ export default function NowScreen() {
       load();
     }, [load])
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      if (!cancelled) {
+        void load({ background: true });
+      }
+    };
+
+    const channel = supabase.channel(`listener-now-live-${userId ?? 'guest'}`);
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'streams' }, refresh);
+    if (userId) {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions', filter: `user_id=eq.${userId}` },
+        refresh
+      );
+    }
+    channel.subscribe();
+
+    const pollId = setInterval(refresh, LIVE_REFRESH_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollId);
+      supabase.removeChannel(channel);
+    };
+  }, [load, userId]);
+
+  useEffect(() => {
+    const id = setInterval(() => setClockMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -137,101 +182,135 @@ export default function NowScreen() {
       const mosqueId = current?.mosque_id;
       if (!mosqueId) {
         setPrayerTimes(null);
+        setNextDayPrayerTimes(null);
         return;
       }
       try {
-        const normalized = await getDailyPrayerTimes(mosqueId, new Date());
-        setPrayerTimes(mapNormalizedPrayerTimes(normalized));
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const [normalized, normalizedTomorrow] = await Promise.all([
+          getDailyPrayerTimes(mosqueId, today),
+          getDailyPrayerTimes(mosqueId, tomorrow),
+        ]);
+        setPrayerTimes(normalized);
+        setNextDayPrayerTimes(normalizedTomorrow);
       } catch {
         setPrayerTimes(null);
+        setNextDayPrayerTimes(null);
       }
     };
     fetchPrayer();
   }, [current?.mosque_id]);
-
-  const fmtHm = (val?: string | null) => {
-    if (!val) return '--:--';
-    const [h, m] = val.split(':');
-    return `${h?.padStart(2, '0') ?? '00'}:${m?.padStart(2, '0') ?? '00'}`;
-  };
-
-  const computeNextPrayer = (times: PrayerTimes | null) => {
-    const now = new Date();
-    const entries: Array<{ name: PrayerName; time: string }> = (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[])
-      .map((name) => ({ name, time: (times?.[name] as string) ?? fallbackTimes[name] }))
-      .filter((p) => p.time);
-    const toDate = (timeStr: string, carryNextDay = false) => {
-      const [h, m] = timeStr.split(':').map((t) => parseInt(t, 10));
-      const d = new Date();
-      d.setHours(h, m, 0, 0);
-      if (carryNextDay && d <= now) d.setDate(d.getDate() + 1);
-      return d;
-    };
-    const upcoming = entries
-      .map((p) => ({ ...p, when: toDate(p.time) }))
-      .filter((p) => p.when > now)
-      .sort((a, b) => a.when.getTime() - b.when.getTime());
-    const chosen = upcoming[0] ?? (entries.length ? { ...entries[0], when: toDate(entries[0].time, true) } : null);
-    if (!chosen) return null;
-    const diffMs = chosen.when.getTime() - now.getTime();
-    const diffMin = Math.max(0, Math.floor(diffMs / 60000));
-    const hours = Math.floor(diffMin / 60)
-      .toString()
-      .padStart(2, '0');
-    const minutes = (diffMin % 60).toString().padStart(2, '0');
-    return { name: chosen.name, remaining: `${hours}:${minutes}` };
-  };
-
-  const nextPrayer = computeNextPrayer(prayerTimes);
+  const nextPrayer = useMemo(
+    () => computeNextPrayerSummaryAcrossDays(prayerTimes, nextDayPrayerTimes, new Date(clockMs)),
+    [clockMs, prayerTimes, nextDayPrayerTimes]
+  );
 
   // cleanup on unmount
   useEffect(() => {
     return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
+      playbackStreamIdRef.current = null;
+      const webAudio = webAudioRef.current;
+      if (webAudio) {
+        webAudio.pause();
+        webAudio.removeAttribute('src');
+        webAudio.load();
+      }
+      const sound = soundRef.current;
+      if (sound) {
+        sound.unloadAsync().catch(() => {});
       }
     };
   }, []);
 
   const setVolumeClamped = (val: number) => {
-    const next = Math.max(0, Math.min(1, Math.round(val * 100) / 100));
+    const next = clampVolume(val, safeVolume);
     setVolume(next);
+    if (webAudioRef.current) {
+      webAudioRef.current.volume = next;
+    }
     soundRef.current?.setVolumeAsync(next).catch(() => {});
     setShowVolLabel(true);
     setTimeout(() => setShowVolLabel(false), 800);
   };
 
   const adjustVolume = (delta: number) => {
-    setVolumeClamped(volume + delta);
+    setVolumeClamped(safeVolume + delta);
   };
 
-  const playStream = async (stream: StreamRow) => {
+  const playStream = useCallback(async (stream: StreamRow) => {
+    const configuredUrl = stream.stream_url ?? stream.url ?? null;
+    if (!configuredUrl) {
+      setError('This mosque is marked live, but no playback URL is configured yet.');
+      setPlaying(false);
+      return;
+    }
+
     try {
+      setError(null);
+      setResolvingStreamId(stream.id);
+      const existingWebAudio = webAudioRef.current;
+      if (existingWebAudio) {
+        existingWebAudio.pause();
+        existingWebAudio.removeAttribute('src');
+        existingWebAudio.load();
+        webAudioRef.current = null;
+      }
       if (soundRef.current) {
         await soundRef.current.unloadAsync();
         soundRef.current = null;
       }
-      const uri = stream.stream_url ?? stream.url ?? null;
-      if (!uri) {
-        setError('This mosque is marked live, but no playback URL is configured yet.');
-        setPlaying(false);
+      const access = await fetchAuthorizedLiveStreamPlayback(stream.mosque_id, stream.id);
+      const uri = access.streamUrl;
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.Audio === 'function') {
+        const audio = new window.Audio(uri);
+        audio.preload = 'auto';
+        audio.volume = safeVolume;
+        audio.onended = () => {
+          if (webAudioRef.current === audio) {
+            setPlaying(false);
+          }
+        };
+        audio.onerror = () => {
+          if (webAudioRef.current === audio) {
+            setError('Playback error');
+            setPlaying(false);
+          }
+        };
+        await audio.play();
+        webAudioRef.current = audio;
+        playbackStreamIdRef.current = stream.id;
+        setActiveId(stream.id);
+        setPlaying(true);
         return;
       }
       const { sound } = await Audio.Sound.createAsync(
         { uri: uri },
-        { shouldPlay: true, volume }
+        { shouldPlay: true, volume: safeVolume }
       );
       soundRef.current = sound;
+      playbackStreamIdRef.current = stream.id;
       setActiveId(stream.id);
       setPlaying(true);
     } catch (e) {
       setError((e as any)?.message ?? 'Playback error');
       setPlaying(false);
+    } finally {
+      setResolvingStreamId((prev) => (prev === stream.id ? null : prev));
     }
-  };
+  }, [safeVolume]);
 
-  const pausePlayback = async () => {
+  const pausePlayback = useCallback(async () => {
     try {
+      playbackStreamIdRef.current = null;
+      const webAudio = webAudioRef.current;
+      if (webAudio) {
+        webAudio.pause();
+        webAudio.removeAttribute('src');
+        webAudio.load();
+        webAudioRef.current = null;
+      }
       if (soundRef.current) {
         await soundRef.current.stopAsync();
         await soundRef.current.unloadAsync();
@@ -239,7 +318,22 @@ export default function NowScreen() {
       }
     } catch {}
     setPlaying(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    const playbackStreamId = playbackStreamIdRef.current;
+    if (!playing || !playbackStreamId) return;
+
+    if (!activeId) {
+      void pausePlayback();
+      return;
+    }
+
+    const playbackStreamStillVisible = streams.some((stream) => stream.id === playbackStreamId);
+    if (!playbackStreamStillVisible || playbackStreamId !== activeId) {
+      void pausePlayback();
+    }
+  }, [activeId, pausePlayback, playing, streams]);
 
   const togglePlay = () => {
     if (!current) return;
@@ -250,6 +344,15 @@ export default function NowScreen() {
       playStream(current);
     }
   };
+
+  useEffect(() => {
+    if (!current || !currentStreamUrl || playing || resolvingStreamId === current.id) return;
+    const shouldAutoPlay = !!requestedMosqueId || streams.length === 1;
+    if (!shouldAutoPlay) return;
+    if (autoPlayStreamIdRef.current === current.id) return;
+    autoPlayStreamIdRef.current = current.id;
+    void playStream(current);
+  }, [current, currentStreamUrl, playing, playStream, requestedMosqueId, resolvingStreamId, streams.length]);
 
   const initials = (name?: string | null) => {
     if (!name) return 'MS';
@@ -326,24 +429,27 @@ export default function NowScreen() {
 
       <Pressable
         onPress={togglePlay}
-        disabled={!current}
+        disabled={!current || !currentStreamUrl || resolvingStreamId === current.id}
         onPressIn={() => {
           Animated.timing(playScale, { toValue: 0.95, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
         }}
         onPressOut={() => {
           Animated.timing(playScale, { toValue: 1, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
         }}
-        style={({ pressed }) => ({ opacity: current ? (pressed ? 0.94 : 1) : 0.6, alignSelf: 'center' })}
+        style={({ pressed }) => ({ opacity: current && currentStreamUrl && resolvingStreamId !== current.id ? (pressed ? 0.94 : 1) : 0.6, alignSelf: 'center' })}
       >
         <Animated.View style={[styles.playButton, { transform: [{ scale: playScale }] }]}>
           <Ionicons name={playing ? 'stop' : 'play'} size={32} color="#0A84FF" />
         </Animated.View>
       </Pressable>
+      {!currentStreamUrl ? (
+        <Text style={styles.audioHint}>Live status is on, but this mosque does not have a playback stream configured yet.</Text>
+      ) : null}
 
       <View style={styles.sliderWrap}>
         <View style={styles.sliderHeader}>
           <Text style={styles.sliderLabel}>Volume</Text>
-          <Text style={[styles.sliderValue, { opacity: showVolLabel ? 1 : 0.35 }]}>{Math.round(volume * 100)}%</Text>
+          <Text style={[styles.sliderValue, { opacity: showVolLabel ? 1 : 0.35 }]}>{Math.round(safeVolume * 100)}%</Text>
         </View>
         <View style={styles.sliderTrackShadow}>
           <Pressable
@@ -351,12 +457,15 @@ export default function NowScreen() {
             onLayout={(e) => setSliderWidth(Math.max(1, e.nativeEvent.layout.width))}
             onPress={(e) => {
               const { locationX } = e.nativeEvent as any;
-              const pct = Math.max(0, Math.min(1, locationX / sliderWidth));
+              const pct =
+                Number.isFinite(locationX) && Number.isFinite(sliderWidth) && sliderWidth > 0
+                  ? Math.max(0, Math.min(1, locationX / sliderWidth))
+                  : safeVolume;
               setVolumeClamped(pct);
             }}
           >
-            <View style={[styles.sliderFill, { width: `${Math.round(volume * 100)}%` }]} />
-            <View style={[styles.sliderThumb, { left: `${Math.round(volume * 100)}%` }]} />
+            <View style={[styles.sliderFill, { width: `${Math.round(safeVolume * 100)}%` }]} />
+            <View style={[styles.sliderThumb, { left: `${Math.round(safeVolume * 100)}%` }]} />
           </Pressable>
         </View>
         <View style={styles.sliderButtons}>
@@ -408,13 +517,13 @@ export default function NowScreen() {
         </View>
       )}
 
-      {nextPrayer && (
-        <View style={styles.nextRow}>
-          <Text style={styles.nextValue}>
-            Next prayer: {nextPrayer.name.charAt(0).toUpperCase() + nextPrayer.name.slice(1)} in {nextPrayer.remaining}
-          </Text>
-        </View>
-      )}
+      <View style={styles.nextRow}>
+        <Text style={styles.nextValue}>
+          {nextPrayer
+            ? `Next prayer: ${labelForPrayer(nextPrayer.name)} in ${nextPrayer.remaining}`
+            : "Next prayer unavailable from today's timetable"}
+        </Text>
+      </View>
 
       {error && <Text style={styles.error}>{error}</Text>}
     </SafeAreaView>
@@ -425,17 +534,6 @@ export default function NowScreen() {
 NowScreen.unload = () => {
   // no-op placeholder for consistency with Expo router; actual cleanup below
 };
-
-// Ensure cleanup
-export function useUnloadSound(soundRef: React.MutableRefObject<Audio.Sound | null>) {
-  useEffect(() => {
-    return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
-      }
-    };
-  }, [soundRef]);
-}
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8F9FB', paddingHorizontal: 20, paddingBottom: 80, gap: 24 },
@@ -491,6 +589,13 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 8 },
     elevation: 10,
+  },
+  audioHint: {
+    marginTop: -6,
+    textAlign: 'center',
+    color: '#64748B',
+    fontSize: 13,
+    paddingHorizontal: 24,
   },
 
   sliderWrap: {

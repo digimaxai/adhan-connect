@@ -8,6 +8,15 @@ type MosqueRow = {
   country?: string | null;
   status?: string | null;
   allow_multi_mosque_local_admins?: boolean | null;
+  live_stream_enabled?: boolean | null;
+  live_stream_provider?: string | null;
+  live_stream_playback_url?: string | null;
+  live_stream_ingest_url?: string | null;
+  live_stream_mount_path?: string | null;
+  live_stream_username?: string | null;
+  live_stream_stream_key?: string | null;
+  live_stream_status_secret?: string | null;
+  live_stream_listener_secret?: string | null;
   created_at?: string | null;
 };
 
@@ -20,6 +29,16 @@ type AssignmentUser = {
 
 type MosqueAdmin = { user_id: string; mosque_id: string };
 type MuezzinRow = { user_id: string; mosque_id: string; is_active?: boolean | null };
+type UpstreamStateRow = {
+  mosque_id: string;
+  provider_status?: string | null;
+  encoder_connected?: boolean | null;
+  playback_active?: boolean | null;
+  provider_stream_id?: string | null;
+  provider_message?: string | null;
+  last_seen_at?: string | null;
+  updated_at?: string | null;
+};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -76,10 +95,10 @@ export const GET: RequestHandler = async (request) => {
     return json({ error: 'Only main admin users can access the mosque workspace.' }, 403);
   }
 
-  const [mosqueRes, mosquesRes, adminsRes, muezzinRes] = await Promise.all([
+  const [mosqueRes, mosquesRes, adminsRes, muezzinRes, upstreamStateRes] = await Promise.all([
     supabaseAdmin
       .from('mosques')
-      .select('id, name, city, country, status, allow_multi_mosque_local_admins, created_at')
+      .select('id, name, city, country, status, allow_multi_mosque_local_admins, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
       .eq('id', mosqueId)
       .maybeSingle(),
     supabaseAdmin
@@ -89,6 +108,11 @@ export const GET: RequestHandler = async (request) => {
       .limit(500),
     supabaseAdmin.from('mosque_admins').select('user_id, mosque_id').eq('mosque_id', mosqueId),
     supabaseAdmin.from('muezzins').select('user_id, mosque_id, is_active').eq('mosque_id', mosqueId),
+    supabaseAdmin
+      .from('mosque_live_stream_upstream_states')
+      .select('mosque_id, provider_status, encoder_connected, playback_active, provider_stream_id, provider_message, last_seen_at, updated_at')
+      .eq('mosque_id', mosqueId)
+      .maybeSingle(),
   ]);
 
   if (mosqueRes.error) {
@@ -111,6 +135,10 @@ export const GET: RequestHandler = async (request) => {
     return json({ error: muezzinRes.error.message || 'Unable to load muezzin assignments.' }, 500);
   }
 
+  if (upstreamStateRes.error) {
+    return json({ error: upstreamStateRes.error.message || 'Unable to load live stream provider state.' }, 500);
+  }
+
   const admins = (adminsRes.data ?? []) as MosqueAdmin[];
   const activeMuezzins = ((muezzinRes.data ?? []) as MuezzinRow[]).filter((row) => row.is_active !== false);
   const userIds = Array.from(new Set([...admins.map((row) => row.user_id), ...activeMuezzins.map((row) => row.user_id)]));
@@ -130,5 +158,6 @@ export const GET: RequestHandler = async (request) => {
     admins,
     muezzins: activeMuezzins,
     people,
+    upstreamState: (upstreamStateRes.data ?? null) as UpstreamStateRow | null,
   });
 };

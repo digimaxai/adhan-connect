@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -35,6 +36,25 @@ const formatCountdown = (seconds: number) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+function formatHealthStatus(status?: string | null) {
+  switch (status) {
+    case 'reachable':
+      return 'Reachable';
+    case 'auth_required':
+      return 'Auth required';
+    case 'failing':
+      return 'Check failed';
+    case 'manual_check_required':
+      return 'Manual check';
+    case 'not_configured':
+      return 'Missing';
+    case 'not_required':
+      return 'Not required';
+    default:
+      return 'Unknown';
+  }
+}
+
 export default function MuezzinLiveScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<Params>();
@@ -58,6 +78,7 @@ export default function MuezzinLiveScreen() {
 
   const prayerTimes = useMosquePrayerTimes(resolvedMosqueId);
   const [banner, setBanner] = useState<string | null>(null);
+  const [showStreamKey, setShowStreamKey] = useState(false);
   const pulse = useRef(new Animated.Value(1)).current;
 
   const adhanFromParams = useMemo(() => {
@@ -163,8 +184,17 @@ export default function MuezzinLiveScreen() {
     return { label: 'Scheduled', bg: '#E2E8F0', color: '#475569' };
   })();
 
+  const broadcastConfigured = engine.config?.is_ready_for_broadcast ?? true;
+  const preflightStatus = engine.config?.encoder_preflight_status ?? (broadcastConfigured ? 'manual_check_required' : 'not_configured');
   const helperText = (() => {
     if (engine.isLive) return 'Broadcast is live.';
+    if (!broadcastConfigured) return engine.config?.issues?.[0] ?? 'This mosque is not configured for follower playback yet.';
+    if (preflightStatus === 'attention') {
+      return engine.config?.encoder_preflight_summary ?? 'Endpoint preflight needs attention before you go live.';
+    }
+    if (preflightStatus === 'manual_check_required') {
+      return engine.config?.encoder_preflight_summary ?? 'Configuration is ready. Complete the provider check before going live.';
+    }
     if (engine.isEarly) return 'You can start within 3 minutes before the adhan time.';
     if (engine.canStart) return 'Ready to start broadcast.';
     if (engine.isLate) return 'Adhan window has passed.';
@@ -173,16 +203,83 @@ export default function MuezzinLiveScreen() {
 
   const isAssigned = selectedSlot?.isAssignedToMe ?? fallbackSlot?.isAssignedToMe ?? false;
 
-  const connectionStatus = engine.isLive ? 'Stream connected' : engine.loading ? 'Connecting...' : 'Ready to connect';
+  const connectionStatus = engine.isLive
+    ? 'Stream connected'
+    : engine.loading
+    ? 'Connecting...'
+    : preflightStatus === 'attention'
+    ? 'Endpoint check failed'
+    : preflightStatus === 'manual_check_required'
+    ? 'Manual provider check needed'
+    : broadcastConfigured
+    ? 'Endpoint preflight passed'
+    : 'Needs configuration';
+
+  const providerName = engine.config?.provider_label ?? engine.config?.provider ?? 'External';
+  const usesExternalEncoder = !!engine.config?.supports_external_encoder;
+  const playbackUrl = engine.config?.playback_url ?? engine.stream?.stream_url ?? engine.stream?.url ?? null;
+  const ingestUrl = engine.config?.ingest_url ?? null;
+  const usernameValue = engine.config?.username ?? null;
+  const streamKeyValue = showStreamKey ? engine.config?.stream_key ?? null : engine.config?.masked_stream_key ?? null;
+  const encoderCredentialsLabel = !usesExternalEncoder
+    ? 'Not required'
+    : engine.config?.is_ready_for_external_encoder
+    ? 'Configured'
+    : engine.config?.requires_ingest_url || engine.config?.requires_username || engine.config?.requires_stream_key
+    ? 'Required'
+    : 'Optional';
+  const credentialLabel = engine.config?.credential_label ?? 'Stream key';
+  const usernameLabel = engine.config?.username_label ?? 'Username';
+  const providerSummary = engine.config?.provider_summary ?? 'Mosque live streaming details';
+  const readinessMessage = usesExternalEncoder
+    ? engine.config?.is_ready_for_external_encoder
+      ? 'Mosque playback and encoder settings are in place.'
+      : engine.config?.requires_ingest_url || engine.config?.requires_username || engine.config?.requires_stream_key
+      ? 'This provider requires encoder credentials before the muezzin can go live.'
+      : 'Follower playback is ready. Encoder details are optional for this provider.'
+    : 'Follower playback is the only requirement in test mode.';
+  const playbackHealthLabel = formatHealthStatus(engine.config?.playback_health?.status);
+  const ingestHealthLabel = formatHealthStatus(engine.config?.ingest_health?.status);
+  const preflightLabel = (() => {
+    switch (preflightStatus) {
+      case 'ready':
+        return 'Passed';
+      case 'attention':
+        return 'Needs attention';
+      case 'manual_check_required':
+        return 'Manual check';
+      default:
+        return 'Not ready';
+    }
+  })();
+  const upstreamStatusLabel = engine.config?.upstream_status
+    ? engine.config.upstream_status.charAt(0).toUpperCase() + engine.config.upstream_status.slice(1)
+    : 'No signal';
+  const upstreamLastSeenLabel = engine.config?.upstream_last_seen_at
+    ? new Date(engine.config.upstream_last_seen_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  const handleCopy = async (label: string, value?: string | null) => {
+    if (!value) {
+      setBanner(`${label} is not configured`);
+      return;
+    }
+    try {
+      await Clipboard.setStringAsync(value);
+      setBanner(`${label} copied`);
+    } catch {
+      setBanner(`Could not copy ${label.toLowerCase()}`);
+    }
+  };
 
   const handlePrimaryPress = async () => {
     setBanner(null);
     if (engine.isLive) {
-      await engine.endBroadcast();
-      if (!engine.errorMessage) setBanner('Broadcast ended');
+      const success = await engine.endBroadcast();
+      if (success) setBanner('Broadcast ended');
     } else {
-      await engine.startBroadcast();
-      if (!engine.errorMessage) setBanner('Broadcast started');
+      const success = await engine.startBroadcast();
+      if (success) setBanner('Broadcast started');
     }
   };
 
@@ -198,6 +295,12 @@ export default function MuezzinLiveScreen() {
         bg: '#0EA5E9',
         main: 'Ready',
         sub: timeUntil !== null ? `Starts in ${formatCountdown(timeUntil)}` : 'Tap to start',
+      };
+    if (!broadcastConfigured)
+      return {
+        bg: '#CBD5E1',
+        main: 'Config needed',
+        sub: 'Set follower playback before going live',
       };
     if (engine.isEarly)
       return {
@@ -238,7 +341,7 @@ export default function MuezzinLiveScreen() {
         <View style={styles.circleWrap}>
           <Animated.View style={[styles.circleOuter, (engine.canStart || engine.isLive) && timeUntil !== null ? styles.circleOuterReady : null, { transform: [{ scale: pulse }] }]}>
             <Pressable
-              disabled={engine.loading || (!engine.canStart && !engine.isLive)}
+              disabled={engine.loading || (!engine.isLive && (!engine.canStart || !broadcastConfigured))}
               onPress={handlePrimaryPress}
               style={({ pressed }) => [
                 styles.circle,
@@ -260,6 +363,165 @@ export default function MuezzinLiveScreen() {
           </Animated.View>
         </View>
         <Text style={styles.helperText}>{helperText}</Text>
+
+        <View style={styles.metaCard}>
+          <Text style={styles.metaHeading}>Stream readiness</Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Provider</Text>
+            <Text style={styles.metaValue}>{providerName}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Follower playback</Text>
+            <Text style={styles.metaValue}>{engine.config?.playback_url_configured ? 'Configured' : 'Missing'}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Encoder credentials</Text>
+            <Text style={styles.metaValue}>{encoderCredentialsLabel}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Endpoint preflight</Text>
+            <Text style={styles.metaValue}>{preflightLabel}</Text>
+          </View>
+          {engine.config?.issues?.length ? (
+            <Text style={styles.readinessNote}>{engine.config.issues.join(' ')}</Text>
+          ) : (
+            <Text style={styles.readinessNote}>{readinessMessage}</Text>
+          )}
+        </View>
+
+        <View style={styles.metaCard}>
+          <Text style={styles.metaHeading}>Encoder setup</Text>
+          <Text style={styles.readinessNote}>{providerSummary}</Text>
+
+          <View style={styles.detailBlock}>
+            <View style={styles.detailHeaderRow}>
+              <Text style={styles.detailLabel}>Follower playback URL</Text>
+              {playbackUrl ? (
+                <Pressable onPress={() => void handleCopy('Follower playback URL', playbackUrl)} style={styles.detailAction}>
+                  <Text style={styles.detailActionText}>Copy</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <Text style={styles.detailValue}>{playbackUrl ?? 'Not configured'}</Text>
+          </View>
+
+          {usesExternalEncoder ? (
+            <>
+              <View style={styles.detailBlock}>
+                <View style={styles.detailHeaderRow}>
+                  <Text style={styles.detailLabel}>Encoder ingest URL</Text>
+                  {ingestUrl ? (
+                    <Pressable onPress={() => void handleCopy('Encoder ingest URL', ingestUrl)} style={styles.detailAction}>
+                      <Text style={styles.detailActionText}>Copy</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                <Text style={styles.detailValue}>{ingestUrl ?? 'Not configured'}</Text>
+              </View>
+
+              {engine.config?.username_label ? (
+                <View style={styles.detailBlock}>
+                  <View style={styles.detailHeaderRow}>
+                    <Text style={styles.detailLabel}>{usernameLabel}</Text>
+                    {usernameValue ? (
+                      <Pressable onPress={() => void handleCopy(usernameLabel, usernameValue)} style={styles.detailAction}>
+                        <Text style={styles.detailActionText}>Copy</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <Text style={styles.detailValue}>{usernameValue ?? 'Not configured'}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.detailBlock}>
+                <View style={styles.detailHeaderRow}>
+                  <Text style={styles.detailLabel}>{credentialLabel}</Text>
+                  <View style={styles.detailActions}>
+                    {engine.config?.masked_stream_key ? (
+                      <Pressable onPress={() => setShowStreamKey((value) => !value)} style={styles.detailAction}>
+                        <Text style={styles.detailActionText}>{showStreamKey ? 'Hide' : 'Reveal'}</Text>
+                      </Pressable>
+                    ) : null}
+                    {engine.config?.stream_key ? (
+                      <Pressable
+                        onPress={() => void handleCopy(credentialLabel, engine.config?.stream_key)}
+                        style={styles.detailAction}
+                      >
+                        <Text style={styles.detailActionText}>Copy</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+                <Text style={styles.detailValue}>{streamKeyValue ?? 'Not configured'}</Text>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.readinessNote}>
+              This mosque is in test mode. No external encoder credentials are required.
+            </Text>
+          )}
+
+          {engine.config?.encoder_instructions ? (
+            <Text style={styles.encoderInstruction}>{engine.config.encoder_instructions}</Text>
+          ) : null}
+        </View>
+
+        <View style={styles.metaCard}>
+          <Text style={styles.metaHeading}>Endpoint health</Text>
+          <Text style={styles.readinessNote}>
+            {engine.config?.encoder_preflight_summary ?? 'Endpoint checks run automatically while this screen is open.'}
+          </Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Playback endpoint</Text>
+            <Text style={styles.metaValue}>{playbackHealthLabel}</Text>
+          </View>
+          {engine.config?.playback_health?.message ? (
+            <Text style={styles.healthMessage}>{engine.config.playback_health.message}</Text>
+          ) : null}
+          {usesExternalEncoder ? (
+            <>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaLabel}>Ingest endpoint</Text>
+                <Text style={styles.metaValue}>{ingestHealthLabel}</Text>
+              </View>
+              {engine.config?.ingest_health?.message ? (
+                <Text style={styles.healthMessage}>{engine.config.ingest_health.message}</Text>
+              ) : null}
+            </>
+          ) : null}
+        </View>
+
+        <View style={styles.metaCard}>
+          <Text style={styles.metaHeading}>Upstream provider state</Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Provider status</Text>
+            <Text style={styles.metaValue}>{upstreamStatusLabel}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Encoder connected</Text>
+            <Text style={styles.metaValue}>{engine.config?.upstream_encoder_connected ? 'Yes' : 'No'}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Playback active</Text>
+            <Text style={styles.metaValue}>{engine.config?.upstream_playback_active ? 'Yes' : 'No'}</Text>
+          </View>
+          {upstreamLastSeenLabel ? (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Last provider signal</Text>
+              <Text style={styles.metaValue}>{upstreamLastSeenLabel}</Text>
+            </View>
+          ) : null}
+          {engine.config?.upstream_stream_id ? (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Provider stream ID</Text>
+              <Text style={styles.metaValue}>{engine.config.upstream_stream_id}</Text>
+            </View>
+          ) : null}
+          <Text style={styles.healthMessage}>
+            {engine.config?.upstream_message ??
+              'No provider callback has been received yet. RTMP providers will stay in manual-check mode until a callback or vendor integration reports encoder state.'}
+          </Text>
+        </View>
 
         <View style={styles.metaCard}>
           <Text style={styles.metaHeading}>Timing</Text>
@@ -371,6 +633,37 @@ const styles = StyleSheet.create({
   circleSub: { color: '#E0F2FE', fontWeight: '700', fontSize: 14 },
   helperText: { textAlign: 'center', color: '#475569', marginTop: 6, fontWeight: '600' },
   assignmentNote: { color: '#0F172A', fontWeight: '700', marginTop: 6 },
+  readinessNote: { color: '#475569', fontWeight: '600', marginTop: 2, lineHeight: 20 },
+  healthMessage: { color: '#334155', fontWeight: '600', lineHeight: 20 },
+  detailBlock: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    gap: 8,
+  },
+  detailHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  detailLabel: { color: '#475569', fontWeight: '700', flex: 1 },
+  detailValue: { color: '#0F172A', fontWeight: '700', lineHeight: 20 },
+  detailActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  detailAction: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E2E8F0',
+  },
+  detailActionText: { color: '#0F172A', fontWeight: '800', fontSize: 12 },
+  encoderInstruction: {
+    color: '#0F172A',
+    fontWeight: '600',
+    lineHeight: 20,
+  },
   metaCard: {
     marginTop: 10,
     backgroundColor: '#FFFFFF',

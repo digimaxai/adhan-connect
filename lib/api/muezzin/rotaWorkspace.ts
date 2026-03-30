@@ -1,4 +1,4 @@
-import { resolveApiUrls, supportsServerApi } from '../apiBaseUrl';
+import { fetchServerApi, resolveApiUrls, supportsServerApi } from '../apiBaseUrl';
 import { getMyCoverRequestState } from '../coverRequests';
 import { supabase } from '../../supabase';
 import { getMuezzinRotaForRange } from './schedule';
@@ -75,7 +75,7 @@ export async function loadMyRotaWorkspace(startDate: Date, endDate: Date): Promi
       url.searchParams.set('start', toIsoDate(startDate));
       url.searchParams.set('end', toIsoDate(endDate));
 
-      const response = await fetch(url.toString(), {
+      const response = await fetchServerApi(url.toString(), {
         headers: {
           Authorization: `Bearer ${sessionData.session.access_token}`,
         },
