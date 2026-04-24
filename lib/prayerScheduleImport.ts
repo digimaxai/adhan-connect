@@ -586,6 +586,15 @@ function buildPreview(
   const sortedDates = publishedRows.map((row) => row.date).sort();
   const errorCount = issues.filter((issue) => issue.severity === 'error').length;
   const warningCount = issues.filter((issue) => issue.severity === 'warning').length;
+  const invalidRowCount = Math.max(
+    rows.length - publishedRows.length,
+    new Set(
+      issues
+        .filter((issue) => issue.severity === 'error' && issue.rowNumber !== null)
+        .map((issue) => issue.rowNumber)
+    ).size
+  );
+  const totalRows = Math.max(rows.length, publishedRows.length + invalidRowCount);
 
   return {
     fileName: fileName ?? null,
@@ -595,9 +604,9 @@ function buildPreview(
     detection,
     columnMapping,
     summary: {
-      totalRows: rows.length,
+      totalRows,
       validRows: publishedRows.length,
-      invalidRows: Math.max(rows.length - publishedRows.length, 0),
+      invalidRows: invalidRowCount,
       warningCount,
       errorCount,
       startDate: sortedDates[0] ?? null,

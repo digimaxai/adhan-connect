@@ -316,6 +316,7 @@ export default function PrayerTimesAdminScreen({
     !!selectedMosque &&
     canManageImports &&
     !!importPreview?.validRows.length &&
+    !importPreview?.summary.errorCount &&
     !preparingImport &&
     !publishingImport &&
     !loadingImportImpact &&
