@@ -15,16 +15,16 @@ import { fetchAuthorizedLiveStreamPlayback } from '../../lib/api/liveStreamAcces
 import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/prayerTimesUnified';
 import { computeNextPrayerSummaryAcrossDays } from '../../lib/prayerTimesDisplay';
 import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
+import { useLiveKitSubscribe } from '../../lib/hooks/useLiveKitSubscribe';
 
 type StreamRow = {
   id: string;
   mosque_id: string;
   type?: string | null;
-  url?: string | null;
-  stream_url?: string | null;
   status?: string | null;
   started_at?: string | null;
   is_live: boolean;
+  livekit_room_name?: string | null;
   mosques?: { name?: string | null; city?: string | null; country?: string | null };
 };
 
@@ -52,7 +52,7 @@ export default function NowScreen() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [resolvingStreamId, setResolvingStreamId] = useState<string | null>(null);
-  const [volume, setVolume] = useState(0.7);
+  const [volume, setVolume] = useState(1);
   const [showVolLabel, setShowVolLabel] = useState(false);
   const [prayerTimes, setPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
   const [nextDayPrayerTimes, setNextDayPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
@@ -66,7 +66,32 @@ export default function NowScreen() {
   const playScale = useRef(new Animated.Value(1)).current;
 
   const current = useMemo(() => streams.find((s) => s.id === activeId) ?? streams[0] ?? null, [streams, activeId]);
-  const currentStreamUrl = current?.stream_url ?? current?.url ?? null;
+  const isLiveKitStream = !!(current?.livekit_room_name);
+
+  const liveKitSubscribe = useLiveKitSubscribe({
+    mosqueId: isLiveKitStream ? (current?.mosque_id ?? null) : null,
+    livekitRoomName: isLiveKitStream ? (current?.livekit_room_name ?? null) : null,
+    autoConnect: false,
+  });
+  const canPlay = !!current;
+
+  // Keep `playing` in sync with LiveKit subscriber state.
+  useEffect(() => {
+    if (isLiveKitStream) {
+      setPlaying(liveKitSubscribe.isPlaying);
+    }
+  }, [isLiveKitStream, liveKitSubscribe.isPlaying]);
+
+  useEffect(() => {
+    if (!isLiveKitStream) return;
+    if (liveKitSubscribe.error) {
+      setError(`LiveKit listener: ${liveKitSubscribe.error}`);
+      return;
+    }
+    if (liveKitSubscribe.connectionState === 'connecting' || liveKitSubscribe.connectionState === 'connected') {
+      setError(null);
+    }
+  }, [isLiveKitStream, liveKitSubscribe.connectionState, liveKitSubscribe.error]);
   const followedList = useMemo(() => streams.filter((s) => followedIds.has(s.mosque_id)).slice(0, 3), [streams, followedIds]);
   const safeVolume = useMemo(() => clampVolume(volume), [volume]);
 
@@ -85,7 +110,7 @@ export default function NowScreen() {
           : Promise.resolve({ data: [] as { mosque_id: string }[], error: null }),
         supabase
           .from('streams')
-          .select('id, mosque_id, type, url, stream_url, status, started_at, is_live, mosques(name,city,country)')
+          .select('id, mosque_id, type, status, started_at, is_live, livekit_room_name, mosques(name,city,country)')
           .eq('is_live', true)
           .order('started_at', { ascending: false, nullsFirst: false })
           .limit(20),
@@ -231,6 +256,7 @@ export default function NowScreen() {
       webAudioRef.current.volume = next;
     }
     soundRef.current?.setVolumeAsync(next).catch(() => {});
+    liveKitSubscribe.setVolume(next);
     setShowVolLabel(true);
     setTimeout(() => setShowVolLabel(false), 800);
   };
@@ -240,9 +266,9 @@ export default function NowScreen() {
   };
 
   const playStream = useCallback(async (stream: StreamRow) => {
-    const configuredUrl = stream.stream_url ?? stream.url ?? null;
-    if (!configuredUrl) {
-      setError('This mosque is marked live, but no playback URL is configured yet.');
+    if (stream.livekit_room_name) {
+      setActiveId(stream.id);
+      setError(null);
       setPlaying(false);
       return;
     }
@@ -338,6 +364,25 @@ export default function NowScreen() {
   const togglePlay = () => {
     if (!current) return;
     Haptics.selectionAsync();
+    // LiveKit streams start on demand. Avoid disconnecting while a phone is still
+    // waiting for the remote audio track to arrive.
+    if (isLiveKitStream) {
+      if (playing) {
+        void liveKitSubscribe.disconnect();
+        setPlaying(false);
+      } else if (
+        liveKitSubscribe.connectionState === 'idle' ||
+        liveKitSubscribe.connectionState === 'failed'
+      ) {
+        setActiveId(current.id);
+        liveKitSubscribe.setVolume(safeVolume);
+        void liveKitSubscribe.connect();
+      } else {
+        setActiveId(current.id);
+        liveKitSubscribe.setVolume(safeVolume);
+      }
+      return;
+    }
     if (activeId === current.id && playing) {
       pausePlayback();
     } else {
@@ -346,13 +391,14 @@ export default function NowScreen() {
   };
 
   useEffect(() => {
-    if (!current || !currentStreamUrl || playing || resolvingStreamId === current.id) return;
+    if (!current || !canPlay || playing || resolvingStreamId === current.id) return;
+    if (isLiveKitStream) return;
     const shouldAutoPlay = !!requestedMosqueId || streams.length === 1;
     if (!shouldAutoPlay) return;
     if (autoPlayStreamIdRef.current === current.id) return;
     autoPlayStreamIdRef.current = current.id;
     void playStream(current);
-  }, [current, currentStreamUrl, playing, playStream, requestedMosqueId, resolvingStreamId, streams.length]);
+  }, [current, canPlay, isLiveKitStream, playing, playStream, requestedMosqueId, resolvingStreamId, streams.length]);
 
   const initials = (name?: string | null) => {
     if (!name) return 'MS';
@@ -429,22 +475,21 @@ export default function NowScreen() {
 
       <Pressable
         onPress={togglePlay}
-        disabled={!current || !currentStreamUrl || resolvingStreamId === current.id}
+        disabled={!canPlay || resolvingStreamId === current?.id}
         onPressIn={() => {
           Animated.timing(playScale, { toValue: 0.95, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
         }}
         onPressOut={() => {
           Animated.timing(playScale, { toValue: 1, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
         }}
-        style={({ pressed }) => ({ opacity: current && currentStreamUrl && resolvingStreamId !== current.id ? (pressed ? 0.94 : 1) : 0.6, alignSelf: 'center' })}
+        style={({ pressed }) => ({ opacity: canPlay && resolvingStreamId !== current?.id ? (pressed ? 0.94 : 1) : 0.6, alignSelf: 'center' })}
       >
         <Animated.View style={[styles.playButton, { transform: [{ scale: playScale }] }]}>
           <Ionicons name={playing ? 'stop' : 'play'} size={32} color="#0A84FF" />
         </Animated.View>
       </Pressable>
-      {!currentStreamUrl ? (
-        <Text style={styles.audioHint}>Live status is on, but this mosque does not have a playback stream configured yet.</Text>
-      ) : null}
+
+      {error && <Text style={styles.error}>{error}</Text>}
 
       <View style={styles.sliderWrap}>
         <View style={styles.sliderHeader}>
@@ -492,7 +537,12 @@ export default function NowScreen() {
                 <Pressable
                   key={f.id}
                   onPress={() => {
-                    playStream(f);
+                    if (f.livekit_room_name) {
+                      setActiveId(f.id);
+                      setError(null);
+                    } else {
+                      playStream(f);
+                    }
                   }}
                   style={({ pressed }) => [styles.followChip, { opacity: pressed ? 0.92 : 1 }]}
                 >
@@ -525,7 +575,6 @@ export default function NowScreen() {
         </Text>
       </View>
 
-      {error && <Text style={styles.error}>{error}</Text>}
     </SafeAreaView>
   );
 }

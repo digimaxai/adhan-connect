@@ -1,4 +1,4 @@
-export type LiveStreamProvider = 'external' | 'rtmp' | 'icecast' | 'test';
+export type LiveStreamProvider = 'external' | 'rtmp' | 'icecast' | 'livekit' | 'test';
 
 export type MosqueLiveStreamConfigRow = {
   id: string;
@@ -86,6 +86,8 @@ type LiveStreamProviderProfile = {
   requiresIngestUrl: boolean;
   requiresUsername: boolean;
   requiresStreamKey: boolean;
+  requiresPlaybackUrl: boolean;
+  requiresListenerSecret: boolean;
   usernameLabel: string | null;
   credentialLabel: string;
   encoderInstructions: string;
@@ -102,6 +104,8 @@ const PROVIDER_PROFILES: Record<LiveStreamProvider, LiveStreamProviderProfile> =
     requiresIngestUrl: false,
     requiresUsername: false,
     requiresStreamKey: false,
+    requiresPlaybackUrl: true,
+    requiresListenerSecret: true,
     usernameLabel: null,
     credentialLabel: 'Stream key',
     encoderInstructions:
@@ -117,6 +121,8 @@ const PROVIDER_PROFILES: Record<LiveStreamProvider, LiveStreamProviderProfile> =
     requiresIngestUrl: true,
     requiresUsername: false,
     requiresStreamKey: true,
+    requiresPlaybackUrl: true,
+    requiresListenerSecret: true,
     usernameLabel: null,
     credentialLabel: 'Stream key',
     encoderInstructions:
@@ -132,10 +138,29 @@ const PROVIDER_PROFILES: Record<LiveStreamProvider, LiveStreamProviderProfile> =
     requiresIngestUrl: true,
     requiresUsername: true,
     requiresStreamKey: true,
+    requiresPlaybackUrl: true,
+    requiresListenerSecret: true,
     usernameLabel: 'Source username',
     credentialLabel: 'Source password',
     encoderInstructions:
       'Configure your encoder with the Icecast source URL, source username, and source password. The playback URL should point followers to the public Icecast listener endpoint.',
+  },
+  livekit: {
+    provider: 'livekit',
+    label: 'LiveKit (In-App Mic)',
+    summary: 'Mic audio is captured directly in the muezzin app and streamed via LiveKit. No external encoder required. Listeners connect automatically when the broadcast starts.',
+    ingestProtocols: [],
+    ingestProtocolHint: null,
+    supportsExternalEncoder: false,
+    requiresIngestUrl: false,
+    requiresUsername: false,
+    requiresStreamKey: false,
+    requiresPlaybackUrl: false,
+    requiresListenerSecret: false,
+    usernameLabel: null,
+    credentialLabel: 'Stream key',
+    encoderInstructions:
+      'Audio is captured from the muezzin\'s phone microphone and streamed via LiveKit. No external encoder or credentials are needed.',
   },
   test: {
     provider: 'test',
@@ -147,6 +172,8 @@ const PROVIDER_PROFILES: Record<LiveStreamProvider, LiveStreamProviderProfile> =
     requiresIngestUrl: false,
     requiresUsername: false,
     requiresStreamKey: false,
+    requiresPlaybackUrl: true,
+    requiresListenerSecret: true,
     usernameLabel: null,
     credentialLabel: 'Stream key',
     encoderInstructions: 'Test mode uses the configured playback URL only.',
@@ -163,7 +190,7 @@ function safeParseUrl(value: string) {
 
 export function normalizeLiveStreamProvider(value?: string | null): LiveStreamProvider {
   const normalized = value?.trim().toLowerCase();
-  if (normalized === 'rtmp' || normalized === 'icecast' || normalized === 'test') return normalized;
+  if (normalized === 'rtmp' || normalized === 'icecast' || normalized === 'livekit' || normalized === 'test') return normalized;
   if (normalized === 'hls') return 'rtmp';
   return 'external';
 }
@@ -280,7 +307,9 @@ export function summarizeMosqueLiveBroadcastConfig(config: MosqueLiveStreamConfi
   const listenerSecret = resolveLiveStreamListenerSecret(config);
   const streamKeyConfigured = !!streamKey;
   const usernameConfigured = !!username;
-  const listenerAccessReady = !!listenerSecret && (profile.provider !== 'icecast' || !!mountPath);
+  const listenerAccessReady =
+    !profile.requiresListenerSecret ||
+    (!!listenerSecret && (profile.provider !== 'icecast' || !!mountPath));
   const maskedStreamKey = streamKey ? `${'*'.repeat(Math.max(0, streamKey.length - 4))}${streamKey.slice(-4)}` : null;
   const readyForExternalEncoder =
     (!profile.requiresIngestUrl || !!ingestUrl) &&
@@ -288,13 +317,14 @@ export function summarizeMosqueLiveBroadcastConfig(config: MosqueLiveStreamConfi
     (!profile.requiresStreamKey || streamKeyConfigured);
   const readyForBroadcast =
     streamingEnabled &&
-    !!playbackUrl &&
+    (!profile.requiresPlaybackUrl || !!playbackUrl) &&
+    listenerAccessReady &&
     (!profile.supportsExternalEncoder || !profile.requiresIngestUrl && !profile.requiresUsername && !profile.requiresStreamKey || readyForExternalEncoder);
 
   if (!streamingEnabled) {
     issues.push('Live streaming is inactive for this mosque.');
   }
-  if (!playbackUrl) {
+  if (profile.requiresPlaybackUrl && !playbackUrl) {
     issues.push('Follower playback URL is missing or invalid.');
   }
   if (profile.requiresIngestUrl && !ingestUrl) {
@@ -309,7 +339,7 @@ export function summarizeMosqueLiveBroadcastConfig(config: MosqueLiveStreamConfi
   if (profile.provider === 'icecast' && !mountPath) {
     issues.push('Icecast mount path is missing or invalid.');
   }
-  if (!listenerSecret) {
+  if (profile.requiresListenerSecret && !listenerSecret) {
     issues.push('Listener access secret is not configured.');
   }
 

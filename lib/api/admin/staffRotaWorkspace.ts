@@ -133,9 +133,24 @@ export async function loadStaffRotaWorkspace(mosqueId: string, dateIso: string) 
     const rotaRows = typed.rotaRows ?? [];
     const muezzins = typed.muezzins ?? [];
 
+    const prayerTimesRow = (typed.prayerTimesRow ?? null) as PrayerTimesRow | null;
+    let fallbackPrayerTimesRow = (typed.fallbackPrayerTimesRow ?? null) as PrayerTimesRow | null;
+
+    // Server has no stored times for this date — apply Aladhan as last resort on the client
+    if (!prayerTimesRow && !fallbackPrayerTimesRow) {
+      try {
+        const normalized = await getDailyPrayerTimes(mosqueId, parseDateIso(dateIso));
+        if (normalized) {
+          fallbackPrayerTimesRow = mapNormalizedToPrayerTimesRow(mosqueId, dateIso, normalized);
+        }
+      } catch {
+        // silent — screen will show "create prayer times" warning
+      }
+    }
+
     return {
-      prayerTimesRow: (typed.prayerTimesRow ?? null) as PrayerTimesRow | null,
-      fallbackPrayerTimesRow: (typed.fallbackPrayerTimesRow ?? null) as PrayerTimesRow | null,
+      prayerTimesRow,
+      fallbackPrayerTimesRow,
       rota: mapRotaRows(rotaRows),
       muezzins: muezzins as MuezzinSummary[],
     };

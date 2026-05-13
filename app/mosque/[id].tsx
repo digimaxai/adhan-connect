@@ -23,7 +23,6 @@ type Mosque = {
 };
 
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
-type StreamRow = { is_live: boolean; status?: string | null };
 type BroadcastRow = { id: string; prayer: PrayerName; scheduled_for: string; started_at?: string | null; ended_at?: string | null };
 type EventRow = {
   id: string;
@@ -40,14 +39,6 @@ type CampaignRow = {
   end_at?: string | null;
 };
 type AnnouncementRow = { id: string; title?: string | null; summary?: string | null; created_at?: string | null };
-
-const fallbackTimes: Record<PrayerName, string> = {
-  fajr: '05:18',
-  dhuhr: '12:58',
-  asr: '15:27',
-  maghrib: '17:42',
-  isha: '19:05',
-};
 
 const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
   if (!normalized) return null;
@@ -81,7 +72,6 @@ export default function MosquePage() {
   const [subCount, setSubCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [resolvedId, setResolvedId] = useState<string | null>(null);
 
   const isUuid = (v?: string) => !!v && /^[0-9a-fA-F-]{36}$/.test(v);
 
@@ -129,7 +119,6 @@ export default function MosquePage() {
               country: countryParam ?? '',
             }
           );
-          setResolvedId('');
           setLive(false);
           setPrayers(null);
           setRecordings([]);
@@ -154,8 +143,6 @@ export default function MosquePage() {
             slug: base?.slug ?? null,
           }
         );
-        setResolvedId(actualId);
-
         const [{ data: streamData }, { data: recordingData }, { data: subData }, announcementsRes, subCountRes] = await Promise.all([
           supabase.from('streams').select('is_live,status').eq('mosque_id', actualId).maybeSingle(),
           supabase
@@ -284,7 +271,7 @@ export default function MosquePage() {
       }
     };
     load();
-  }, [id, nameParam, userId]);
+  }, [id, nameParam, userId, cityParam, countryParam]);
 
   const toggleFollow = async () => {
     if (!id || !userId || actionLoading) return;

@@ -4,21 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { useRoleFlags } from '../lib/roles';
-import * as Notifications from 'expo-notifications';
-import { ensureAndroidChannel } from '../lib/notify';
 import { getPreferredStaffEntry, subscribePreferredStaffEntry } from '../lib/roleEntryPreferences';
 import { isRoleEntrySelectionRequired, subscribeRoleEntrySelectionRequirement } from '../lib/roleEntrySession';
 import { resolveRoleEntryTarget, resolveRouteTargetHref } from '../lib/roleRouting';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
 
 function RootNavigator() {
   const { session, loading } = useAuth();
@@ -230,14 +218,6 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      ensureAndroidChannel().catch(() => {
-        // non-fatal: ignore setup errors in dev
-      });
-    }
-  }, []);
-
   return (
     <AuthProvider>
       <RootNavigator />

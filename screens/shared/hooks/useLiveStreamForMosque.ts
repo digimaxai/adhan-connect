@@ -6,12 +6,11 @@ import { isFreshLiveAdhan, isFreshLiveStream } from '../../../lib/liveStreamFres
 type StreamRow = {
   id: string;
   mosque_id: string;
-  url?: string | null;
-  stream_url?: string | null;
   is_live?: boolean | null;
   status?: string | null;
   started_at?: string | null;
   last_health_check?: string | null;
+  livekit_room_name?: string | null;
 };
 
 type AdhanRow = {
@@ -28,17 +27,17 @@ type AdhanRow = {
 type LiveState = {
   isLive: boolean;
   currentAdhan: (AdhanBroadcast & { prayer?: PrayerName }) | null;
-  streamUrl: string | null;
+  livekitRoomName: string | null;
 };
 
 const LIVE_REFRESH_MS = 15000;
 
 export function useLiveStreamForMosque(mosqueId?: string | null): LiveState {
-  const [state, setState] = useState<LiveState>({ isLive: false, currentAdhan: null, streamUrl: null });
+  const [state, setState] = useState<LiveState>({ isLive: false, currentAdhan: null, livekitRoomName: null });
 
   useEffect(() => {
     if (!mosqueId) {
-      setState({ isLive: false, currentAdhan: null, streamUrl: null });
+      setState({ isLive: false, currentAdhan: null, livekitRoomName: null });
       return;
     }
 
@@ -49,7 +48,7 @@ export function useLiveStreamForMosque(mosqueId?: string | null): LiveState {
       const [streamRes, liveAdhanRes, latestAdhanRes] = await Promise.all([
         supabase
           .from('streams')
-          .select('id, mosque_id, url, stream_url, is_live, status, started_at, last_health_check')
+          .select('id, mosque_id, is_live, status, started_at, last_health_check, livekit_room_name')
           .eq('mosque_id', mosqueId)
           .order('started_at', { ascending: false, nullsFirst: false })
           .limit(1),
@@ -92,7 +91,7 @@ export function useLiveStreamForMosque(mosqueId?: string | null): LiveState {
       setState({
         isLive,
         currentAdhan: (currentAdhan as any) ?? null,
-        streamUrl: streamData?.stream_url ?? streamData?.url ?? null,
+        livekitRoomName: isLive ? (streamData?.livekit_room_name ?? null) : null,
       });
     };
 

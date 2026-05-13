@@ -7,13 +7,14 @@
     "icon": "./assets/images/icon.png",
     "scheme": "adhanconnect",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
 
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yourorg.adhanconnect",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Adhan Connect needs microphone access for live Adhan broadcasts.",
+        "NSLocationWhenInUseUsageDescription": "Adhan Connect uses your location to find nearby mosques.",
         "UIBackgroundModes": ["audio"]
       }
     },
@@ -30,6 +31,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
         "WAKE_LOCK",
         "FOREGROUND_SERVICE"
       ]
@@ -51,14 +54,6 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": { "backgroundColor": "#000000" }
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/notification-icon.png",
-          "color": "#1A73E8",
-          "mode": "production"
         }
       ]
     ],

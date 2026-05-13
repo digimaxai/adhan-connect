@@ -194,12 +194,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn: AuthContextType['signIn'] = async (email, password) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const supabaseProjectRef = (() => {
+      try {
+        return new URL(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').hostname.split('.')[0] ?? 'unknown';
+      } catch {
+        return 'unknown';
+      }
+    })();
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return { error: error.message };
+      console.log('[auth] signIn attempt', {
+        projectRef: supabaseProjectRef,
+        emailDomain: normalizedEmail.split('@')[1] ?? 'unknown',
+      });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      if (error) {
+        console.log('[auth] signIn failed', {
+          projectRef: supabaseProjectRef,
+          message: error.message,
+          status: error.status,
+        });
+        return { error: error.message };
+      }
       await requireRoleEntrySelection(data.user?.id ?? null);
+      console.log('[auth] signIn succeeded', {
+        projectRef: supabaseProjectRef,
+        userId: data.user?.id ?? null,
+      });
       return {};
     } catch (e: any) {
+      console.log('[auth] signIn exception', {
+        projectRef: supabaseProjectRef,
+        message: e?.message ?? 'Unknown error',
+      });
       return { error: e?.message ?? 'Unknown error' };
     }
   };

@@ -4,6 +4,23 @@
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
   },
-  "chatgpt.openOnStartup": true,
-  "codex.sandboxMode": "workspace-write"
+  "chatgpt.openOnStartup": false,
+  "codex.sandboxMode": "workspace-write",
+  "codex.executionMode": "native",
+  "github.copilot.chat.sidebarPosition": "right",
+  "experimentalFeatures": {
+    "workspace_dependencies": false
+  },
+  "[codex]": {
+    "agent.defaultAgent": "codex-design"
+  },
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.project.exclusions": [
+    "**/node_modules/**",
+    "**/.expo/**",
+    "**/android/.gradle/**"
+  ],
+  "java.import.gradle.enabled": true,
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  "java.compile.nullAnalysis.mode": "automatic"
 }

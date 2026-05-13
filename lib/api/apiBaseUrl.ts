@@ -2,7 +2,7 @@ import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const DEFAULT_SERVER_API_TIMEOUT_MS = 1500;
+const DEFAULT_SERVER_API_TIMEOUT_MS = Platform.OS === 'web' ? 1500 : 6000;
 
 function normalizePath(path: string) {
   if (!path) return '/';
@@ -83,27 +83,42 @@ function addNativeCandidatesFromBase(candidates: Set<string>, baseUrl: string, n
   }
 }
 
-function resolveNativeDevBaseUrl() {
-  const linkingUrl = normalizeHttpLikeUrl(Linking.createURL('/'));
-  if (linkingUrl) {
-    return linkingUrl;
-  }
-
+function resolveNativeDevBaseUrls() {
+  const bases: string[] = [];
+  const addBase = (value: string | null | undefined) => {
+    const normalized = normalizeHttpLikeUrl(value);
+    if (!normalized) return;
+    try {
+      const parsed = new URL(normalized);
+      if (parsed.hostname === 'localhost') {
+        const alias = `${parsed.protocol}//127.0.0.1${parsed.port ? `:${parsed.port}` : ''}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        if (!bases.includes(alias)) {
+          bases.push(alias);
+        }
+      }
+    } catch {
+      // Keep the normalized base below.
+    }
+    if (!bases.includes(normalized)) {
+      bases.push(normalized);
+    }
+  };
   const constantsHost =
     extractHost((Constants.expoConfig as any)?.hostUri) ||
     extractHost((Constants as any)?.manifest2?.extra?.expoClient?.hostUri) ||
     extractHost((Constants as any)?.manifest?.debuggerHost);
 
   if (constantsHost) {
-    return `http://${constantsHost}`;
+    addBase(`http://${constantsHost}`);
   }
 
   const linkingHost = extractHost(Linking.createURL('/'));
   if (linkingHost && (/:\d+$/.test(linkingHost) || linkingHost.includes('.'))) {
-    return `http://${linkingHost}`;
+    addBase(`http://${linkingHost}`);
   }
 
-  return null;
+  addBase(Linking.createURL('/'));
+  return bases;
 }
 
 export function resolveApiUrl(path: string): string | null {
@@ -163,20 +178,15 @@ export function resolveApiUrls(path: string): string[] {
   }
 
   const envBase = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
-  if (envBase) {
-    candidates.add(`${envBase.replace(/\/+$/, '')}${normalized}`);
-  }
 
   if (Platform.OS !== 'web') {
-    const linkingBase = normalizeHttpLikeUrl(Linking.createURL('/'));
-    if (linkingBase) {
-      addNativeCandidatesFromBase(candidates, linkingBase, normalized);
-    }
-
-    const nativeDevBase = resolveNativeDevBaseUrl();
-    if (nativeDevBase) {
+    for (const nativeDevBase of resolveNativeDevBaseUrls()) {
       addNativeCandidatesFromBase(candidates, nativeDevBase, normalized);
     }
+  }
+
+  if (envBase) {
+    candidates.add(`${envBase.replace(/\/+$/, '')}${normalized}`);
   }
 
   return Array.from(candidates);

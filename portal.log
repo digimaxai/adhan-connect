@@ -1,0 +1,79 @@
+﻿env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+React Compiler enabled
+Starting Metro Bundler
+node.exe : The following packages should be updated for best compatibility with the installed expo version:
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (The following p...d expo version::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  expo@54.0.33 - expected version: ~54.0.34
+  expo-file-system@19.0.21 - expected version: ~19.0.22
+  expo-linking@8.0.11 - expected version: ~8.0.12
+  expo-web-browser@15.0.10 - expected version: ~15.0.11
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://localhost:3000
+Logs for your project will appear below.
+Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ node_modules\expo-router\node\render.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 58.6% (633/827)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 63.4% ( 804/1033)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 82.0% (1146/1290)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.4% (1188/1326)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.4% (1370/1441)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.7% (1392/1542)
+| Dynamic import at line 11: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 22: require(s). This module may not work as intended when deployed to a runtime.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.1% (1421/1491)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.7% (1474/1612)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.3% (1443/1502)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.6% (1579/1659)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.8% (1528/1545)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.9% (1707/1749)
+λ Bundled 23976ms node_modules\expo-router\node\render.js (1786 modules)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1579/1579)
+Web Bundled 25730ms node_modules\expo-router\entry.js (1579 modules)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages 
+to replace the required functionality.
+λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
+  console.warn (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\expo\node_modules\@expo\cli\src\start\serve
+r\serverLogLikeMetro.ts:161:21)
+  warnOnce 
+(C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
+  createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMPr
+ops\index.js:805:13)
+  createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElemen
+t\index.js:23:32)
+  Component 
+(C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
+  Object.callComponentInDEV [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\
+react-dom\cjs\react-dom-server-legacy.node.development.js:8970:18)
+  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.no
+de.development.js:4699:19)
+  run (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.developme
+nt.js:5539:39)
+  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.dev
+elopment.js:5899:31)
+  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-leg
+acy.node.development.js:5849:11)
+Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.3% (119/323)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.3% (172/382)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.3% (219/426)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.3% (231/447)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.7% (378/607)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 42.6% (408/661)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 42.6% (420/672)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 42.8% (447/683)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 55.1% (643/884)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 60.4% ( 801/1033)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 81.4% (1071/1193)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.6% (1281/1386)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.5% (1487/1514)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1580/1581)
+Web Bundled 50316ms node_modules\expo-router\entry.js (1581 modules)
+ LOG  [web] Logs will appear in the browser console

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
+import { fetchAllMosqueRows } from '../../../lib/api/admin/mosqueDirectory';
 
 type MosqueRow = {
   id: string;
@@ -8,6 +9,10 @@ type MosqueRow = {
   country?: string | null;
   status?: string | null;
   allow_multi_mosque_local_admins?: boolean | null;
+  lat?: number | null;
+  lng?: number | null;
+  prayer_calculation_method?: number | null;
+  prayer_school?: number | null;
   live_stream_enabled?: boolean | null;
   live_stream_provider?: string | null;
   live_stream_playback_url?: string | null;
@@ -98,14 +103,13 @@ export const GET: RequestHandler = async (request) => {
   const [mosqueRes, mosquesRes, adminsRes, muezzinRes, upstreamStateRes] = await Promise.all([
     supabaseAdmin
       .from('mosques')
-      .select('id, name, city, country, status, allow_multi_mosque_local_admins, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
+      .select('id, name, city, country, status, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
       .eq('id', mosqueId)
       .maybeSingle(),
-    supabaseAdmin
-      .from('mosques')
-      .select('id, name, city, country, status, allow_multi_mosque_local_admins')
-      .order('name', { ascending: true })
-      .limit(500),
+    fetchAllMosqueRows<MosqueRow>(
+      supabaseAdmin,
+      'id, name, city, country, status, allow_multi_mosque_local_admins'
+    ),
     supabaseAdmin.from('mosque_admins').select('user_id, mosque_id').eq('mosque_id', mosqueId),
     supabaseAdmin.from('muezzins').select('user_id, mosque_id, is_active').eq('mosque_id', mosqueId),
     supabaseAdmin

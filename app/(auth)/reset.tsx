@@ -32,7 +32,7 @@ export default function ResetScreen() {
     <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={s.card}>
         <Text style={s.title}>Reset password</Text>
-        <Text style={s.subtle}>Enter your email and we'll send a reset link.</Text>
+        <Text style={s.subtle}>Enter your email and we&apos;ll send a reset link.</Text>
 
         <Text style={s.label}>Email</Text>
         <TextInput

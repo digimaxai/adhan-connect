@@ -1,0 +1,53 @@
+﻿env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN EXPO_FORCE_WEBCONTAINER_ENV LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+React Compiler enabled
+Starting Metro Bundler
+node.exe : The following packages should be updated for best compatibility with the installed expo version:
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (The following p...d expo version::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  expo@54.0.33 - expected version: ~54.0.34
+  expo-file-system@19.0.21 - expected version: ~19.0.22
+  expo-linking@8.0.11 - expected version: ~8.0.12
+  expo-web-browser@15.0.10 - expected version: ~15.0.11
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://15qrj9jpxzatjq0.boltexpo.dev
+Logs for your project will appear below.
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% (15/37)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% (109/249)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% (265/532)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% (317/581)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% (407/691)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% (543/861)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% (568/919)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% (595/922)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% ( 758/1039)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.7% ( 904/1202)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 66.3% (1064/1307)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 77.4% (1274/1448)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 86.8% (1521/1646)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.6% (1764/1823)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1864/1865)
+Android Bundled 54830ms node_modules\expo-router\entry.js (1865 modules)
+ WARN  [expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": false, "role": "user", "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ WARN  [Layout children]: No route named "admin/prayer-times" exists in nested children: ["events", "index", "manage-mosques", "mosque-onboarding", "muezzin", "muezzins", "settings", "broadcast/[id]", "campaign/[id]", "event/[id]", "prayer-times/index", "staff-rota/index"]
+ WARN  [Layout children]: No route named "broadcast" exists in nested children: ["events", "index", "manage-mosques", "mosque-onboarding", "muezzin", "muezzins", "settings", "broadcast/[id]", "campaign/[id]", "event/[id]", "prayer-times/index", "staff-rota/index"]
+ WARN  [Layout children]: No route named "campaign" exists in nested children: ["events", "index", "manage-mosques", "mosque-onboarding", "muezzin", "muezzins", "settings", "broadcast/[id]", "campaign/[id]", "event/[id]", "prayer-times/index", "staff-rota/index"]
+ WARN  [Layout children]: No route named "event" exists in nested children: ["events", "index", "manage-mosques", "mosque-onboarding", "muezzin", "muezzins", "settings", "broadcast/[id]", "campaign/[id]", "event/[id]", "prayer-times/index", "staff-rota/index"]
+ LOG  [useAdminMosque] mosques state [] selected null error null
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(admin)"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [adminMosques] no auth user [AuthSessionMissingError: Auth session missing!]
+ LOG  [RootNavigator] redirect sign-in {"pathname": "/", "segments": ["(admin)"]}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(admin)"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] redirect sign-in {"pathname": "/", "segments": []}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": false, "role": "user", "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}

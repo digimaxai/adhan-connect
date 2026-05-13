@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
+import { fetchAllMosqueRows } from '../../../lib/api/admin/mosqueDirectory';
 
 type UserRole = 'user' | 'local_admin' | 'main_admin' | 'muezzin';
 
@@ -88,11 +89,10 @@ export const GET: RequestHandler = async (request) => {
 
   const [usersRes, mosquesRes] = await Promise.all([
     usersQuery,
-    supabaseAdmin
-      .from('mosques')
-      .select('id, name, city, country, status, allow_multi_mosque_local_admins')
-      .order('name', { ascending: true })
-      .limit(500),
+    fetchAllMosqueRows(
+      supabaseAdmin,
+      'id, name, city, country, status, allow_multi_mosque_local_admins'
+    ),
   ]);
 
   if (usersRes.error) {

@@ -1,7 +1,7 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { clearDefaultMosqueId, getDefaultMosqueId, setDefaultMosqueId } from '../../lib/mosquePreferences';
@@ -31,14 +31,19 @@ export default function ManageMosques() {
   const userId = session?.user?.id ?? null;
 
   const [items, setItems] = useState<FollowedMosque[]>([]);
+  // True only on the very first load so we don't flash a spinner on re-focus.
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [defaultId, setDefaultId] = useState<string | null>(null);
+  const hasLoadedOnce = useRef(false);
 
   const count = items.length;
 
   const load = useCallback(async () => {
     if (!userId) return;
-    setLoading(true);
+    const isFirst = !hasLoadedOnce.current;
+    if (isFirst) setLoading(true);
+    setError(null);
     try {
       const { data: subsData, error: subsError } = await supabase
         .from('subscriptions')
@@ -53,6 +58,7 @@ export default function ManageMosques() {
 
       if (!orderedIds.length) {
         setItems([]);
+        hasLoadedOnce.current = true;
         return;
       }
 
@@ -78,14 +84,27 @@ export default function ManageMosques() {
       });
 
       setItems(mapped);
+      hasLoadedOnce.current = true;
+    } catch (err: any) {
+      setError(err?.message ?? 'Unable to load your followed mosques. Tap to retry.');
     } finally {
-      setLoading(false);
+      if (isFirst) setLoading(false);
     }
   }, [userId]);
 
+  // Initial load
   useEffect(() => {
     load();
   }, [load]);
+
+  // Reload whenever this screen gains focus — ensures newly followed mosques
+  // from Discover or the mosque detail page appear immediately without requiring
+  // a sign-out / sign-in cycle.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
 
   useEffect(() => {
     const getDefault = async () => {
@@ -120,11 +139,20 @@ export default function ManageMosques() {
 
   const doUnfollow = async (mosqueId: string) => {
     if (!userId) return;
-    await supabase.from('subscriptions').delete().eq('user_id', userId).eq('mosque_id', mosqueId);
+    // Optimistic update first — gives instant feedback while the DB call runs
     setItems((prev) => prev.filter((i) => i.mosque_id !== mosqueId));
     if (defaultId === mosqueId) {
       setDefaultId(null);
       await clearDefaultMosqueId(userId);
+    }
+    const { error: unfollowError } = await supabase
+      .from('subscriptions')
+      .delete()
+      .eq('user_id', userId)
+      .eq('mosque_id', mosqueId);
+    if (unfollowError) {
+      // Rollback: reload from server if the delete failed
+      void load();
     }
   };
 
@@ -139,6 +167,8 @@ export default function ManageMosques() {
 
   const renderRow = ({ item, index }: { item: FollowedMosque; index: number }) => {
     const isDefault = item.mosque_id === defaultId;
+    const canMoveUp = index > 0;
+    const canMoveDown = index < items.length - 1;
     return (
       <View style={[styles.rowCard, styles.shadow, isDefault && styles.rowDefault]}>
         <View style={styles.rowLeft}>
@@ -161,10 +191,28 @@ export default function ManageMosques() {
           >
             <Text style={[styles.btnMiniText, isDefault && styles.btnMiniTextActive]}>{isDefault ? 'Default' : 'Set default'}</Text>
           </Pressable>
-          <Pressable onPress={() => moveItem(index, index - 1)} hitSlop={8} style={({ pressed }) => [styles.handle, { opacity: pressed ? 0.85 : 1 }]}>
-            <Ionicons name="reorder-three-outline" size={18} color="#0F172A" />
-          </Pressable>
-          <Pressable onPress={() => confirmUnfollow(item.mosque_id)} style={({ pressed }) => [styles.btnOutline, { opacity: pressed ? 0.85 : 1 }]}>
+          <View style={styles.reorderGroup}>
+            <Pressable
+              onPress={() => moveItem(index, index - 1)}
+              hitSlop={8}
+              disabled={!canMoveUp}
+              style={({ pressed }) => [styles.reorderBtn, { opacity: canMoveUp ? (pressed ? 0.7 : 1) : 0.25 }]}
+            >
+              <Ionicons name="chevron-up" size={16} color="#0F172A" />
+            </Pressable>
+            <Pressable
+              onPress={() => moveItem(index, index + 1)}
+              hitSlop={8}
+              disabled={!canMoveDown}
+              style={({ pressed }) => [styles.reorderBtn, { opacity: canMoveDown ? (pressed ? 0.7 : 1) : 0.25 }]}
+            >
+              <Ionicons name="chevron-down" size={16} color="#0F172A" />
+            </Pressable>
+          </View>
+          <Pressable
+            onPress={() => confirmUnfollow(item.mosque_id)}
+            style={({ pressed }) => [styles.btnOutline, { opacity: pressed ? 0.85 : 1 }]}
+          >
             <Text style={styles.btnOutlineText}>Unfollow</Text>
           </Pressable>
         </View>
@@ -183,14 +231,31 @@ export default function ManageMosques() {
       </View>
 
       <View style={styles.summary}>
-        <Text style={styles.summaryText}>{`You are following ${count} mosque${count === 1 ? '' : 's'}`}</Text>
+        <Text style={styles.summaryText}>{`Following ${count} mosque${count === 1 ? '' : 's'}`}</Text>
+        {loading && !hasLoadedOnce.current ? null : (
+          <Pressable onPress={() => router.push('/(user)/discover')} hitSlop={8}>
+            <Text style={styles.summaryLink}>+ Follow more</Text>
+          </Pressable>
+        )}
       </View>
 
-      {items.length === 0 && !loading ? (
+      {loading && !hasLoadedOnce.current ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color="#0EA5E9" />
+        </View>
+      ) : error ? (
+        <Pressable onPress={() => void load()} style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.retryLink}>Tap to retry</Text>
+        </Pressable>
+      ) : items.length === 0 ? (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTitle}>You are not following any mosques yet.</Text>
           <Text style={styles.emptySubtitle}>Discover mosques to get live adhans.</Text>
-          <Pressable onPress={() => router.push('discover' as any)} style={({ pressed }) => [styles.discoverBtn, { opacity: pressed ? 0.9 : 1 }]}>
+          <Pressable
+            onPress={() => router.push('/(user)/discover')}
+            style={({ pressed }) => [styles.discoverBtn, { opacity: pressed ? 0.9 : 1 }]}
+          >
             <Text style={styles.discoverText}>Discover Mosques</Text>
           </Pressable>
         </View>
@@ -209,10 +274,14 @@ export default function ManageMosques() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8FAFC', paddingHorizontal: 16 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
   title: { fontSize: 20, fontWeight: '800', color: '#0F172A' },
 
   summary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 16,
@@ -222,6 +291,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   summaryText: { color: '#0F172A', fontWeight: '700', fontSize: 13 },
+  summaryLink: { color: '#0EA5E9', fontWeight: '800', fontSize: 13 },
 
   list: { paddingBottom: 20 },
   rowCard: {
@@ -246,10 +316,11 @@ const styles = StyleSheet.create({
   defaultChipText: { color: '#167C52', fontSize: 12, fontWeight: '700' },
 
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%', marginTop: 10 },
-  handle: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+  reorderGroup: { flexDirection: 'column', gap: 2 },
+  reorderBtn: {
+    width: 32,
+    height: 28,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
@@ -260,24 +331,36 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 12,
-    minWidth: 110,
+    minWidth: 90,
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
   },
   btnOutlineText: { color: '#0F172A', fontWeight: '800', fontSize: 13 },
   btnMini: {
+    flex: 1,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 12,
-    minWidth: 110,
     alignItems: 'center',
   },
   btnMiniActive: { borderColor: '#2DBE7E', backgroundColor: '#E8FFF2' },
   btnMiniText: { color: '#0F172A', fontWeight: '800', fontSize: 12 },
   btnMiniTextActive: { color: '#167C52' },
+
+  errorBox: {
+    backgroundColor: '#FFF7ED',
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 4,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  errorText: { color: '#92400E', fontWeight: '700', fontSize: 14, textAlign: 'center' },
+  retryLink: { color: '#0EA5E9', fontWeight: '800', fontSize: 13, marginTop: 8 },
 
   emptyBox: {
     backgroundColor: '#FFFFFF',
