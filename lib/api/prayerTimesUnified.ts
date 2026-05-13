@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import { PrayerName } from '../adhans';
 import { fetchServerApi, resolveApiUrls, supportsServerApi } from './apiBaseUrl';
+import { DEFAULT_ALADHAN_METHOD, fetchAladhanTimes } from './aladhan';
 
 export type PrayerTimeSlot = { adhan: Date | null; iqama: Date | null };
 export type NormalizedPrayerTimes = Record<PrayerName, PrayerTimeSlot>;
@@ -240,6 +241,54 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
     }
   } catch (err: any) {
     console.warn('[getDailyPrayerTimes] staff_rota fallback threw', err?.message ?? err);
+  }
+
+  // Aladhan calculated times — last resort when no stored data exists.
+  // Only fires when the mosque has coordinates; returns astronomically correct
+  // times based on the mosque's chosen calculation method and Asr school.
+  try {
+    type GeoRow = { lat: number | null; lng: number | null; prayer_calculation_method?: number | null; prayer_school?: number | null };
+    let mosqueGeo: GeoRow | null = null;
+
+    const { data: geoFull, error: geoFullErr } = await supabase
+      .from('mosques')
+      .select('lat, lng, prayer_calculation_method, prayer_school')
+      .eq('id', mosqueId)
+      .maybeSingle<GeoRow>();
+
+    if (!geoFullErr) {
+      mosqueGeo = geoFull;
+    } else {
+      // prayer_calculation_method / prayer_school columns may not be deployed yet — retry with just coordinates.
+      console.warn('[getDailyPrayerTimes] mosqueGeo full fetch error (column may be missing):', geoFullErr.message);
+      const { data: geoBasic, error: geoBasicErr } = await supabase
+        .from('mosques')
+        .select('lat, lng')
+        .eq('id', mosqueId)
+        .maybeSingle<{ lat: number | null; lng: number | null }>();
+      if (!geoBasicErr) {
+        mosqueGeo = geoBasic ? { lat: geoBasic.lat, lng: geoBasic.lng } : null;
+      } else {
+        console.warn('[getDailyPrayerTimes] mosqueGeo basic fetch error:', geoBasicErr.message);
+      }
+    }
+
+    if (mosqueGeo?.lat != null && mosqueGeo?.lng != null) {
+      const method = mosqueGeo.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
+      const school = mosqueGeo.prayer_school ?? 0;
+      const timings = await fetchAladhanTimes(mosqueGeo.lat, mosqueGeo.lng, dateIso, method, school);
+      if (timings) {
+        const calculated = emptyNormalized();
+        calculated.fajr    = { adhan: safeDateWithBase(timings.Fajr,    dateIso), iqama: null };
+        calculated.dhuhr   = { adhan: safeDateWithBase(timings.Dhuhr,   dateIso), iqama: null };
+        calculated.asr     = { adhan: safeDateWithBase(timings.Asr,     dateIso), iqama: null };
+        calculated.maghrib = { adhan: safeDateWithBase(timings.Maghrib, dateIso), iqama: null };
+        calculated.isha    = { adhan: safeDateWithBase(timings.Isha,    dateIso), iqama: null };
+        return calculated;
+      }
+    }
+  } catch (err: any) {
+    console.warn('[getDailyPrayerTimes] Aladhan fallback threw', err?.message ?? err);
   }
 
   return null;

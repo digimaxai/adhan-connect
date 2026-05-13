@@ -1,5 +1,6 @@
 // app/(tabs)/discover.tsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import * as Location from 'expo-location';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -13,9 +14,54 @@ type MosqueRow = {
   country?: string | null;
   distance_km?: number | null;
   is_live?: boolean | null;
+  lat?: number | null;
+  lng?: number | null;
 };
 
-const MAX_FOLLOW = 3;
+type UserLocation = {
+  latitude: number;
+  longitude: number;
+};
+
+const MAX_FOLLOW = 10;
+const MOSQUE_SELECT = 'id,name,city,country,lat,lng';
+
+const toRadians = (degrees: number) => degrees * (Math.PI / 180);
+
+const calculateDistanceKm = (from: UserLocation, mosque: MosqueRow) => {
+  if (mosque.lat == null || mosque.lng == null) return null;
+  const lat = Number(mosque.lat);
+  const lng = Number(mosque.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(lat - from.latitude);
+  const dLng = toRadians(lng - from.longitude);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(from.latitude)) * Math.cos(toRadians(lat)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const withDistances = (rows: MosqueRow[], userLocation: UserLocation | null) => {
+  if (!userLocation) return rows.map((row) => ({ ...row, distance_km: row.distance_km ?? null }));
+  return rows.map((row) => ({ ...row, distance_km: calculateDistanceKm(userLocation, row) }));
+};
+
+const sortMosques = (rows: MosqueRow[], userLocation: UserLocation | null) => {
+  return [...rows].sort((a, b) => {
+    if (userLocation) {
+      if (a.distance_km != null && b.distance_km != null) return a.distance_km - b.distance_km;
+      if (a.distance_km != null) return -1;
+      if (b.distance_km != null) return 1;
+    }
+    return (a.name || '').localeCompare(b.name || '');
+  });
+};
+
+const escapePostgrestSearchTerm = (term: string) => term.replace(/[,%]/g, ' ').trim();
 
 export default function DiscoverMosques() {
   const router = useRouter();
@@ -23,73 +69,147 @@ export default function DiscoverMosques() {
   const userId = session?.user?.id ?? null;
 
   const [query, setQuery] = useState('');
-  const [locationEnabled] = useState<boolean>(true); // toggle when wiring permissions
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'enabled' | 'denied' | 'unavailable'>('idle');
   const [mosques, setMosques] = useState<MosqueRow[]>([]);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
 
   const followedCount = useMemo(() => followingIds.size, [followingIds]);
   const atLimit = followedCount >= MAX_FOLLOW;
-  const contextHeader = locationEnabled ? 'Nearby Mosques' : 'All Mosques';
+  const contextHeader = userLocation ? 'Nearby Mosques' : 'All Mosques';
+  const locationChipText =
+    locationStatus === 'loading'
+      ? 'Getting location...'
+      : userLocation
+      ? 'Near me'
+      : locationStatus === 'denied'
+      ? 'Location permission denied'
+      : locationStatus === 'unavailable'
+      ? 'Location unavailable'
+      : 'Near me';
 
-  const sortMosques = (rows: MosqueRow[]) => {
-    return [...rows].sort((a, b) => {
-      if (locationEnabled) {
-        if (a.distance_km != null && b.distance_km != null) return a.distance_km - b.distance_km;
-        if (a.distance_km != null) return -1;
-        if (b.distance_km != null) return 1;
-      }
-      return (a.name || '').localeCompare(b.name || '');
-    });
-  };
-
-  const fetchFollowing = async () => {
+  const fetchFollowing = useCallback(async () => {
     if (!userId) return;
     const { data } = await supabase.from('subscriptions').select('mosque_id').eq('user_id', userId);
     if (Array.isArray(data)) {
       setFollowingIds(new Set(data.map((d) => d.mosque_id)));
     }
-  };
+  }, [userId]);
 
-  const searchMosques = async (text: string) => {
+  const attachMissingCoordinates = useCallback(async (rows: MosqueRow[]) => {
+    const missingIds = rows
+      .filter((row) => row.id && (row.lat == null || row.lng == null))
+      .map((row) => row.id);
+
+    if (!missingIds.length) return rows;
+
+    const { data, error } = await supabase
+      .from('mosques')
+      .select('id,lat,lng')
+      .in('id', Array.from(new Set(missingIds)));
+
+    if (error || !Array.isArray(data)) return rows;
+
+    const coordinateMap = new Map(
+      (data as Pick<MosqueRow, 'id' | 'lat' | 'lng'>[]).map((row) => [row.id, { lat: row.lat ?? null, lng: row.lng ?? null }])
+    );
+
+    return rows.map((row) => ({ ...row, ...coordinateMap.get(row.id) }));
+  }, []);
+
+  const fetchMosqueFallback = useCallback(async (term: string) => {
+    const safeTerm = escapePostgrestSearchTerm(term);
+    const buildQuery = (select: string) => {
+      let request = supabase
+        .from('mosques')
+        .select(select)
+        .order('name', { ascending: true })
+        .limit(100);
+
+      if (safeTerm) {
+        request = request.or(`name.ilike.%${safeTerm}%,city.ilike.%${safeTerm}%,country.ilike.%${safeTerm}%`);
+      }
+
+      return request;
+    };
+
+    const { data, error } = await buildQuery(MOSQUE_SELECT);
+    if (!error) return ((data as unknown as MosqueRow[]) ?? []);
+
+    const { data: basicData, error: basicError } = await buildQuery('id,name,city,country');
+    if (basicError) throw basicError;
+    return ((basicData as unknown as MosqueRow[]) ?? []);
+  }, []);
+
+  const searchMosques = useCallback(async (text: string, locationOverride?: UserLocation | null) => {
     setIsLoading(true);
     try {
       const term = text.trim();
+      const activeLocation = locationOverride === undefined ? userLocation : locationOverride;
       const { data, error } = await supabase.rpc('search_mosques', { term: term === '' ? null : term });
+      let rows: MosqueRow[];
+
       if (!error && Array.isArray(data)) {
-        setMosques(sortMosques(data as MosqueRow[]));
+        rows = data as MosqueRow[];
       } else {
-        const { data: fbData, error: fbError } = await supabase
-          .from('mosques')
-          .select('id,name,city,country')
-          .ilike('name', term === '' ? '%' : `%${term}%`)
-          .limit(50);
-        if (fbError) throw fbError;
-        setMosques(sortMosques((fbData as MosqueRow[]) ?? []));
+        rows = await fetchMosqueFallback(term);
       }
+
+      if (activeLocation) rows = await attachMissingCoordinates(rows);
+
+      setMosques(sortMosques(withDistances(rows, activeLocation ?? null), activeLocation ?? null));
     } catch {
       setMosques([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [attachMissingCoordinates, fetchMosqueFallback, userLocation]);
 
   useEffect(() => {
-    fetchFollowing();
-    searchMosques('');
-  }, [userId]);
+    void fetchFollowing();
+  }, [fetchFollowing]);
 
   useEffect(() => {
-    const t = setTimeout(() => searchMosques(query), 220);
+    const t = setTimeout(() => void searchMosques(query), 220);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, searchMosques]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchFollowing();
-      searchMosques(query);
-    }, [query, userId])
+      void fetchFollowing();
+      void searchMosques(query);
+    }, [fetchFollowing, query, searchMosques])
   );
+
+  const handleNearMePress = useCallback(async () => {
+    if (locationStatus === 'loading') return;
+    setLocationStatus('loading');
+
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        setUserLocation(null);
+        setLocationStatus('denied');
+        Alert.alert('Location permission needed', 'Allow location access to sort mosques nearest to you.');
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const nextLocation = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      };
+
+      setUserLocation(nextLocation);
+      setLocationStatus('enabled');
+      await searchMosques(query, nextLocation);
+    } catch {
+      setUserLocation(null);
+      setLocationStatus('unavailable');
+      Alert.alert('Location unavailable', 'Could not get your current location. Please try again.');
+    }
+  }, [locationStatus, query, searchMosques]);
 
   const formatDistance = (km?: number | null) => {
     if (km == null || km <= 0) return null;
@@ -102,7 +222,7 @@ export default function DiscoverMosques() {
     if (!userId) return;
     const isFollowed = followingIds.has(id);
     if (!isFollowed && followedCount >= MAX_FOLLOW) {
-      Alert.alert('Maximum Reached', 'You can follow up to 3 mosques. Unfollow a mosque to follow a new one.', [
+      Alert.alert('Maximum Reached', 'You can follow up to 10 mosques. Unfollow a mosque to follow a new one.', [
         { text: 'Manage My Mosques', onPress: () => router.push('/manage-mosques') },
         { text: 'Cancel', style: 'cancel' },
       ]);
@@ -147,13 +267,23 @@ export default function DiscoverMosques() {
           )}
         </View>
 
-        <Pressable style={[styles.locationChip, !locationEnabled && styles.locationChipWarn]}>
-          <Text style={styles.locationText}>{locationEnabled ? '📍 Near me' : '⚠️ Location unavailable'}</Text>
+        <Pressable
+          onPress={handleNearMePress}
+          disabled={locationStatus === 'loading'}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.locationChip,
+            userLocation && styles.locationChipActive,
+            !userLocation && locationStatus !== 'idle' && styles.locationChipWarn,
+            { opacity: pressed ? 0.85 : 1 },
+          ]}
+        >
+          <Text style={styles.locationText}>{locationChipText}</Text>
         </Pressable>
 
         <View style={[styles.followStrip, atLimit && styles.followStripMax]}>
           <Text style={styles.followStripText}>{`⭐ Following ${followedCount} / ${MAX_FOLLOW} mosques`}</Text>
-          {atLimit && <Text style={styles.followStripNote}>You have reached the maximum of 3 followed mosques.</Text>}
+          {atLimit && <Text style={styles.followStripNote}>You have reached the maximum of 10 followed mosques.</Text>}
           <Pressable onPress={() => router.push('/manage-mosques')} hitSlop={8} style={{ marginTop: 6, alignSelf: 'flex-start' }}>
             <Text style={styles.manageLink}>Manage my mosques</Text>
           </Pressable>
@@ -237,6 +367,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#E2E8F0',
   },
+  locationChipActive: { backgroundColor: '#DCFCE7' },
   locationChipWarn: { backgroundColor: '#FFF7ED' },
   locationText: { color: '#0F172A', fontWeight: '700', fontSize: 13 },
   followStrip: {

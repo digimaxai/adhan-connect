@@ -12,6 +12,11 @@ import {
   fetchMosqueLiveStreamUpstreamState,
 } from '../../../lib/server/liveStreamUpstreamState';
 import { resolveMuezzinMosquesForUser } from '../../../lib/server/muezzinAccess';
+import {
+  computeLiveKitRoomName,
+  deleteLiveKitRoom,
+  isLiveKitConfigured,
+} from '../../../lib/server/livekitRoom';
 
 type StreamRow = {
   id?: string;
@@ -23,6 +28,7 @@ type StreamRow = {
   stream_url?: string | null;
   url?: string | null;
   status?: string | null;
+  livekit_room_name?: string | null;
 };
 
 type ActionPayload = {
@@ -121,7 +127,7 @@ async function fetchLatestStreamRow(
 ): Promise<StreamRow | null> {
   const { data, error } = await supabaseAdmin
     .from('streams')
-    .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, url, status')
+    .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, url, status, livekit_room_name')
     .eq('mosque_id', mosqueId)
     .order('started_at', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false })
@@ -137,7 +143,7 @@ async function fetchMosqueLiveStreamConfig(
 ): Promise<MosqueLiveStreamConfigRow> {
   const { data, error } = await supabaseAdmin
     .from('mosques')
-    .select('id, name, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_username, live_stream_stream_key, live_stream_status_secret')
+    .select('id, name, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret')
     .eq('id', mosqueId)
     .maybeSingle<MosqueLiveStreamConfigRow>();
 
@@ -148,12 +154,13 @@ async function fetchMosqueLiveStreamConfig(
   return data;
 }
 
-async function requireMosquePlaybackUrl(
+async function requireMosqueBroadcastReady(
   supabaseAdmin: SupabaseClient<any, any, any>,
   mosqueId: string
 ) {
   const config = await fetchMosqueLiveStreamConfig(supabaseAdmin, mosqueId);
   const mosqueName = config.name?.trim() || 'This mosque';
+  const provider = normalizeLiveStreamProvider(config.live_stream_provider);
   const summary = summarizeMosqueLiveBroadcastConfig(config);
 
   if (!summary.streaming_enabled) {
@@ -162,17 +169,20 @@ async function requireMosquePlaybackUrl(
   if (!summary.is_ready_for_broadcast) {
     throw new Error(summary.issues[0] ?? `${mosqueName} is not ready for broadcast.`);
   }
+
+  // LiveKit: no playback URL needed — listeners join the room via token.
+  if (provider === 'livekit') {
+    if (!isLiveKitConfigured()) {
+      throw new Error('LiveKit is not configured on the server. Contact support.');
+    }
+    return { mosqueName, playbackUrl: null as null, provider, summary };
+  }
+
   const playbackUrl = normalizePlaybackUrl(config.live_stream_playback_url);
   if (!playbackUrl) {
     throw new Error(`${mosqueName} is missing a live stream playback URL.`);
   }
-
-  return {
-    mosqueName,
-    playbackUrl,
-    provider: normalizeLiveStreamProvider(config.live_stream_provider),
-    summary,
-  };
+  return { mosqueName, playbackUrl, provider, summary };
 }
 
 function isUuid(value?: string | null) {
@@ -188,6 +198,109 @@ function normalizeScheduledAt(value?: string | null) {
   if (!value) return new Date().toISOString();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
+// Mirrors the client window in useLiveBroadcastEngine.ts
+const BROADCAST_WINDOW_BEFORE_MS = 3 * 60 * 1000;
+const BROADCAST_WINDOW_AFTER_MS = 2 * 60 * 1000;
+
+const CANONICAL_PRAYERS = new Set(['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']);
+
+/**
+ * Resolve the most authoritative scheduled time for a broadcast start,
+ * working down a priority chain so the server — not the client — owns the
+ * reference time whenever a DB record exists.
+ *
+ * Priority:
+ *   1. adhans.scheduled_at  (explicit scheduled record for this adhanId)
+ *   2. staff_rota.adhan_time (this muezzin's assigned slot for today)
+ *   3. prayer_times.{prayer}_adhan_time (canonical mosque schedule)
+ *   4. client-supplied scheduledAt (backward-compat fallback)
+ *
+ * Every lookup is wrapped in try/catch: a DB error never hard-blocks the muezzin.
+ */
+async function resolveAuthoritativeScheduledAt(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string,
+  userId: string,
+  prayer: string,
+  adhanId: string | null,
+  clientScheduledAt: string
+): Promise<string> {
+  // 1. adhans table — most explicit, verified against mosqueId
+  if (adhanId && isUuid(adhanId)) {
+    try {
+      const { data } = await supabaseAdmin
+        .from('adhans')
+        .select('scheduled_at')
+        .eq('id', adhanId)
+        .eq('mosque_id', mosqueId)
+        .maybeSingle<{ scheduled_at?: string | null }>();
+      if (data?.scheduled_at) return data.scheduled_at;
+    } catch {}
+  }
+
+  const today = clientScheduledAt.slice(0, 10); // YYYY-MM-DD from ISO string
+
+  // 2. staff_rota — this muezzin's specific assignment
+  try {
+    const { data: rotaRow } = await supabaseAdmin
+      .from('staff_rota')
+      .select('adhan_time')
+      .eq('mosque_id', mosqueId)
+      .eq('muezzin_user_id', userId)
+      .eq('prayer_name', prayer)
+      .eq('date', today)
+      .maybeSingle<{ adhan_time?: string | null }>();
+    if (rotaRow?.adhan_time) return rotaRow.adhan_time;
+  } catch {}
+
+  // 3. prayer_times canonical table
+  if (CANONICAL_PRAYERS.has(prayer)) {
+    try {
+      const col = `${prayer}_adhan_time`;
+      const { data: ptRow } = await supabaseAdmin
+        .from('prayer_times')
+        .select(col)
+        .eq('mosque_id', mosqueId)
+        .eq('date', today)
+        .maybeSingle<Record<string, string | null>>();
+      const t = ptRow?.[col];
+      if (t) return t;
+    } catch {}
+  }
+
+  // 4. Fallback: client-supplied time (preserves backward compat)
+  return clientScheduledAt;
+}
+
+async function assertBroadcastWindow(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string,
+  userId: string,
+  prayer: string,
+  adhanId: string | null,
+  clientScheduledAt: string
+): Promise<void> {
+  const authoritative = await resolveAuthoritativeScheduledAt(
+    supabaseAdmin, mosqueId, userId, prayer, adhanId, clientScheduledAt
+  );
+  const scheduledMs = new Date(authoritative).getTime();
+  if (Number.isNaN(scheduledMs)) return; // unparseable time — allow through
+
+  const nowMs = Date.now();
+  const windowOpenMs = scheduledMs - BROADCAST_WINDOW_BEFORE_MS;
+  const windowCloseMs = scheduledMs + BROADCAST_WINDOW_AFTER_MS;
+
+  if (nowMs < windowOpenMs) {
+    const minutesLeft = Math.ceil((windowOpenMs - nowMs) / 60000);
+    throw new Error(
+      `Too early — the broadcast window opens in ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}.`
+    );
+  }
+  if (nowMs > windowCloseMs) {
+    throw new Error('The broadcast window for this adhan has closed.');
+  }
 }
 
 type AdhanWritePayload = Record<string, string | null>;
@@ -346,52 +459,40 @@ async function startOrCreateStream(
   mosqueId: string,
   prayer: string,
   startedAt: string,
-  playbackUrl: string
+  playbackUrl: string | null,
+  livekitRoomName: string | null
 ) {
   const existing = await fetchLatestStreamRow(supabaseAdmin, mosqueId);
+  const cols = 'id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, url, status, livekit_room_name';
+  const payload: Record<string, unknown> = {
+    is_live: true,
+    current_prayer: prayer,
+    started_at: startedAt,
+    ended_at: null,
+    status: 'active',
+    livekit_room_name: livekitRoomName,
+  };
+  if (playbackUrl) {
+    payload.stream_url = playbackUrl;
+    payload.url = playbackUrl;
+  }
 
   if (existing?.id) {
     const { data, error } = await supabaseAdmin
       .from('streams')
-      .update({
-        is_live: true,
-        current_prayer: prayer,
-        started_at: startedAt,
-        ended_at: null,
-        stream_url: playbackUrl,
-        url: playbackUrl,
-        status: 'active',
-      } as any)
+      .update(payload as any)
       .eq('id', existing.id)
-      .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, url, status')
+      .select(cols)
       .maybeSingle<StreamRow>();
 
     if (error) throw error;
-    return data ?? {
-      ...existing,
-      is_live: true,
-      current_prayer: prayer,
-      started_at: startedAt,
-      ended_at: null,
-      stream_url: playbackUrl,
-      url: playbackUrl,
-      status: 'active',
-    };
+    return data ?? { ...existing, ...payload };
   }
 
   const { data, error } = await supabaseAdmin
     .from('streams')
-    .insert({
-      mosque_id: mosqueId,
-      is_live: true,
-      current_prayer: prayer,
-      started_at: startedAt,
-      ended_at: null,
-      stream_url: playbackUrl,
-      url: playbackUrl,
-      status: 'active',
-    } as any)
-    .select('id, mosque_id, is_live, current_prayer, started_at, ended_at, stream_url, url, status')
+    .insert({ mosque_id: mosqueId, ...payload } as any)
+    .select(cols)
     .maybeSingle<StreamRow>();
 
   if (error) throw error;
@@ -589,8 +690,12 @@ export const POST: RequestHandler = async (request) => {
       const startedAt = new Date().toISOString();
       const prayer = normalizePrayer(body.prayer);
       const scheduledAt = normalizeScheduledAt(body.scheduledAt);
-      const { playbackUrl, summary } = await requireMosquePlaybackUrl(auth.supabaseAdmin, mosqueId);
-      const stream = await startOrCreateStream(auth.supabaseAdmin, mosqueId, prayer, startedAt, playbackUrl);
+      await assertBroadcastWindow(auth.supabaseAdmin, mosqueId, auth.userId, prayer, body.adhanId ?? null, scheduledAt);
+      const { playbackUrl, provider, summary } = await requireMosqueBroadcastReady(auth.supabaseAdmin, mosqueId);
+      const livekitRoomName = provider === 'livekit'
+        ? computeLiveKitRoomName(mosqueId, prayer, scheduledAt)
+        : null;
+      const stream = await startOrCreateStream(auth.supabaseAdmin, mosqueId, prayer, startedAt, playbackUrl, livekitRoomName);
       await startOrCreateAdhan(auth.supabaseAdmin, mosqueId, prayer, scheduledAt, body.adhanId ?? null, startedAt, stream?.id ?? null);
       const upstreamState = await fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId);
       const config = attachMosqueLiveUpstreamState(await attachMosqueLiveHealthChecks(summary), upstreamState);
@@ -598,12 +703,18 @@ export const POST: RequestHandler = async (request) => {
     }
 
     const endedAt = new Date().toISOString();
+    // Fetch current stream before ending so we can clean up the LiveKit room.
+    const activeStream = await fetchLatestStreamRow(auth.supabaseAdmin, mosqueId);
     const [stream, mosqueConfig, upstreamState] = await Promise.all([
       endCurrentStream(auth.supabaseAdmin, mosqueId, endedAt),
       fetchMosqueLiveStreamConfig(auth.supabaseAdmin, mosqueId),
       fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId),
     ]);
     await completeAdhan(auth.supabaseAdmin, mosqueId, body.adhanId ?? null, endedAt);
+    // Terminate the LiveKit room so all listeners are immediately disconnected.
+    if (activeStream?.livekit_room_name) {
+      await deleteLiveKitRoom(activeStream.livekit_room_name);
+    }
     const config = attachMosqueLiveUpstreamState(
       await attachMosqueLiveHealthChecks(summarizeMosqueLiveBroadcastConfig(mosqueConfig)),
       upstreamState
@@ -611,7 +722,10 @@ export const POST: RequestHandler = async (request) => {
     return json({ stream, config });
   } catch (error: any) {
     const message = error?.message ?? 'Unable to update the live broadcast state.';
-    const status = message === 'You do not have muezzin access to this mosque.' ? 403 : 500;
-    return json({ error: message }, status);
+    const forbidden =
+      message === 'You do not have muezzin access to this mosque.' ||
+      message.startsWith('Too early') ||
+      message.startsWith('The broadcast window');
+    return json({ error: message }, forbidden ? 403 : 500);
   }
 };

@@ -1,0 +1,14 @@
+﻿env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+› Port 8081 is being used by another process
+› Skipping dev server
+node.exe : Input is required, but 'npx expo' is in non-interactive mode.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Input is requir...teractive mode.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Required input:
+> Use port 8082 instead?

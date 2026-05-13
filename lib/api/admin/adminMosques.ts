@@ -1,5 +1,6 @@
 import { fetchSessionAccess } from '../../sessionAccess';
 import { supabase } from '../../supabase';
+import { fetchAllMosqueRows } from './mosqueDirectory';
 
 export type AdminMosqueSummary = {
   mosqueId: string;
@@ -41,11 +42,10 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
     }
 
     if (resolvedRole === 'main_admin') {
-      const { data: mosquesData, error: mosquesError } = await supabase
-        .from('mosques')
-        .select('id, name, city, country')
-        .order('name', { ascending: true })
-        .limit(500);
+      const { data: mosquesData, error: mosquesError } = await fetchAllMosqueRows<any>(
+        supabase,
+        'id, name, city, country'
+      );
 
       console.log('[adminMosques] main admin mosqueRows', mosquesData, mosquesError);
 

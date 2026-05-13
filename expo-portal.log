@@ -1,0 +1,21 @@
+﻿node.exe : npm warn exec The following package was not found and will be installed: node@26.0.0
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn exec T...ed: node@26.0.0:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Starting Expo web in server output mode.
+React Compiler is disabled in this mode to reduce local startup cost.
+Server mode keeps Expo Router API routes enabled for the web portal.
+(node:3832) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security 
+vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+› Port 8081 is being used by another process
+Input is required, but 'npx expo' is in non-interactive mode.
+Required input:
+> Use port 8083 instead?
+› Skipping dev server

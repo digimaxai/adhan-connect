@@ -41,3 +41,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Claude Code — dynamic model routing (written per-turn by route-classifier hook)
+.claude/settings.local.json

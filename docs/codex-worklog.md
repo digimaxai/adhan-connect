@@ -1,6 +1,6 @@
 # Codex Worklog
 
-Last updated: 2026-03-30
+Last updated: 2026-05-12
 
 ## Purpose
 
@@ -296,6 +296,52 @@ Current protection:
   - `expo-av` calls
 
 ## Recent Change Log
+
+### 2026-05-12: LiveKit Listener E2E Hardening
+
+Problem:
+
+- muezzin LiveKit publishing was confirmed from the Android emulator, but the next E2E step needed a real Android listener phone to join the same LiveKit room
+- the listener LiveKit token hook used only `EXPO_PUBLIC_API_BASE_URL`, unlike the rest of the app's API clients, so physical-device networking could fail even when emulator networking worked
+- the listener live page could still invoke the older signed playback path for LiveKit streams, which do not have an Icecast/RTMP playback URL
+- during emulator testing, the muezzin screen could start two LiveKit connects for the same broadcast and trigger a LiveKit client `Closing` redbox while one attempt was being torn down
+- on the physical listener phone, the app attempted the listener token request but stalled/fell through API candidates before joining LiveKit
+
+Root cause:
+
+- LiveKit token requests had not been wired through the shared native API URL resolver
+- the listener player had partial LiveKit support but still allowed legacy playback auto-start and manual switch paths to run for LiveKit rooms
+- the muezzin manual start and backend-live auto-start paths could race before `roomRef` existed
+- native API resolution returned only one native dev base and put the env base before native LAN/dev candidates
+
+Files changed:
+
+- `lib/api/apiBaseUrl.ts`
+- `lib/hooks/useLiveKitBroadcast.ts`
+- `lib/hooks/useLiveKitSubscribe.ts`
+- `screens/muezzin/live-broadcast.tsx`
+- `screens/user/now.tsx`
+
+Fix:
+
+- LiveKit publisher and listener token requests now use `resolveApiUrls(...)` plus timed server fetches, so emulator, LAN, tunnel, and physical-phone candidates are tried consistently
+- listener LiveKit subscribe exposes explicit reconnect, logs `[LK subscribe]` phases, tracks diagnostics, and records remote audio subscription
+- listener live page no longer calls the old signed playback endpoint for LiveKit rooms and surfaces LiveKit listener errors directly
+- listener play button no longer cancels an in-flight LiveKit join when auto-connect is still running
+- native API resolution now gathers native dev bases before the env base, so physical-device LAN candidates can be attempted before stale localhost/env values
+- publisher and listener LiveKit hooks reuse an in-flight connect promise, preventing duplicate room connects from one UI action
+- the muezzin screen uses the same auto-start key for manual and backend-live start paths
+
+Verification:
+
+- `npx tsc --noEmit`
+- `npm run lint` passes with only the existing `app/_layout.tsx` unused `Platform` warning
+- Expo dev server was started in LAN mode and `/api/listener/livekit-token` returned the expected unauthenticated `401` from both `localhost:8081` and `192.168.1.189:8081`
+- Galaxy S9 and emulator both have `adb reverse tcp:8081 tcp:8081` set for the dev server
+
+Residual risk / follow-up:
+
+- final confirmation still requires the real Android phone to join while the emulator muezzin is live; LiveKit Cloud should show the room participant count increase from 1 to 2
 
 ### 2026-03-30: Centralized Worklog Policy
 

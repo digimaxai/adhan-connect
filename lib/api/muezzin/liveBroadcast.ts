@@ -1,5 +1,5 @@
 import { supabase } from '../../supabase';
-import { resolveApiUrls } from '../apiBaseUrl';
+import { fetchServerApi, resolveApiUrls } from '../apiBaseUrl';
 
 export type LiveBroadcastStreamRow = {
   id?: string;
@@ -93,7 +93,7 @@ async function getAccessToken() {
 }
 
 async function requestLiveBroadcast(input: string | URL, init: RequestInit): Promise<LiveBroadcastPayload> {
-  const response = await fetch(input, init);
+  const response = await fetchServerApi(input, init, 10000);
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -116,6 +116,7 @@ export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<
   if (!endpoints.length) {
     throw new Error('Could not resolve the live broadcast endpoint.');
   }
+  console.log('[muezzin.liveBroadcast] state endpoints', endpoints);
 
   const accessToken = await getAccessToken();
   let lastError: Error | null = null;
@@ -124,6 +125,7 @@ export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<
     try {
       const url = new URL(endpoint);
       url.searchParams.set('mosqueId', mosqueId);
+      console.log('[muezzin.liveBroadcast] requesting state', url.toString());
       const payload = await requestLiveBroadcast(url, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -132,6 +134,7 @@ export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<
       return payload;
     } catch (error: any) {
       lastError = error instanceof Error ? error : new Error(error?.message ?? String(error));
+      console.warn('[muezzin.liveBroadcast] state endpoint failed', endpoint, lastError.message);
     }
   }
 
@@ -143,12 +146,14 @@ export async function updateMuezzinLiveBroadcast(args: UpdateLiveBroadcastArgs):
   if (!endpoints.length) {
     throw new Error('Could not resolve the live broadcast endpoint.');
   }
+  console.log('[muezzin.liveBroadcast] update endpoints', endpoints);
 
   const accessToken = await getAccessToken();
   let lastError: Error | null = null;
 
   for (const endpoint of endpoints) {
     try {
+      console.log('[muezzin.liveBroadcast] requesting update', endpoint, args.action);
       const payload = await requestLiveBroadcast(endpoint, {
         method: 'POST',
         headers: {
@@ -166,6 +171,7 @@ export async function updateMuezzinLiveBroadcast(args: UpdateLiveBroadcastArgs):
       return payload;
     } catch (error: any) {
       lastError = error instanceof Error ? error : new Error(error?.message ?? String(error));
+      console.warn('[muezzin.liveBroadcast] update endpoint failed', endpoint, lastError.message);
     }
   }
 

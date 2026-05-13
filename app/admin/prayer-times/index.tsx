@@ -11,6 +11,7 @@ import type { MosqueOption } from '../../../components/admin/web/AdminTopBar';
 import AdminShell from '../../../components/admin/web/AdminShell';
 import { AdminPanel } from '../../../components/admin/web/AdminPrimitives';
 import { Button, Pill } from '../../../components/admin/web/ui';
+import { fetchAllMosqueRows } from '../../../lib/api/admin/mosqueDirectory';
 
 type MosqueRow = {
   id: string;
@@ -41,11 +42,7 @@ function PrayerTimesHubShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await supabase
-        .from('mosques')
-        .select('id, name, city, country, status')
-        .order('name', { ascending: true })
-        .limit(500);
+      const res = await fetchAllMosqueRows<MosqueRow>(supabase, 'id, name, city, country, status');
       if (!cancelled && !res.error) {
         setMosques(res.data ?? []);
       }

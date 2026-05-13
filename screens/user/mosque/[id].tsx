@@ -287,8 +287,8 @@ export default function MosquePage() {
 
   const toggleFollow = async () => {
     if (!id || !userId || actionLoading) return;
-    if (!following && subCount >= 3) {
-      alert('Maximum Reached\n\nYou can follow up to 3 mosques. Unfollow a mosque to add a new one.\n\nChoose "Manage My Mosques" in Settings.');
+    if (!following && subCount >= 10) {
+      alert('Maximum Reached\n\nYou can follow up to 10 mosques. Unfollow a mosque to add a new one.\n\nChoose "Manage My Mosques" in Settings.');
       return;
     }
     setActionLoading(true);

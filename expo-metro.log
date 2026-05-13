@@ -1,0 +1,112 @@
+﻿env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+React Compiler enabled
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+node.exe : The following packages should be updated for best compatibility with the installed expo version:
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (The following p...d expo version::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  expo@54.0.33 - expected version: ~54.0.34
+  expo-file-system@19.0.21 - expected version: ~19.0.22
+  expo-linking@8.0.11 - expected version: ~8.0.12
+  expo-web-browser@15.0.10 - expected version: ~15.0.11
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 6/12)
+λ node_modules\expo-router\node\render.js ░░░░░░░░░░░░░░░░  5.2% ( 9/45)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (12/29)
+λ node_modules\expo-router\node\render.js ░░░░░░░░░░░░░░░░  5.7% ( 43/199)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (12/29)
+λ node_modules\expo-router\node\render.js ▓░░░░░░░░░░░░░░░ 11.7% (125/370)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% (25/44)
+λ node_modules\expo-router\node\render.js ▓▓▓▓░░░░░░░░░░░░ 26.6% (267/518)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% ( 32/123)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓░░░░░░░░░░░ 37.0% (377/620)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% (112/314)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓░░░░░░░░ 50.8% (473/667)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% (122/343)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.4% (507/727)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% (123/346)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 59.6% (619/803)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% (205/414)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 62.0% (643/819)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% (259/466)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 62.0% (643/819)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.9% (303/509)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 63.8% (662/829)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.2% (346/546)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 66.0% ( 814/1035)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 43.3% (449/714)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 66.0% ( 854/1086)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 43.5% (485/735)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 68.6% ( 905/1093)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 47.3% (519/755)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 78.7% (1035/1167)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.4% (654/942)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.9% (1058/1177)
+| Dynamic import at line 89: require(s). This module may not work as intended when deployed to a runtime.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 55.0% ( 758/1022)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.0% (1165/1312)
+| Dynamic import at line 43: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 135: require(s). This module may not work as intended when deployed to a runtime.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.4% ( 998/1113)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.0% (1241/1355)
+| Dynamic import at line 11: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 22: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 20: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 38: require(s). This module may not work as intended when deployed to a runtime.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 81.1% (1089/1219)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.4% (1369/1531)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 81.7% (1205/1333)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.4% (1529/1627)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.8% (1352/1437)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.4% (1635/1707)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.7% (1520/1546)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.1% (1778/1786)
+λ Bundled 78153ms node_modules\expo-router\node\render.js (1786 modules)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages 
+to replace the required functionality.
+λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
+  console.warn (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\expo\node_modules\@expo\cli\src\start\serve
+r\serverLogLikeMetro.ts:161:21)
+  warnOnce 
+(C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
+  createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMPr
+ops\index.js:805:13)
+  createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElemen
+t\index.js:23:32)
+  Component 
+(C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
+  Object.callComponentInDEV [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\
+react-dom\cjs\react-dom-server-legacy.node.development.js:8970:18)
+  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.no
+de.development.js:4699:19)
+  run (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.developme
+nt.js:5539:39)
+  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.dev
+elopment.js:5899:31)
+  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-leg
+acy.node.development.js:5849:11)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.5% (1575/1579)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1576/1579)
+Web Bundled 90329ms node_modules\expo-router\entry.js (1579 modules)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.4% ( 44/120)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.4% (212/421)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.4% (259/452)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.6% (406/690)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.8% (451/715)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.2% (605/876)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 60.8% (778/998)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 71.3% (1073/1271)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.0% (1220/1364)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1439/1494)
+Web Bundled 35334ms node_modules\expo-router\entry.js (1581 modules)
+ LOG  [web] Logs will appear in the browser console

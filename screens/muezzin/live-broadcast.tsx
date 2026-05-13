@@ -2,10 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrayerName, labelForPrayer } from '../../lib/adhans';
 import { useLiveBroadcastEngine } from '../../lib/hooks/useLiveBroadcastEngine';
+import { useLiveKitBroadcast } from '../../lib/hooks/useLiveKitBroadcast';
 import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
 import { useMosquePrayerTimes } from '../shared/hooks/useMosquePrayerTimes';
 
@@ -80,6 +81,7 @@ export default function MuezzinLiveScreen() {
   const [banner, setBanner] = useState<string | null>(null);
   const [showStreamKey, setShowStreamKey] = useState(false);
   const pulse = useRef(new Animated.Value(1)).current;
+  const liveKitAutoStartKeyRef = useRef<string | null>(null);
 
   const adhanFromParams = useMemo(() => {
     const scheduledTime = (params.adhanTime as string | undefined) ?? params.scheduledTime;
@@ -158,6 +160,41 @@ export default function MuezzinLiveScreen() {
 
   const engine = useLiveBroadcastEngine(resolvedMosqueId, activeAdhan);
 
+  const isLiveKitProvider = engine.config?.provider === 'livekit';
+  const liveKit = useLiveKitBroadcast({
+    mosqueId: resolvedMosqueId || null,
+    prayer: effectivePrayerKey,
+    scheduledAt: activeAdhan?.scheduled_at ?? null,
+    enabled: isLiveKitProvider && engine.isLive,
+  });
+
+  const liveKitAutoStartKey = useMemo(() => [
+    resolvedMosqueId || 'mosque',
+    effectivePrayerKey ?? 'prayer',
+    activeAdhan?.scheduled_at ?? 'scheduled',
+  ].join(':'), [activeAdhan?.scheduled_at, effectivePrayerKey, resolvedMosqueId]);
+
+  useEffect(() => {
+    if (!isLiveKitProvider || !engine.isLive || liveKit.connectionState !== 'idle') return;
+    const key = liveKitAutoStartKey;
+    if (liveKitAutoStartKeyRef.current === key) return;
+
+    liveKitAutoStartKeyRef.current = key;
+    console.log('[LK screen] backend live with idle mic; auto-starting LiveKit mic', { key });
+    void (async () => {
+      const connected = await liveKit.connect();
+      if (!connected) {
+        setBanner('Microphone connection failed. See diagnostics below.');
+      }
+    })();
+  }, [
+    engine.isLive,
+    isLiveKitProvider,
+    liveKit,
+    liveKit.connectionState,
+    liveKitAutoStartKey,
+  ]);
+
   useEffect(() => {
     if (engine.status === 'READY' || engine.status === 'LIVE') {
       const loop = Animated.loop(
@@ -203,7 +240,36 @@ export default function MuezzinLiveScreen() {
 
   const isAssigned = selectedSlot?.isAssignedToMe ?? fallbackSlot?.isAssignedToMe ?? false;
 
-  const connectionStatus = engine.isLive
+  const liveKitConnectionLabel = (() => {
+    if (!isLiveKitProvider) return null;
+    switch (liveKit.connectionState) {
+      case 'connected': return 'Mic live';
+      case 'connecting': return 'Mic connecting…';
+      case 'reconnecting': return 'Mic reconnecting…';
+      case 'failed': return liveKit.error ?? 'Mic error';
+      default: return engine.isLive ? 'Mic idle' : null;
+    }
+  })();
+  const liveKitDiagnostics = liveKit.diagnostics;
+  const liveKitGlobalSummary = liveKitDiagnostics
+    ? [
+        liveKitDiagnostics.globals.navigatorProduct ?? 'navigator?',
+        liveKitDiagnostics.globals.mediaDevices ? 'mediaDevices' : 'no mediaDevices',
+        liveKitDiagnostics.globals.getUserMedia ? 'getUserMedia' : 'no getUserMedia',
+        liveKitDiagnostics.globals.RTCPeerConnection ? 'RTCPeerConnection' : 'no RTCPeerConnection',
+      ].join(' | ')
+    : null;
+  const liveKitRegisterPath = liveKitDiagnostics
+    ? liveKitDiagnostics.usedReactNativeRegisterGlobals
+      ? '@livekit/react-native'
+      : liveKitDiagnostics.usedWebRTCFallbackRegisterGlobals
+      ? '@livekit/react-native-webrtc'
+      : 'Not registered'
+    : null;
+
+  const connectionStatus = isLiveKitProvider
+    ? (liveKitConnectionLabel ?? (engine.isLive ? 'Mic idle' : 'Ready'))
+    : engine.isLive
     ? 'Stream connected'
     : engine.loading
     ? 'Connecting...'
@@ -275,11 +341,26 @@ export default function MuezzinLiveScreen() {
   const handlePrimaryPress = async () => {
     setBanner(null);
     if (engine.isLive) {
+      console.log('[LK screen] ending broadcast', { isLiveKitProvider, liveKitState: liveKit.connectionState });
+      if (isLiveKitProvider) await liveKit.disconnect();
       const success = await engine.endBroadcast();
       if (success) setBanner('Broadcast ended');
     } else {
+      console.log('[LK screen] starting broadcast', { isLiveKitProvider, provider: engine.config?.provider });
       const success = await engine.startBroadcast();
-      if (success) setBanner('Broadcast started');
+      if (success) {
+        if (isLiveKitProvider) {
+          console.log('[LK screen] backend start succeeded; connecting LiveKit mic');
+          liveKitAutoStartKeyRef.current = liveKitAutoStartKey;
+          const micConnected = await liveKit.connect();
+          if (!micConnected) {
+            await engine.endBroadcast();
+            setBanner('Microphone connection failed. Broadcast stopped; see diagnostics below.');
+            return;
+          }
+        }
+        setBanner('Broadcast started');
+      }
     }
   };
 
@@ -323,7 +404,7 @@ export default function MuezzinLiveScreen() {
         <View style={{ width: 22 }} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={{ gap: 14, paddingBottom: 32 }}>
         <Text style={styles.title}>{labelForPrayer(prayerName as any)} for {mosqueName}</Text>
         <View style={[styles.statusPill, { backgroundColor: statusPill.bg }]}>
           <Text style={[styles.statusPillText, { color: statusPill.color }]}>{statusPill.label}</Text>
@@ -389,82 +470,178 @@ export default function MuezzinLiveScreen() {
           )}
         </View>
 
-        <View style={styles.metaCard}>
-          <Text style={styles.metaHeading}>Encoder setup</Text>
-          <Text style={styles.readinessNote}>{providerSummary}</Text>
-
-          <View style={styles.detailBlock}>
-            <View style={styles.detailHeaderRow}>
-              <Text style={styles.detailLabel}>Follower playback URL</Text>
-              {playbackUrl ? (
-                <Pressable onPress={() => void handleCopy('Follower playback URL', playbackUrl)} style={styles.detailAction}>
-                  <Text style={styles.detailActionText}>Copy</Text>
-                </Pressable>
-              ) : null}
+        {isLiveKitProvider ? (
+          <View style={styles.metaCard}>
+            <Text style={styles.metaHeading}>Microphone</Text>
+            <Text style={styles.readinessNote}>{providerSummary}</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Status</Text>
+              <Text style={[styles.metaValue, liveKit.connectionState === 'connected' ? { color: '#16A34A' } : liveKit.connectionState === 'failed' ? { color: '#DC2626' } : undefined]}>
+                {liveKitConnectionLabel ?? 'Idle'}
+              </Text>
             </View>
-            <Text style={styles.detailValue}>{playbackUrl ?? 'Not configured'}</Text>
-          </View>
-
-          {usesExternalEncoder ? (
-            <>
-              <View style={styles.detailBlock}>
-                <View style={styles.detailHeaderRow}>
-                  <Text style={styles.detailLabel}>Encoder ingest URL</Text>
-                  {ingestUrl ? (
-                    <Pressable onPress={() => void handleCopy('Encoder ingest URL', ingestUrl)} style={styles.detailAction}>
-                      <Text style={styles.detailActionText}>Copy</Text>
-                    </Pressable>
-                  ) : null}
+            {engine.isLive && liveKit.connectionState === 'connected' ? (
+              <>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Audio level</Text>
+                  <View style={styles.audioLevelTrack}>
+                    <View style={[styles.audioLevelFill, { width: `${Math.round(Math.min(1, liveKit.audioLevel * 4) * 100)}%` }]} />
+                  </View>
                 </View>
-                <Text style={styles.detailValue}>{ingestUrl ?? 'Not configured'}</Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Mic boost</Text>
+                  <View style={styles.gainControls}>
+                    <Pressable
+                      disabled={liveKit.inputGain <= 0.5}
+                      onPress={() => liveKit.setInputGain(liveKit.inputGain - 0.5)}
+                      style={({ pressed }) => [styles.gainButton, { opacity: pressed || liveKit.inputGain <= 0.5 ? 0.55 : 1 }]}
+                    >
+                      <Text style={styles.gainButtonText}>-</Text>
+                    </Pressable>
+                    <Text style={styles.metaValue}>{liveKit.inputGain.toFixed(1)}x</Text>
+                    <Pressable
+                      disabled={liveKit.inputGain >= 4}
+                      onPress={() => liveKit.setInputGain(liveKit.inputGain + 0.5)}
+                      style={({ pressed }) => [styles.gainButton, { opacity: pressed || liveKit.inputGain >= 4 ? 0.55 : 1 }]}
+                    >
+                      <Text style={styles.gainButtonText}>+</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </>
+            ) : null}
+            {liveKit.error && liveKit.connectionState === 'failed' ? (
+              <Text style={[styles.readinessNote, { color: '#DC2626' }]}>{liveKit.error}</Text>
+            ) : null}
+            {engine.isLive && liveKit.connectionState !== 'connecting' && liveKit.connectionState !== 'connected' ? (
+              <Pressable
+                onPress={() => {
+                  liveKitAutoStartKeyRef.current = null;
+                  void liveKit.connect();
+                }}
+                style={({ pressed }) => [styles.inlineAction, { opacity: pressed ? 0.8 : 1 }]}
+              >
+                <Text style={styles.inlineActionText}>Start microphone</Text>
+              </Pressable>
+            ) : null}
+            {liveKitDiagnostics ? (
+              <View style={styles.diagnosticsBlock}>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Diagnostic phase</Text>
+                  <Text style={styles.metaValue}>{liveKitDiagnostics.phase}</Text>
+                </View>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>WebRTC native module</Text>
+                  <Text style={styles.metaValue}>{liveKitDiagnostics.webRTCModulePresent ? 'Found' : 'Missing'}</Text>
+                </View>
+                {liveKitRegisterPath ? (
+                  <View style={styles.metaRow}>
+                    <Text style={styles.metaLabel}>Register path</Text>
+                    <Text style={styles.metaValue}>{liveKitRegisterPath}</Text>
+                  </View>
+                ) : null}
+                {liveKitGlobalSummary ? (
+                  <Text style={styles.healthMessage}>{liveKitGlobalSummary}</Text>
+                ) : null}
+                {liveKitDiagnostics.reactNativeLoadError ? (
+                  <Text style={[styles.healthMessage, { color: '#B45309' }]}>
+                    React Native SDK load: {liveKitDiagnostics.reactNativeLoadError}
+                  </Text>
+                ) : null}
+                {liveKitDiagnostics.error ? (
+                  <Text style={[styles.healthMessage, { color: '#DC2626' }]}>
+                    Last error: {liveKitDiagnostics.error}
+                  </Text>
+                ) : null}
+                {liveKitDiagnostics.stack ? (
+                  <Text style={styles.stackTrace} numberOfLines={8}>{liveKitDiagnostics.stack}</Text>
+                ) : null}
+                {liveKitDiagnostics.steps.length ? (
+                  <Text style={styles.diagnosticsSteps} numberOfLines={5}>
+                    {liveKitDiagnostics.steps.join(' -> ')}
+                  </Text>
+                ) : null}
               </View>
+            ) : null}
+          </View>
+        ) : (
+          <View style={styles.metaCard}>
+            <Text style={styles.metaHeading}>Encoder setup</Text>
+            <Text style={styles.readinessNote}>{providerSummary}</Text>
 
-              {engine.config?.username_label ? (
+            <View style={styles.detailBlock}>
+              <View style={styles.detailHeaderRow}>
+                <Text style={styles.detailLabel}>Follower playback URL</Text>
+                {playbackUrl ? (
+                  <Pressable onPress={() => void handleCopy('Follower playback URL', playbackUrl)} style={styles.detailAction}>
+                    <Text style={styles.detailActionText}>Copy</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              <Text style={styles.detailValue}>{playbackUrl ?? 'Not configured'}</Text>
+            </View>
+
+            {usesExternalEncoder ? (
+              <>
                 <View style={styles.detailBlock}>
                   <View style={styles.detailHeaderRow}>
-                    <Text style={styles.detailLabel}>{usernameLabel}</Text>
-                    {usernameValue ? (
-                      <Pressable onPress={() => void handleCopy(usernameLabel, usernameValue)} style={styles.detailAction}>
+                    <Text style={styles.detailLabel}>Encoder ingest URL</Text>
+                    {ingestUrl ? (
+                      <Pressable onPress={() => void handleCopy('Encoder ingest URL', ingestUrl)} style={styles.detailAction}>
                         <Text style={styles.detailActionText}>Copy</Text>
                       </Pressable>
                     ) : null}
                   </View>
-                  <Text style={styles.detailValue}>{usernameValue ?? 'Not configured'}</Text>
+                  <Text style={styles.detailValue}>{ingestUrl ?? 'Not configured'}</Text>
                 </View>
-              ) : null}
 
-              <View style={styles.detailBlock}>
-                <View style={styles.detailHeaderRow}>
-                  <Text style={styles.detailLabel}>{credentialLabel}</Text>
-                  <View style={styles.detailActions}>
-                    {engine.config?.masked_stream_key ? (
-                      <Pressable onPress={() => setShowStreamKey((value) => !value)} style={styles.detailAction}>
-                        <Text style={styles.detailActionText}>{showStreamKey ? 'Hide' : 'Reveal'}</Text>
-                      </Pressable>
-                    ) : null}
-                    {engine.config?.stream_key ? (
-                      <Pressable
-                        onPress={() => void handleCopy(credentialLabel, engine.config?.stream_key)}
-                        style={styles.detailAction}
-                      >
-                        <Text style={styles.detailActionText}>Copy</Text>
-                      </Pressable>
-                    ) : null}
+                {engine.config?.username_label ? (
+                  <View style={styles.detailBlock}>
+                    <View style={styles.detailHeaderRow}>
+                      <Text style={styles.detailLabel}>{usernameLabel}</Text>
+                      {usernameValue ? (
+                        <Pressable onPress={() => void handleCopy(usernameLabel, usernameValue)} style={styles.detailAction}>
+                          <Text style={styles.detailActionText}>Copy</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    <Text style={styles.detailValue}>{usernameValue ?? 'Not configured'}</Text>
                   </View>
-                </View>
-                <Text style={styles.detailValue}>{streamKeyValue ?? 'Not configured'}</Text>
-              </View>
-            </>
-          ) : (
-            <Text style={styles.readinessNote}>
-              This mosque is in test mode. No external encoder credentials are required.
-            </Text>
-          )}
+                ) : null}
 
-          {engine.config?.encoder_instructions ? (
-            <Text style={styles.encoderInstruction}>{engine.config.encoder_instructions}</Text>
-          ) : null}
-        </View>
+                <View style={styles.detailBlock}>
+                  <View style={styles.detailHeaderRow}>
+                    <Text style={styles.detailLabel}>{credentialLabel}</Text>
+                    <View style={styles.detailActions}>
+                      {engine.config?.masked_stream_key ? (
+                        <Pressable onPress={() => setShowStreamKey((value) => !value)} style={styles.detailAction}>
+                          <Text style={styles.detailActionText}>{showStreamKey ? 'Hide' : 'Reveal'}</Text>
+                        </Pressable>
+                      ) : null}
+                      {engine.config?.stream_key ? (
+                        <Pressable
+                          onPress={() => void handleCopy(credentialLabel, engine.config?.stream_key)}
+                          style={styles.detailAction}
+                        >
+                          <Text style={styles.detailActionText}>Copy</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                  <Text style={styles.detailValue}>{streamKeyValue ?? 'Not configured'}</Text>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.readinessNote}>
+                This mosque is in test mode. No external encoder credentials are required.
+              </Text>
+            )}
+
+            {engine.config?.encoder_instructions ? (
+              <Text style={styles.encoderInstruction}>{engine.config.encoder_instructions}</Text>
+            ) : null}
+          </View>
+        )}
 
         <View style={styles.metaCard}>
           <Text style={styles.metaHeading}>Endpoint health</Text>
@@ -575,7 +752,8 @@ export default function MuezzinLiveScreen() {
           </View>
           <Text style={styles.connectionMuted}>Listeners: --</Text>
         </View>
-      </View>
+
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -590,7 +768,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   headerTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A' },
-  content: { flex: 1, paddingHorizontal: 16, gap: 14 },
+  content: { flex: 1, paddingHorizontal: 16 },
   title: { fontSize: 22, fontWeight: '800', color: '#0F172A' },
   statusPill: {
     alignSelf: 'flex-start',
@@ -635,6 +813,34 @@ const styles = StyleSheet.create({
   assignmentNote: { color: '#0F172A', fontWeight: '700', marginTop: 6 },
   readinessNote: { color: '#475569', fontWeight: '600', marginTop: 2, lineHeight: 20 },
   healthMessage: { color: '#334155', fontWeight: '600', lineHeight: 20 },
+  diagnosticsBlock: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 10,
+    marginTop: 4,
+    gap: 8,
+  },
+  diagnosticsSteps: {
+    color: '#475569',
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  stackTrace: {
+    color: '#7F1D1D',
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  inlineAction: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 2,
+  },
+  inlineActionText: { color: '#0369A1', fontWeight: '800', fontSize: 12 },
   detailBlock: {
     backgroundColor: '#F8FAFC',
     borderRadius: 14,
@@ -683,6 +889,16 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   metaLabel: { color: '#475569', fontWeight: '700' },
   metaValue: { color: '#0F172A', fontWeight: '800' },
+  gainControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  gainButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gainButtonText: { color: '#0369A1', fontWeight: '900', fontSize: 18, lineHeight: 20 },
   secondaryAction: {
     marginTop: 10,
     alignSelf: 'center',
@@ -691,7 +907,7 @@ const styles = StyleSheet.create({
   },
   secondaryActionText: { color: '#DC2626', fontWeight: '800' },
   connectionRow: {
-    marginTop: 'auto',
+    marginTop: 16,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     paddingVertical: 14,
@@ -701,4 +917,17 @@ const styles = StyleSheet.create({
   },
   connectionText: { color: '#0F172A', fontWeight: '700' },
   connectionMuted: { color: '#94A3B8', fontWeight: '700' },
+  audioLevelTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginLeft: 12,
+  },
+  audioLevelFill: {
+    height: '100%',
+    backgroundColor: '#16A34A',
+    borderRadius: 999,
+  },
 });

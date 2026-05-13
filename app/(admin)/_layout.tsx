@@ -23,12 +23,13 @@ export default function AdminStack() {
       <Stack.Screen name="index" />
       <Stack.Screen name="manage-mosques" />
       <Stack.Screen name="events" />
-      <Stack.Screen name="admin/prayer-times" />
+      <Stack.Screen name="prayer-times/index" />
+      <Stack.Screen name="staff-rota/index" />
       <Stack.Screen name="muezzins" />
       <Stack.Screen name="muezzin" />
-      <Stack.Screen name="broadcast" />
-      <Stack.Screen name="campaign" />
-      <Stack.Screen name="event" />
+      <Stack.Screen name="broadcast/[id]" />
+      <Stack.Screen name="campaign/[id]" />
+      <Stack.Screen name="event/[id]" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="mosque-onboarding" />
     </Stack>

@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \".claude/hooks/route-classifier.js\""
+          }
+        ]
+      }
+    ],
+    "PreToolCall": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \".claude/hooks/agent-router.js\""
+          }
+        ]
+      }
+    ]
+  }
+}

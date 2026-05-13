@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { resolveMuezzinMosquesForUser } from '../../lib/server/muezzinAccess';
+import { fetchAllMosqueRows } from '../../lib/api/admin/mosqueDirectory';
 
 type MosqueSummary = {
   mosqueId: string;
@@ -56,7 +57,7 @@ export const GET: RequestHandler = async (request) => {
       .from('mosque_admins')
       .select('mosque_id, mosques(id, name, city, country)')
       .eq('user_id', userId),
-    supabaseAdmin.from('mosques').select('id, name, city, country').order('name', { ascending: true }).limit(500),
+    fetchAllMosqueRows(supabaseAdmin, 'id, name, city, country'),
   ]);
 
   if (userRes.error) {

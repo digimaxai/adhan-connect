@@ -5,8 +5,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { tokens } from '../../theme/tokens';
 
 export default function UserTabs() {
-  const pillIcon = (icon: keyof typeof Ionicons.glyphMap) =>
-    ({ color, focused }: { color: string; focused: boolean }) => (
+  const pillIcon = (icon: keyof typeof Ionicons.glyphMap) => {
+    const Icon = ({ color, focused }: { color: string; focused: boolean }) => (
       <View
         style={{
           padding: tokens.spacing.xs,
@@ -17,6 +17,9 @@ export default function UserTabs() {
         <Ionicons name={icon} size={tokens.icon.md} color={focused ? tokens.color.text.accent : color} />
       </View>
     );
+    Icon.displayName = `PillIcon(${icon})`;
+    return Icon;
+  };
 
   return (
     <Tabs

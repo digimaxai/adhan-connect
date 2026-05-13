@@ -1,0 +1,20 @@
+diff --git a/src/index.ts b/src/index.ts
+index abcd1234..efgh5678 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,9 +1,12 @@
+-import { NativeModules, Platform } from 'react-native';
++import { NativeModules, Platform, TurboModuleRegistry } from 'react-native';
+
+-const WebRTCModule = NativeModules.WebRTCModule;
++// In bridgeless mode, try TurboModuleRegistry as fallback
++const WebRTCModule = NativeModules.WebRTCModule ??
++  (TurboModuleRegistry.get?.('WebRTCModule') as any) ??
++  null;
+
+ if (WebRTCModule === null) {
+-    throw new Error(`WebRTC native module not found.\n${Platform.OS === 'ios' ?
++    throw new Error(`WebRTC native module not found.\n${Platform.OS === 'ios' ?
+         'Try executing the "pod install" command inside your projects ios folder.' :
+         'Try executing the "npm install" command inside your projects folder.'
+     }`);

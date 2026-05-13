@@ -1,0 +1,22 @@
+﻿env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+React Compiler enabled
+Starting Metro Bundler
+node.exe : The following packages should be updated for best compatibility with the installed expo version:
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (The following p...d expo version::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  expo@54.0.33 - expected version: ~54.0.34
+  expo-file-system@19.0.21 - expected version: ~19.0.22
+  expo-linking@8.0.11 - expected version: ~8.0.12
+  expo-web-browser@15.0.10 - expected version: ~15.0.11
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+ INFO  Launching DevTools...
+ INFO  Launching DevTools...
+ INFO  Launching DevTools...
