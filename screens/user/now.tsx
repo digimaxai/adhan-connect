@@ -2,6 +2,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
+import * as Location from 'expo-location';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, Animated, Easing, ScrollView } from 'react-native';
@@ -28,7 +29,10 @@ type StreamRow = {
   mosques?: { name?: string | null; city?: string | null; country?: string | null };
 };
 
+type UserLocation = { latitude: number; longitude: number };
+
 const LIVE_REFRESH_MS = 15000;
+const STREAM_SELECT = 'id, mosque_id, type, status, started_at, is_live, livekit_room_name, mosques(name,city,country)';
 
 const heroPatternSvg = `<svg width="320" height="320" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="p" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M20 0 L30 10 L20 20 L10 10 Z M20 20 L30 30 L20 40 L10 30 Z" fill="none" stroke="white" stroke-width="1.2" opacity="0.45"/><circle cx="20" cy="20" r="3" fill="white" opacity="0.45"/></pattern></defs><rect width="320" height="320" fill="url(#p)"/></svg>`;
 const heroPatternUri = `data:image/svg+xml;utf8,${encodeURIComponent(heroPatternSvg)}`;
@@ -38,9 +42,17 @@ function clampVolume(value: number, fallback = 0.7) {
   return Math.max(0, Math.min(1, Math.round(normalized * 100) / 100));
 }
 
+function parseRouteLocation(lat?: string, lng?: string): UserLocation | null {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude };
+}
+
 export default function NowScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mosqueId?: string }>();
+  const params = useLocalSearchParams<{ mosqueId?: string; lat?: string; lng?: string }>();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const requestedMosqueId = typeof params.mosqueId === 'string' ? params.mosqueId : null;
@@ -63,15 +75,29 @@ export default function NowScreen() {
   const autoPlayStreamIdRef = useRef<string | null>(null);
   const [sliderWidth, setSliderWidth] = useState(1);
   const [clockMs, setClockMs] = useState(() => Date.now());
+  const [listenerLocation, setListenerLocation] = useState<UserLocation | null>(() =>
+    parseRouteLocation(params.lat, params.lng)
+  );
   const playScale = useRef(new Animated.Value(1)).current;
 
   const current = useMemo(() => streams.find((s) => s.id === activeId) ?? streams[0] ?? null, [streams, activeId]);
   const isLiveKitStream = !!(current?.livekit_room_name);
+  const listenerLocationPayload = useMemo(
+    () =>
+      listenerLocation
+        ? {
+            latitude: listenerLocation.latitude,
+            longitude: listenerLocation.longitude,
+          }
+        : null,
+    [listenerLocation]
+  );
 
   const liveKitSubscribe = useLiveKitSubscribe({
     mosqueId: isLiveKitStream ? (current?.mosque_id ?? null) : null,
     livekitRoomName: isLiveKitStream ? (current?.livekit_room_name ?? null) : null,
     autoConnect: false,
+    listenerLocation: listenerLocationPayload,
   });
   const canPlay = !!current;
 
@@ -95,6 +121,34 @@ export default function NowScreen() {
   const followedList = useMemo(() => streams.filter((s) => followedIds.has(s.mosque_id)).slice(0, 3), [streams, followedIds]);
   const safeVolume = useMemo(() => clampVolume(volume), [volume]);
 
+  useEffect(() => {
+    const routeLocation = parseRouteLocation(params.lat, params.lng);
+    if (routeLocation) {
+      setListenerLocation(routeLocation);
+    }
+  }, [params.lat, params.lng]);
+
+  useEffect(() => {
+    if (listenerLocation) return;
+    let cancelled = false;
+    (async () => {
+      const permission = await Location.getForegroundPermissionsAsync();
+      if (permission.status !== 'granted') return;
+      try {
+        const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (!cancelled) {
+          setListenerLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listenerLocation]);
+
   const load = useCallback(async (options?: { background?: boolean }) => {
     const background = !!options?.background;
     if (!background || !hasLoadedOnceRef.current) {
@@ -104,22 +158,32 @@ export default function NowScreen() {
       setError(null);
     }
     try {
-      const [subsRes, streamsRes] = await Promise.all([
+      const [subsRes, streamsRes, requestedStreamRes] = await Promise.all([
         userId
           ? supabase.from('subscriptions').select('mosque_id').eq('user_id', userId)
           : Promise.resolve({ data: [] as { mosque_id: string }[], error: null }),
         supabase
           .from('streams')
-          .select('id, mosque_id, type, status, started_at, is_live, livekit_room_name, mosques(name,city,country)')
+          .select(STREAM_SELECT)
           .eq('is_live', true)
           .order('started_at', { ascending: false, nullsFirst: false })
           .limit(20),
+        requestedMosqueId
+          ? supabase
+              .from('streams')
+              .select(STREAM_SELECT)
+              .eq('mosque_id', requestedMosqueId)
+              .eq('is_live', true)
+              .order('started_at', { ascending: false, nullsFirst: false })
+              .limit(1)
+          : Promise.resolve({ data: [] as StreamRow[], error: null }),
       ]);
       if (streamsRes.error) throw streamsRes.error;
+      if (requestedStreamRes.error) throw requestedStreamRes.error;
       const subSet = new Set((subsRes.data ?? []).map((s) => s.mosque_id));
       setFollowedIds(subSet);
       const dedupedByMosque = new Map<string, StreamRow>();
-      ((streamsRes.data ?? []) as StreamRow[]).forEach((stream) => {
+      ([...((requestedStreamRes.data ?? []) as StreamRow[]), ...((streamsRes.data ?? []) as StreamRow[])]).forEach((stream) => {
         if (!isFreshLiveStream(stream) || dedupedByMosque.has(stream.mosque_id)) return;
         dedupedByMosque.set(stream.mosque_id, stream);
       });
@@ -287,7 +351,7 @@ export default function NowScreen() {
         await soundRef.current.unloadAsync();
         soundRef.current = null;
       }
-      const access = await fetchAuthorizedLiveStreamPlayback(stream.mosque_id, stream.id);
+      const access = await fetchAuthorizedLiveStreamPlayback(stream.mosque_id, stream.id, listenerLocationPayload);
       const uri = access.streamUrl;
       if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.Audio === 'function') {
         const audio = new window.Audio(uri);

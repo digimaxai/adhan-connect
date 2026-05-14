@@ -860,7 +860,20 @@ export default function HomeScreen() {
 
       <NearbyLiveCard
         entries={nearbyLiveEntries}
-        onListen={(mosqueId) => router.push({ pathname: '/(user)/now', params: { mosqueId } })}
+        onListen={(mosqueId) =>
+          router.push({
+            pathname: '/(user)/now',
+            params: {
+              mosqueId,
+              ...(userLocation
+                ? {
+                    lat: String(userLocation.latitude),
+                    lng: String(userLocation.longitude),
+                  }
+                : {}),
+            },
+          })
+        }
       />
 
       {otherLive.length > 0 && (

@@ -33,9 +33,22 @@ type Options = {
   mosqueId: string | null;
   livekitRoomName: string | null;
   autoConnect: boolean;
+  listenerLocation?: {
+    latitude: number;
+    longitude: number;
+  } | null;
 };
 
 const LIVEKIT_REMOTE_PLAYBACK_GAIN = 2.5;
+
+function ignoreMaybeAsync(action?: () => unknown) {
+  try {
+    const result = action?.();
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      void Promise.resolve(result).catch(() => {});
+    }
+  } catch {}
+}
 
 function forEachCollectionValue(collection: any, callback: (value: any) => void) {
   if (!collection) return;
@@ -84,7 +97,8 @@ async function getAccessToken(forceRefresh = false) {
 }
 
 async function fetchSubscriberToken(
-  mosqueId: string
+  mosqueId: string,
+  location?: Options['listenerLocation']
 ): Promise<{ token: string; roomName: string; livekitUrl: string }> {
   const endpoints = resolveApiUrls('/api/listener/livekit-token');
   if (!endpoints.length) {
@@ -106,7 +120,7 @@ async function fetchSubscriberToken(
               'Content-Type': 'application/json',
               Authorization: `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ mosqueId }),
+            body: JSON.stringify({ mosqueId, location: location ?? null }),
           },
           10000
         );
@@ -176,7 +190,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
         track.setVolume?.(boosted);
       } catch {}
     });
-    audioSessionRef.current?.setDefaultRemoteAudioTrackVolume?.(boosted).catch(() => {});
+    ignoreMaybeAsync(() => audioSessionRef.current?.setDefaultRemoteAudioTrackVolume?.(boosted));
   }, []);
 
   const disconnect = useCallback(async () => {
@@ -279,7 +293,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
         await selectSpeakerOutput(runtime.AudioSession);
       }
 
-      const tokenData = await fetchSubscriberToken(mosqueId);
+      const tokenData = await fetchSubscriberToken(mosqueId, options.listenerLocation ?? null);
       diagnosticsRef.current = mergeLiveKitDiagnostics(diagnosticsRef.current, 'listener-token-ready', {
         steps: [
           ...(diagnosticsRef.current?.steps ?? []),
@@ -326,7 +340,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
           try {
             track.setVolume?.(volumeRef.current);
           } catch {}
-          audioSessionRef.current?.setDefaultRemoteAudioTrackVolume?.(volumeRef.current).catch(() => {});
+          ignoreMaybeAsync(() => audioSessionRef.current?.setDefaultRemoteAudioTrackVolume?.(volumeRef.current));
           void selectSpeakerOutput(audioSessionRef.current);
           diagnosticsRef.current = mergeLiveKitDiagnostics(diagnosticsRef.current, 'listener-audio-subscribed', {
             steps: [
@@ -387,7 +401,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
         setConnectionState('failed');
       }
       if (roomRef.current) {
-        roomRef.current.disconnect().catch(() => {});
+        ignoreMaybeAsync(() => roomRef.current?.disconnect?.());
         roomRef.current = null;
       }
       activeRoomNameRef.current = null;
@@ -410,7 +424,13 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
         connectPromiseRef.current = null;
       }
     }
-  }, [disconnect, options.mosqueId, options.livekitRoomName]);
+  }, [
+    disconnect,
+    options.mosqueId,
+    options.livekitRoomName,
+    options.listenerLocation?.latitude,
+    options.listenerLocation?.longitude,
+  ]);
 
   // Auto-connect when livekitRoomName appears and autoConnect is true.
   useEffect(() => {
@@ -430,13 +450,13 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
   useEffect(() => {
     return () => {
       if (roomRef.current) {
-        roomRef.current.disconnect().catch(() => {});
+        ignoreMaybeAsync(() => roomRef.current?.disconnect?.());
         roomRef.current = null;
       }
       activeRoomNameRef.current = null;
       remoteTracksRef.current.clear();
       if (audioSessionStartedRef.current) {
-        audioSessionRef.current?.stopAudioSession?.().catch(() => {});
+        ignoreMaybeAsync(() => audioSessionRef.current?.stopAudioSession?.());
         audioSessionStartedRef.current = false;
         audioSessionRef.current = null;
       }

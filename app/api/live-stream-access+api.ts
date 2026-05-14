@@ -33,6 +33,8 @@ export const GET: RequestHandler = async (request) => {
   const mosqueId = (url.searchParams.get('mosqueId') ?? '').trim();
   const streamId = (url.searchParams.get('streamId') ?? '').trim() || null;
   const delivery = (url.searchParams.get('delivery') ?? '').trim() === 'redirect' ? 'redirect' : 'proxy';
+  const lat = url.searchParams.get('lat');
+  const lng = url.searchParams.get('lng');
   if (!mosqueId) {
     return json({ error: 'A mosqueId query parameter is required.' }, 400);
   }
@@ -57,6 +59,13 @@ export const GET: RequestHandler = async (request) => {
       mosqueId,
       streamId,
       delivery,
+      listenerLocation:
+        lat != null && lng != null
+          ? {
+              latitude: Number(lat),
+              longitude: Number(lng),
+            }
+          : null,
     });
 
     return json(payload);

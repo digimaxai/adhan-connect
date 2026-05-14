@@ -7,6 +7,7 @@ import {
   updateMuezzinLiveBroadcast,
 } from '../api/muezzin/liveBroadcast';
 import { MuezzinScheduleEntry } from './useMuezzinSchedule';
+import { isFreshLiveStream } from '../liveStreamFreshness';
 
 type LiveStatus = 'TOO_EARLY' | 'READY' | 'LIVE' | 'LATE' | 'NO_ADHAN';
 
@@ -20,6 +21,7 @@ type StreamRow = {
   stream_url?: string | null;
   url?: string | null;
   status?: string | null;
+  livekit_room_name?: string | null;
 };
 
 export type LiveBroadcastEngineState = {
@@ -40,9 +42,48 @@ export type LiveBroadcastEngineState = {
 
 const WINDOW_BEFORE_MS = 3 * 60 * 1000;
 const WINDOW_AFTER_MS = 2 * 60 * 1000;
+const STREAM_START_TOLERANCE_MS = 30 * 1000;
 
 function normalizeStreamRow(stream: LiveBroadcastStreamRow | null): StreamRow | null {
   return stream ? { ...stream } : null;
+}
+
+function normalizePrayerName(value?: string | null) {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function parseTimestampMs(value?: string | null) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function getSchedulePrayer(nextAdhan?: MuezzinScheduleEntry | null) {
+  return normalizePrayerName(nextAdhan?.prayer ?? nextAdhan?.prayer_name ?? null);
+}
+
+function streamMatchesActiveAdhan(
+  stream: StreamRow | null,
+  nextAdhan: MuezzinScheduleEntry | null | undefined,
+  windowStart: number | null,
+  windowEnd: number | null,
+  nowMs: number
+) {
+  if (!isFreshLiveStream(stream, nowMs)) return false;
+  if (!nextAdhan) return true;
+
+  const streamPrayer = normalizePrayerName(stream?.current_prayer);
+  const schedulePrayer = getSchedulePrayer(nextAdhan);
+  if (streamPrayer && schedulePrayer && streamPrayer !== schedulePrayer) {
+    return false;
+  }
+
+  const startedMs = parseTimestampMs(stream?.started_at);
+  if (startedMs !== null && windowStart !== null && windowEnd !== null) {
+    return startedMs >= windowStart - STREAM_START_TOLERANCE_MS && startedMs <= windowEnd + STREAM_START_TOLERANCE_MS;
+  }
+
+  return true;
 }
 
 export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: MuezzinScheduleEntry | null): LiveBroadcastEngineState {
@@ -116,8 +157,8 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
   }, [mosqueId]);
 
   const derived = useMemo(() => {
-    const isLive = !!stream?.is_live;
-    if (!nextAdhan && !stream?.is_live) {
+    const isLive = streamMatchesActiveAdhan(stream, nextAdhan, windowStart, windowEnd, now);
+    if (!nextAdhan && !isLive) {
       return { status: 'NO_ADHAN' as LiveStatus, isLive: false, isEarly: false, isLate: false, canStart: false, timeUntilSeconds: null };
     }
     if (isLive) {
@@ -133,7 +174,7 @@ export function useLiveBroadcastEngine(mosqueId?: string | null, nextAdhan?: Mue
     const status: LiveStatus = isEarly ? 'TOO_EARLY' : within ? 'READY' : 'LATE';
     const timeUntilSeconds = Math.max(0, Math.floor((scheduledAt.getTime() - nowMs) / 1000));
     return { status, isLive, isEarly, isLate, canStart: within && !isLive, timeUntilSeconds };
-  }, [stream?.is_live, nextAdhan, scheduledAt, windowStart, windowEnd, now]);
+  }, [stream, nextAdhan, scheduledAt, windowStart, windowEnd, now]);
 
   const startBroadcast = async () => {
     if (!mosqueId) {

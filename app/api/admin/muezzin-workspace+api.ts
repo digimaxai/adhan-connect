@@ -6,6 +6,7 @@ type MosqueMuezzinMember = {
   displayName: string;
   email: string | null;
   isActive: boolean;
+  isDefault: boolean;
   createdAt: string | null;
 };
 
@@ -84,7 +85,7 @@ export const GET: RequestHandler = async (request) => {
   }
 
   const { supabaseAdmin } = auth.context;
-  const [muezzinRes, requestRes] = await Promise.all([
+  const [muezzinRes, requestRes, mosqueRes] = await Promise.all([
     supabaseAdmin
       .from('muezzins')
       .select('user_id, is_active, created_at')
@@ -97,6 +98,11 @@ export const GET: RequestHandler = async (request) => {
       )
       .eq('mosque_id', mosqueId)
       .order('created_at', { ascending: false }),
+    supabaseAdmin
+      .from('mosques')
+      .select('default_muezzin_user_id')
+      .eq('id', mosqueId)
+      .maybeSingle<{ default_muezzin_user_id?: string | null }>(),
   ]);
 
   if (muezzinRes.error && muezzinRes.error.code !== 'PGRST116') {
@@ -107,6 +113,13 @@ export const GET: RequestHandler = async (request) => {
     return json({ error: requestRes.error.message || 'Unable to load cover requests.' }, 500);
   }
 
+  if (mosqueRes.error && !['PGRST116', '42703'].includes(mosqueRes.error.code)) {
+    return json({ error: mosqueRes.error.message || 'Unable to load the mosque default muezzin.' }, 500);
+  }
+
+  const defaultMuezzinUserId = mosqueRes.error?.code === '42703'
+    ? null
+    : mosqueRes.data?.default_muezzin_user_id ?? null;
   const muezzinRows = (muezzinRes.data ?? []) as { user_id: string; is_active?: boolean | null; created_at?: string | null }[];
   const requestRows = (requestRes.data ?? []) as MuezzinCoverRequest[];
   const relatedIds = Array.from(
@@ -128,6 +141,7 @@ export const GET: RequestHandler = async (request) => {
       displayName: displayNameForProfile(profile),
       email: profile?.email ?? null,
       isActive: row.is_active !== false,
+      isDefault: row.user_id === defaultMuezzinUserId,
       createdAt: row.created_at ?? null,
     };
   });
@@ -142,5 +156,6 @@ export const GET: RequestHandler = async (request) => {
   return json({
     members,
     coverRequests,
+    defaultMuezzinUserId,
   });
 };

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { computeLiveKitRoomName, createPublisherToken, getLiveKitWssUrl, isLiveKitConfigured } from '../../../lib/server/livekitRoom';
 import { resolveMuezzinMosquesForUser } from '../../../lib/server/muezzinAccess';
+import { isFreshLiveStream } from '../../../lib/liveStreamFreshness';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -63,20 +64,62 @@ export const POST: RequestHandler = async (request) => {
 
   const { data: activeStream, error: streamError } = await supabaseAdmin
     .from('streams')
-    .select('id, is_live, livekit_room_name')
+    .select('id, is_live, current_prayer, started_at, livekit_room_name')
     .eq('mosque_id', mosqueId)
     .eq('is_live', true)
     .order('started_at', { ascending: false, nullsFirst: false })
     .limit(1)
-    .maybeSingle<{ id: string; is_live: boolean; livekit_room_name: string | null }>();
+    .maybeSingle<{
+      id: string;
+      is_live: boolean;
+      current_prayer: string | null;
+      started_at: string | null;
+      livekit_room_name: string | null;
+    }>();
 
   if (streamError) {
     return json({ error: 'Could not look up the active LiveKit room.' }, 500);
   }
 
-  const roomName =
-    activeStream?.livekit_room_name?.trim() ||
-    computeLiveKitRoomName(mosqueId, prayer, scheduledAt);
+  const expectedRoomName = computeLiveKitRoomName(mosqueId, prayer, scheduledAt);
+  const activeRoomName = activeStream?.livekit_room_name?.trim() ?? '';
+  const activePrayer = activeStream?.current_prayer?.trim().toLowerCase() ?? '';
+  const activeStreamIsFresh = isFreshLiveStream(activeStream);
+  const activeStreamMatchesRequest =
+    activeStreamIsFresh &&
+    activePrayer === prayer &&
+    activeRoomName === expectedRoomName;
+
+  if (activeStream && activeStreamIsFresh && !activeStreamMatchesRequest) {
+    console.warn('[muezzin.livekit-token] refusing conflicting active stream', {
+      streamId: activeStream.id,
+      activePrayer,
+      activeRoomName,
+      expectedRoomName,
+      startedAt: activeStream.started_at,
+    });
+    return json(
+      {
+        error: 'Another live broadcast is still active for this mosque. Please refresh the broadcast screen and start the current adhan again.',
+        activePrayer,
+        activeRoomName,
+        expectedRoomName,
+      },
+      409
+    );
+  }
+
+  const roomName = activeStreamMatchesRequest ? activeRoomName : expectedRoomName;
+
+  if (activeStream && !activeStreamMatchesRequest) {
+    console.warn('[muezzin.livekit-token] ignoring stale or mismatched active stream', {
+      streamId: activeStream.id,
+      activePrayer,
+      activeRoomName,
+      expectedRoomName,
+      startedAt: activeStream.started_at,
+    });
+  }
 
   try {
     const token = await createPublisherToken(userId, roomName);

@@ -39,6 +39,22 @@ type ActionPayload = {
   adhanId?: string | null;
 };
 
+type BroadcastAccess = {
+  hasMuezzinAccess: boolean;
+  hasAdminOverride: boolean;
+};
+
+type RotaAssignmentRow = {
+  id?: string | null;
+  muezzin_user_id?: string | null;
+};
+
+type CoverAssignmentRow = {
+  id?: string | null;
+  volunteer_user_id?: string | null;
+  status?: string | null;
+};
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -113,12 +129,30 @@ async function ensureMuezzinMosqueAccess(
   supabaseAdmin: SupabaseClient<any, any, any>,
   userId: string,
   mosqueId: string
-) {
+) : Promise<BroadcastAccess> {
   const mosques = await resolveMuezzinMosquesForUser(supabaseAdmin, userId);
-  const allowed = mosques.some((mosque) => mosque.mosqueId === mosqueId);
-  if (!allowed) {
+  const hasMuezzinAccess = mosques.some((mosque) => mosque.mosqueId === mosqueId);
+
+  const [{ data: userRow, error: userError }, { data: adminRow, error: adminError }] = await Promise.all([
+    supabaseAdmin.from('users').select('role').eq('id', userId).maybeSingle<{ role?: string | null }>(),
+    supabaseAdmin
+      .from('mosque_admins')
+      .select('mosque_id')
+      .eq('user_id', userId)
+      .eq('mosque_id', mosqueId)
+      .limit(1)
+      .maybeSingle<{ mosque_id?: string | null }>(),
+  ]);
+
+  if (userError && userError.code !== 'PGRST116') throw userError;
+  if (adminError && adminError.code !== 'PGRST116') throw adminError;
+
+  const hasAdminOverride = userRow?.role === 'main_admin' || !!adminRow?.mosque_id;
+  if (!hasMuezzinAccess && !hasAdminOverride) {
     throw new Error('You do not have muezzin access to this mosque.');
   }
+
+  return { hasMuezzinAccess, hasAdminOverride };
 }
 
 async function fetchLatestStreamRow(
@@ -200,6 +234,11 @@ function normalizeScheduledAt(value?: string | null) {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
+function isTestBroadcastId(value?: string | null) {
+  const normalized = (value ?? '').trim().toLowerCase();
+  return normalized === 'test-broadcast' || normalized.startsWith('test-');
+}
+
 // Mirrors the client window in useLiveBroadcastEngine.ts
 const BROADCAST_WINDOW_BEFORE_MS = 3 * 60 * 1000;
 const BROADCAST_WINDOW_AFTER_MS = 2 * 60 * 1000;
@@ -272,6 +311,85 @@ async function resolveAuthoritativeScheduledAt(
 
   // 4. Fallback: client-supplied time (preserves backward compat)
   return clientScheduledAt;
+}
+
+async function fetchRotaAssignmentRows(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string,
+  prayer: string,
+  dateIso: string
+): Promise<RotaAssignmentRow[]> {
+  let result = await supabaseAdmin
+    .from('staff_rota')
+    .select('id, muezzin_user_id')
+    .eq('mosque_id', mosqueId)
+    .eq('prayer_name', prayer)
+    .eq('date', dateIso);
+
+  if (result.error?.code === '42703') {
+    result = await supabaseAdmin
+      .from('staff_rota')
+      .select('id, muezzin_user_id')
+      .eq('mosque_id', mosqueId)
+      .eq('prayer_name', prayer)
+      .eq('duty_date', dateIso);
+  }
+
+  if (result.error && result.error.code !== 'PGRST116') {
+    throw result.error;
+  }
+
+  return (result.data ?? []) as RotaAssignmentRow[];
+}
+
+async function fetchCoverAssignmentRows(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string,
+  userId: string,
+  prayer: string,
+  dateIso: string
+): Promise<CoverAssignmentRow[]> {
+  const { data, error } = await supabaseAdmin
+    .from('muezzin_cover_requests')
+    .select('id, volunteer_user_id, status')
+    .eq('mosque_id', mosqueId)
+    .eq('date', dateIso)
+    .eq('prayer_name', prayer)
+    .eq('volunteer_user_id', userId)
+    .in('status', ['provisional_cover', 'approved']);
+
+  if (error && error.code !== 'PGRST116') {
+    if (error.code === '42P01' || error.code === '42703') return [];
+    throw error;
+  }
+
+  return (data ?? []) as CoverAssignmentRow[];
+}
+
+async function assertUserCanStartRealBroadcast(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  access: BroadcastAccess,
+  userId: string,
+  mosqueId: string,
+  prayer: string,
+  scheduledAt: string,
+  adhanId: string | null
+) {
+  if (isTestBroadcastId(adhanId)) return;
+  if (access.hasAdminOverride) return;
+
+  const dateIso = scheduledAt.slice(0, 10);
+  const [rotaRows, coverRows] = await Promise.all([
+    fetchRotaAssignmentRows(supabaseAdmin, mosqueId, prayer, dateIso),
+    fetchCoverAssignmentRows(supabaseAdmin, mosqueId, userId, prayer, dateIso),
+  ]);
+
+  const isAssignedMuezzin = rotaRows.some((row) => row.muezzin_user_id === userId);
+  const hasApprovedCover = coverRows.some((row) => row.volunteer_user_id === userId);
+
+  if (isAssignedMuezzin || hasApprovedCover) return;
+
+  throw new Error('Only the assigned muezzin, approved cover, provisional urgent cover, or a mosque admin can start this live adhan.');
 }
 
 async function assertBroadcastWindow(
@@ -684,12 +802,21 @@ export const POST: RequestHandler = async (request) => {
   }
 
   try {
-    await ensureMuezzinMosqueAccess(auth.supabaseAdmin, auth.userId, mosqueId);
+    const access = await ensureMuezzinMosqueAccess(auth.supabaseAdmin, auth.userId, mosqueId);
 
     if (action === 'start') {
       const startedAt = new Date().toISOString();
       const prayer = normalizePrayer(body.prayer);
       const scheduledAt = normalizeScheduledAt(body.scheduledAt);
+      await assertUserCanStartRealBroadcast(
+        auth.supabaseAdmin,
+        access,
+        auth.userId,
+        mosqueId,
+        prayer,
+        scheduledAt,
+        body.adhanId ?? null
+      );
       await assertBroadcastWindow(auth.supabaseAdmin, mosqueId, auth.userId, prayer, body.adhanId ?? null, scheduledAt);
       const { playbackUrl, provider, summary } = await requireMosqueBroadcastReady(auth.supabaseAdmin, mosqueId);
       const livekitRoomName = provider === 'livekit'
@@ -724,6 +851,7 @@ export const POST: RequestHandler = async (request) => {
     const message = error?.message ?? 'Unable to update the live broadcast state.';
     const forbidden =
       message === 'You do not have muezzin access to this mosque.' ||
+      message.startsWith('Only the assigned muezzin') ||
       message.startsWith('Too early') ||
       message.startsWith('The broadcast window');
     return json({ error: message }, forbidden ? 403 : 500);

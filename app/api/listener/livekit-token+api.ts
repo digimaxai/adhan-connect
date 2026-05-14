@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { createSubscriberToken, getLiveKitWssUrl, isLiveKitConfigured } from '../../../lib/server/livekitRoom';
+import { isFreshLiveStream } from '../../../lib/liveStreamFreshness';
+import { ensureUserCanAccessMosquePlayback, type ListenerLocation } from '../../../lib/server/liveStreamListenerAccess';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -35,7 +37,7 @@ export const POST: RequestHandler = async (request) => {
   }
   const userId = authData.user.id;
 
-  let body: { mosqueId?: string };
+  let body: { mosqueId?: string; location?: ListenerLocation | null };
   try {
     body = await request.json();
   } catch {
@@ -47,20 +49,29 @@ export const POST: RequestHandler = async (request) => {
     return json({ error: 'mosqueId is required.' }, 400);
   }
 
+  try {
+    await ensureUserCanAccessMosquePlayback(supabaseAdmin, userId, mosqueId, {
+      listenerLocation: body.location ?? null,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'You do not have access to this mosque live stream.';
+    return json({ error: message }, 403);
+  }
+
   // Verify the mosque is currently live and has a LiveKit room.
   const { data: streamData, error: streamError } = await supabaseAdmin
     .from('streams')
-    .select('id, is_live, livekit_room_name')
+    .select('id, is_live, started_at, livekit_room_name')
     .eq('mosque_id', mosqueId)
     .eq('is_live', true)
     .order('started_at', { ascending: false, nullsFirst: false })
     .limit(1)
-    .maybeSingle<{ id: string; is_live: boolean; livekit_room_name: string | null }>();
+    .maybeSingle<{ id: string; is_live: boolean; started_at: string | null; livekit_room_name: string | null }>();
 
   if (streamError) {
     return json({ error: 'Could not look up stream.' }, 500);
   }
-  if (!streamData?.is_live || !streamData?.livekit_room_name) {
+  if (!streamData?.is_live || !streamData?.livekit_room_name || !isFreshLiveStream(streamData)) {
     return json({ error: 'No active LiveKit broadcast for this mosque.' }, 404);
   }
 
