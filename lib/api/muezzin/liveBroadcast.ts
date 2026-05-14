@@ -11,6 +11,7 @@ export type LiveBroadcastStreamRow = {
   stream_url?: string | null;
   url?: string | null;
   status?: string | null;
+  livekit_room_name?: string | null;
 };
 
 export type MosqueLiveBroadcastConfig = {

@@ -1,7 +1,7 @@
 // app/_layout.tsx
 import { Redirect, Stack, usePathname, useRootNavigationState, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { useRoleFlags } from '../lib/roles';
 import { getPreferredStaffEntry, subscribePreferredStaffEntry } from '../lib/roleEntryPreferences';

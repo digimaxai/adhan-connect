@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -80,6 +81,9 @@ export default function MuezzinLiveScreen() {
   const prayerTimes = useMosquePrayerTimes(resolvedMosqueId);
   const [banner, setBanner] = useState<string | null>(null);
   const [showStreamKey, setShowStreamKey] = useState(false);
+  const [micTestRunning, setMicTestRunning] = useState(false);
+  const [micTestPeakDb, setMicTestPeakDb] = useState<number | null>(null);
+  const [micTestMessage, setMicTestMessage] = useState<string | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
   const liveKitAutoStartKeyRef = useRef<string | null>(null);
 
@@ -364,6 +368,76 @@ export default function MuezzinLiveScreen() {
     }
   };
 
+  const runMicInputTest = async () => {
+    if (micTestRunning) return;
+    if (engine.isLive) {
+      setMicTestMessage('End the broadcast before running mic check.');
+      return;
+    }
+
+    let recording: Audio.Recording | null = null;
+    let peakDb = -160;
+    setMicTestRunning(true);
+    setMicTestPeakDb(null);
+    setMicTestMessage('Listening...');
+
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Microphone permission is required.');
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: 1,
+        shouldDuckAndroid: false,
+      });
+
+      recording = new Audio.Recording();
+      await recording.prepareToRecordAsync({
+        ...Audio.RecordingOptionsPresets.LOW_QUALITY,
+        isMeteringEnabled: true,
+        keepAudioActiveHint: true,
+      });
+      recording.setProgressUpdateInterval(150);
+      recording.setOnRecordingStatusUpdate((status) => {
+        if (typeof status.metering !== 'number') return;
+        peakDb = Math.max(peakDb, status.metering);
+        setMicTestPeakDb(peakDb);
+      });
+      await recording.startAsync();
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const finalStatus = await recording.getStatusAsync();
+      if (typeof finalStatus.metering === 'number') {
+        peakDb = Math.max(peakDb, finalStatus.metering);
+        setMicTestPeakDb(peakDb);
+      }
+      await recording.stopAndUnloadAsync();
+      recording = null;
+
+      const detected = peakDb > -55;
+      setMicTestMessage(detected ? `Mic input detected (${peakDb.toFixed(1)} dB).` : `No usable mic input detected (${peakDb.toFixed(1)} dB).`);
+    } catch (error: any) {
+      try {
+        await recording?.stopAndUnloadAsync();
+      } catch {}
+      setMicTestMessage(error?.message ?? 'Mic check failed.');
+    } finally {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
+          interruptionModeIOS: 1,
+          shouldDuckAndroid: false,
+        });
+      } catch {}
+      setMicTestRunning(false);
+    }
+  };
+
   const circleStyle = (() => {
     if (engine.isLive)
       return {
@@ -474,6 +548,31 @@ export default function MuezzinLiveScreen() {
           <View style={styles.metaCard}>
             <Text style={styles.metaHeading}>Microphone</Text>
             <Text style={styles.readinessNote}>{providerSummary}</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Raw mic check</Text>
+              <Pressable
+                disabled={micTestRunning || engine.isLive}
+                onPress={runMicInputTest}
+                style={({ pressed }) => [
+                  styles.inlineAction,
+                  {
+                    marginTop: 0,
+                    opacity: pressed || micTestRunning || engine.isLive ? 0.65 : 1,
+                  },
+                ]}
+              >
+                <Text style={styles.inlineActionText}>{micTestRunning ? 'Checking...' : 'Test mic'}</Text>
+              </Pressable>
+            </View>
+            {micTestPeakDb !== null ? (
+              <View style={styles.metaRow}>
+                <Text style={styles.metaLabel}>Peak level</Text>
+                <View style={styles.audioLevelTrack}>
+                  <View style={[styles.audioLevelFill, { width: `${Math.round(Math.max(0, Math.min(1, (micTestPeakDb + 80) / 80)) * 100)}%` }]} />
+                </View>
+              </View>
+            ) : null}
+            {micTestMessage ? <Text style={styles.healthMessage}>{micTestMessage}</Text> : null}
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>Status</Text>
               <Text style={[styles.metaValue, liveKit.connectionState === 'connected' ? { color: '#16A34A' } : liveKit.connectionState === 'failed' ? { color: '#DC2626' } : undefined]}>

@@ -16,6 +16,11 @@ type CachedAccessEntry = {
   payload: AuthorizedLiveStreamAccess;
 };
 
+type ListenerLocation = {
+  latitude: number;
+  longitude: number;
+} | null;
+
 const accessCache = new Map<string, CachedAccessEntry>();
 
 function cacheKey(mosqueId: string, streamId?: string | null) {
@@ -41,7 +46,11 @@ async function getAccessToken() {
   return sessionData.session.access_token;
 }
 
-export async function fetchAuthorizedLiveStreamPlayback(mosqueId: string, streamId?: string | null) {
+export async function fetchAuthorizedLiveStreamPlayback(
+  mosqueId: string,
+  streamId?: string | null,
+  location?: ListenerLocation
+) {
   const key = cacheKey(mosqueId, streamId);
   const cached = accessCache.get(key);
   if (cached && cached.expiresAtMs - Date.now() > 30_000) {
@@ -62,6 +71,10 @@ export async function fetchAuthorizedLiveStreamPlayback(mosqueId: string, stream
       url.searchParams.set('mosqueId', mosqueId);
       if (streamId) {
         url.searchParams.set('streamId', streamId);
+      }
+      if (location) {
+        url.searchParams.set('lat', String(location.latitude));
+        url.searchParams.set('lng', String(location.longitude));
       }
       url.searchParams.set('delivery', Platform.OS === 'web' ? 'redirect' : 'proxy');
 

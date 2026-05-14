@@ -53,6 +53,15 @@ function applyLocalAudioTrackGain(track: any, gain: number) {
   } catch {}
 }
 
+function ignoreMaybeAsync(action?: () => unknown) {
+  try {
+    const result = action?.();
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      void Promise.resolve(result).catch(() => {});
+    }
+  } catch {}
+}
+
 function isExpiredSessionError(status: number, message: string) {
   return status === 401 || /session is invalid|session.*expired|jwt.*expired|invalid.*token/i.test(message);
 }
@@ -444,7 +453,7 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
       }
       setLiveConnectionState('failed');
       if (roomRef.current) {
-        roomRef.current.disconnect().catch(() => {});
+        ignoreMaybeAsync(() => roomRef.current?.disconnect?.());
         roomRef.current = null;
       }
       audioTrackRef.current = null;
@@ -484,10 +493,10 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
     return () => {
       stopAudioLevelPolling();
       if (audioTrackRef.current) {
-        audioTrackRef.current.stop?.().catch(() => {});
+        ignoreMaybeAsync(() => audioTrackRef.current?.stop?.());
       }
       if (roomRef.current) {
-        roomRef.current.disconnect().catch(() => {});
+        ignoreMaybeAsync(() => roomRef.current?.disconnect?.());
       }
     };
   }, [stopAudioLevelPolling]);

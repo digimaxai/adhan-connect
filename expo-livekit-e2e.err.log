@@ -1,0 +1,13 @@
+The following packages should be updated for best compatibility with the installed expo version:
+  expo@54.0.33 - expected version: ~54.0.34
+  expo-file-system@19.0.21 - expected version: ~19.0.22
+  expo-linking@8.0.11 - expected version: ~8.0.12
+  expo-web-browser@15.0.10 - expected version: ~15.0.11
+Your project may not work correctly until you install the expected versions of the packages.
+[muezzin.livekit-token] ignoring stale or mismatched active stream {
+  streamId: '7a78f9c1-7f7e-40b3-a389-47c3b1ea0de3',
+  activePrayer: 'asr',
+  activeRoomName: 'adhan-52fbe3bf-2d08-4009-9921-208afb5b3169-asr-2026-05-14',
+  expectedRoomName: 'adhan-52fbe3bf-2d08-4009-9921-208afb5b3169-maghrib-2026-05-14',
+  startedAt: '2026-05-14T17:57:14.94+00:00'
+}

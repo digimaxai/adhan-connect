@@ -23,6 +23,22 @@ type MosqueListenerConfigRow = MosqueLiveStreamConfigRow & {
   live_stream_listener_secret?: string | null;
 };
 
+type MosqueLocationRow = {
+  id: string;
+  lat?: number | null;
+  lng?: number | null;
+};
+
+export type ListenerLocation = {
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+type NormalizedListenerLocation = {
+  latitude: number;
+  longitude: number;
+};
+
 type ListenerPlaybackContext = {
   config: MosqueListenerConfigRow;
   stream: LiveStreamRow;
@@ -42,6 +58,7 @@ export type IssuedMosquePlaybackAccess = {
 };
 
 const DEFAULT_ACCESS_TTL_MS = 10 * 60 * 1000;
+export const NEARBY_LIVE_ACCESS_RADIUS_KM = 30;
 const textEncoder = new TextEncoder();
 
 function safeNormalizePlaybackUrl(value?: string | null) {
@@ -76,6 +93,35 @@ async function signHmacHex(secret: string, message: string) {
 
 function buildPlaybackTokenMessage(mosqueId: string, streamId: string, expiresAtMs: number) {
   return `${mosqueId}:${streamId}:${expiresAtMs}`;
+}
+
+function normalizeListenerLocation(location?: ListenerLocation | null): NormalizedListenerLocation | null {
+  const latitude = Number(location?.latitude);
+  const longitude = Number(location?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude };
+}
+
+function toRad(deg: number) {
+  return deg * (Math.PI / 180);
+}
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getNearbyDistanceKm(location: NormalizedListenerLocation | null, mosque?: MosqueLocationRow | null) {
+  if (!location || mosque?.lat == null || mosque?.lng == null) return null;
+  const mosqueLat = Number(mosque.lat);
+  const mosqueLng = Number(mosque.lng);
+  if (!Number.isFinite(mosqueLat) || !Number.isFinite(mosqueLng)) return null;
+  return haversineKm(location.latitude, location.longitude, mosqueLat, mosqueLng);
 }
 
 async function fetchListenerPlaybackContext(
@@ -136,9 +182,11 @@ async function fetchListenerPlaybackContext(
 export async function ensureUserCanAccessMosquePlayback(
   supabaseAdmin: SupabaseClient<any, any, any>,
   userId: string,
-  mosqueId: string
+  mosqueId: string,
+  options?: { listenerLocation?: ListenerLocation | null }
 ) {
-  const [userRes, subscriptionRes, adminRes, muezzinRes] = await Promise.all([
+  const listenerLocation = normalizeListenerLocation(options?.listenerLocation);
+  const [userRes, subscriptionRes, adminRes, muezzinRes, mosqueRes] = await Promise.all([
     supabaseAdmin.from('users').select('role').eq('id', userId).maybeSingle<{ role?: string | null }>(),
     supabaseAdmin
       .from('subscriptions')
@@ -162,23 +210,44 @@ export async function ensureUserCanAccessMosquePlayback(
       .eq('is_active', true)
       .limit(1)
       .maybeSingle<{ mosque_id?: string | null }>(),
+    listenerLocation
+      ? supabaseAdmin
+          .from('mosques')
+          .select('id, lat, lng')
+          .eq('id', mosqueId)
+          .maybeSingle<MosqueLocationRow>()
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   if (userRes.error) throw userRes.error;
   if (subscriptionRes.error && subscriptionRes.error.code !== 'PGRST116') throw subscriptionRes.error;
   if (adminRes.error && adminRes.error.code !== 'PGRST116') throw adminRes.error;
   if (muezzinRes.error && muezzinRes.error.code !== 'PGRST116') throw muezzinRes.error;
+  if (mosqueRes.error && mosqueRes.error.code !== 'PGRST116') throw mosqueRes.error;
 
   const isMainAdmin = userRes.data?.role === 'main_admin';
   const hasFollowerAccess = !!subscriptionRes.data?.mosque_id;
   const hasAdminAccess = !!adminRes.data?.mosque_id;
   const hasMuezzinAccess = !!muezzinRes.data?.mosque_id;
+  const nearbyDistanceKm = getNearbyDistanceKm(listenerLocation, mosqueRes.data);
+  const hasNearbyAccess = nearbyDistanceKm !== null && nearbyDistanceKm <= NEARBY_LIVE_ACCESS_RADIUS_KM;
 
-  if (isMainAdmin || hasFollowerAccess || hasAdminAccess || hasMuezzinAccess) {
-    return;
+  if (isMainAdmin || hasFollowerAccess || hasAdminAccess || hasMuezzinAccess || hasNearbyAccess) {
+    return {
+      reason: isMainAdmin
+        ? 'main-admin'
+        : hasAdminAccess
+        ? 'admin'
+        : hasMuezzinAccess
+        ? 'muezzin'
+        : hasFollowerAccess
+        ? 'followed'
+        : 'nearby',
+      nearbyDistanceKm,
+    };
   }
 
-  throw new Error('You do not have access to this mosque live stream.');
+  throw new Error('Follow this mosque or enable nearby access to listen to its live adhan.');
 }
 
 export async function issueMosquePlaybackAccessUrl(args: {
@@ -189,8 +258,11 @@ export async function issueMosquePlaybackAccessUrl(args: {
   streamId?: string | null;
   ttlMs?: number;
   delivery?: 'proxy' | 'redirect';
+  listenerLocation?: ListenerLocation | null;
 }) {
-  await ensureUserCanAccessMosquePlayback(args.supabaseAdmin, args.userId, args.mosqueId);
+  await ensureUserCanAccessMosquePlayback(args.supabaseAdmin, args.userId, args.mosqueId, {
+    listenerLocation: args.listenerLocation,
+  });
   const context = await fetchListenerPlaybackContext(args.supabaseAdmin, args.mosqueId);
 
   if (args.streamId && context.stream.id !== args.streamId) {
