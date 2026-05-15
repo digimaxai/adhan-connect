@@ -47,6 +47,7 @@ type BroadcastAccess = {
 type RotaAssignmentRow = {
   id?: string | null;
   muezzin_user_id?: string | null;
+  staff_user_id?: string | null;
 };
 
 type CoverAssignmentRow = {
@@ -319,12 +320,21 @@ async function fetchRotaAssignmentRows(
   prayer: string,
   dateIso: string
 ): Promise<RotaAssignmentRow[]> {
-  let result = await supabaseAdmin
+  let result: any = await supabaseAdmin
     .from('staff_rota')
-    .select('id, muezzin_user_id')
+    .select('id, muezzin_user_id, staff_user_id')
     .eq('mosque_id', mosqueId)
     .eq('prayer_name', prayer)
     .eq('date', dateIso);
+
+  if (result.error?.code === '42703') {
+    result = await supabaseAdmin
+      .from('staff_rota')
+      .select('id, muezzin_user_id')
+      .eq('mosque_id', mosqueId)
+      .eq('prayer_name', prayer)
+      .eq('date', dateIso);
+  }
 
   if (result.error?.code === '42703') {
     result = await supabaseAdmin
@@ -340,6 +350,38 @@ async function fetchRotaAssignmentRows(
   }
 
   return (result.data ?? []) as RotaAssignmentRow[];
+}
+
+async function fetchDefaultMuezzinUserId(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string
+) {
+  const { data: mosqueRow, error: mosqueError } = await supabaseAdmin
+    .from('mosques')
+    .select('default_muezzin_user_id')
+    .eq('id', mosqueId)
+    .maybeSingle<{ default_muezzin_user_id?: string | null }>();
+
+  if (mosqueError) {
+    if (['PGRST116', '42703'].includes(mosqueError.code)) return null;
+    throw mosqueError;
+  }
+
+  const defaultUserId = mosqueRow?.default_muezzin_user_id ?? null;
+  if (!defaultUserId) return null;
+
+  const { data: assignment, error: assignmentError } = await supabaseAdmin
+    .from('muezzins')
+    .select('user_id, is_active')
+    .eq('mosque_id', mosqueId)
+    .eq('user_id', defaultUserId)
+    .maybeSingle<{ user_id?: string | null; is_active?: boolean | null }>();
+
+  if (assignmentError && assignmentError.code !== 'PGRST116') {
+    throw assignmentError;
+  }
+
+  return assignment?.user_id && assignment.is_active !== false ? defaultUserId : null;
 }
 
 async function fetchCoverAssignmentRows(
@@ -379,15 +421,17 @@ async function assertUserCanStartRealBroadcast(
   if (access.hasAdminOverride) return;
 
   const dateIso = scheduledAt.slice(0, 10);
-  const [rotaRows, coverRows] = await Promise.all([
+  const [rotaRows, coverRows, defaultMuezzinUserId] = await Promise.all([
     fetchRotaAssignmentRows(supabaseAdmin, mosqueId, prayer, dateIso),
     fetchCoverAssignmentRows(supabaseAdmin, mosqueId, userId, prayer, dateIso),
+    fetchDefaultMuezzinUserId(supabaseAdmin, mosqueId),
   ]);
 
-  const isAssignedMuezzin = rotaRows.some((row) => row.muezzin_user_id === userId);
+  const isAssignedMuezzin = rotaRows.some((row) => (row.muezzin_user_id ?? row.staff_user_id ?? null) === userId);
+  const isDefaultMuezzinForBlankSlot = rotaRows.length === 0 && defaultMuezzinUserId === userId;
   const hasApprovedCover = coverRows.some((row) => row.volunteer_user_id === userId);
 
-  if (isAssignedMuezzin || hasApprovedCover) return;
+  if (isAssignedMuezzin || isDefaultMuezzinForBlankSlot || hasApprovedCover) return;
 
   throw new Error('Only the assigned muezzin, approved cover, provisional urgent cover, or a mosque admin can start this live adhan.');
 }

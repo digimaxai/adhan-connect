@@ -43,6 +43,7 @@ type RotaWorkspacePayload = {
   mosqueId?: string | null;
   mosqueName?: string | null;
   userId?: string | null;
+  defaultMuezzinUserId?: string | null;
   error?: string | null;
 };
 
@@ -55,6 +56,7 @@ function isRotaWorkspacePayload(value: unknown): value is RotaWorkspacePayload {
     'mosqueId' in payload ||
     'mosqueName' in payload ||
     'userId' in payload ||
+    'defaultMuezzinUserId' in payload ||
     'error' in payload
   );
 }
@@ -64,6 +66,8 @@ const ROTA_PRAYERS: RotaPrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha
 const WINDOW_START_MS = 3 * 60 * 1000;
 const WINDOW_END_MS = 2 * 60 * 1000;
 const FUTURE_LOOKAHEAD_DAYS = 14;
+
+type CoverOverride = { volunteerUserId: string; status: 'provisional_cover' | 'approved' };
 
 const toDate = (value?: string | Date | null): Date | null => {
   if (!value) return null;
@@ -168,7 +172,7 @@ async function fetchCoverOverrideMap(
   mosqueId: string,
   startIso: string,
   endIso: string
-): Promise<Record<string, { volunteerUserId: string; status: 'provisional_cover' | 'approved' }>> {
+): Promise<Record<string, CoverOverride>> {
   const { data, error } = await supabase
     .from('muezzin_cover_requests')
     .select('date, prayer_name, volunteer_user_id, status')
@@ -182,7 +186,7 @@ async function fetchCoverOverrideMap(
     return {};
   }
 
-  const overrides: Record<string, { volunteerUserId: string; status: 'provisional_cover' | 'approved' }> = {};
+  const overrides: Record<string, CoverOverride> = {};
   ((data ?? []) as {
     date?: string | null;
     prayer_name?: string | null;
@@ -198,6 +202,136 @@ async function fetchCoverOverrideMap(
     };
   });
   return overrides;
+}
+
+async function fetchProfileNameMap(userIds: string[]) {
+  if (!userIds.length) return {} as Record<string, string>;
+  const { data: profiles, error: profilesErr } = await supabase
+    .from('profiles')
+    .select('id, full_name, display_name, email')
+    .in('id', Array.from(new Set(userIds)));
+
+  if (profilesErr && profilesErr.code !== 'PGRST116') {
+    console.warn('[fetchProfileNameMap]', profilesErr.message);
+    return {};
+  }
+
+  const profileNames: Record<string, string> = {};
+  (profiles ?? []).forEach((p: any) => {
+    const display = p?.display_name || p?.full_name || p?.email;
+    if (display) profileNames[p.id] = display;
+  });
+  return profileNames;
+}
+
+async function fetchDefaultMuezzinUserId(mosqueId: string) {
+  const { data: mosqueRow, error: mosqueError } = await supabase
+    .from('mosques')
+    .select('default_muezzin_user_id')
+    .eq('id', mosqueId)
+    .maybeSingle<{ default_muezzin_user_id?: string | null }>();
+
+  if (mosqueError) {
+    if (!['PGRST116', '42703'].includes(mosqueError.code)) {
+      console.warn('[fetchDefaultMuezzinUserId] mosque lookup', mosqueError.message);
+    }
+    return null;
+  }
+
+  const defaultUserId = mosqueRow?.default_muezzin_user_id ?? null;
+  if (!defaultUserId) return null;
+
+  const { data: assignment, error: assignmentError } = await supabase
+    .from('muezzins')
+    .select('user_id, is_active')
+    .eq('mosque_id', mosqueId)
+    .eq('user_id', defaultUserId)
+    .maybeSingle<{ user_id?: string | null; is_active?: boolean | null }>();
+
+  if (assignmentError && assignmentError.code !== 'PGRST116') {
+    console.warn('[fetchDefaultMuezzinUserId] assignment lookup', assignmentError.message);
+    return null;
+  }
+
+  return assignment?.user_id && assignment.is_active !== false ? defaultUserId : null;
+}
+
+function buildDateRange(start: Date, end: Date) {
+  const startDate = clampToDayStart(start);
+  const endDate = clampToDayStart(end);
+  const cursor = new Date(Math.min(startDate.getTime(), endDate.getTime()));
+  const finalMs = Math.max(startDate.getTime(), endDate.getTime());
+  const dates: string[] = [];
+  while (cursor.getTime() <= finalMs) {
+    dates.push(formatLocalDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function buildExplicitSlotKeys(rows: Array<Partial<StaffRotaEntry> | StaffRotaRow>) {
+  const keys = new Set<string>();
+  rows.forEach((row) => {
+    const prayerName = normalizeRotaPrayerName(row.prayer_name ?? row.prayer ?? null);
+    const date = row.date ?? row.duty_date ?? null;
+    if (date && prayerName) {
+      keys.add(`${date}:${prayerName}`);
+    }
+  });
+  return keys;
+}
+
+function appendDefaultRotaEntries({
+  entries,
+  explicitSlotKeys,
+  coverOverrides,
+  defaultMuezzinUserId,
+  mosqueId,
+  startDate,
+  endDate,
+  prayerTimesByDate,
+}: {
+  entries: StaffRotaEntry[];
+  explicitSlotKeys: Set<string>;
+  coverOverrides: Record<string, CoverOverride>;
+  defaultMuezzinUserId: string | null;
+  mosqueId: string;
+  startDate: Date;
+  endDate: Date;
+  prayerTimesByDate: Record<string, PrayerTimesRow | undefined>;
+}) {
+  if (!defaultMuezzinUserId) return entries;
+
+  const withDefaults = [...entries];
+  buildDateRange(startDate, endDate).forEach((date) => {
+    ROTA_PRAYERS.forEach((prayerName) => {
+      const key = `${date}:${prayerName}`;
+      if (explicitSlotKeys.has(key)) return;
+
+      const canonicalPrayerRow = prayerTimesByDate[date];
+      const override = coverOverrides[key];
+      const effectiveUserId = override?.volunteerUserId ?? defaultMuezzinUserId;
+      withDefaults.push({
+        id: `default-${mosqueId}-${date}-${prayerName}`,
+        mosque_id: mosqueId,
+        date,
+        duty_date: date,
+        prayer_name: prayerName,
+        prayer: prayerName,
+        muezzin_user_id: effectiveUserId,
+        staff_user_id: effectiveUserId,
+        role_on_duty: 'default',
+        adhan_time: getPrayerTimeValue(canonicalPrayerRow, prayerName, 'adhan'),
+        iqama_time: getPrayerTimeValue(canonicalPrayerRow, prayerName, 'iqama'),
+        notes:
+          override?.status === 'provisional_cover'
+            ? 'Emergency cover pending local-admin confirmation.'
+            : null,
+      });
+    });
+  });
+
+  return withDefaults;
 }
 
 export async function getMuezzinRotaForRange(
@@ -313,8 +447,10 @@ export async function getMuezzinRotaForRange(
       console.warn('[getMuezzinRotaForRange] prayer_times error', prayerTimesError.message);
     }
     const prayerTimesByDate = Object.fromEntries(((prayerTimesRows ?? []) as PrayerTimesRow[]).map((row) => [row.date, row]));
+    const explicitSlotKeys = buildExplicitSlotKeys((data ?? []) as StaffRotaRow[]);
+    const defaultMuezzinUserId = await fetchDefaultMuezzinUserId(mosqueId);
 
-    const entries: StaffRotaEntry[] = (data ?? [])
+    const explicitEntries: StaffRotaEntry[] = (data ?? [])
       .map((row: any) => {
         const prayerName = normalizeRotaPrayerName(row?.prayer_name ?? row?.prayer ?? null);
         const date = row?.date ?? row?.duty_date ?? null;
@@ -343,6 +479,17 @@ export async function getMuezzinRotaForRange(
       })
       .filter(Boolean) as StaffRotaEntry[];
 
+    const entries = appendDefaultRotaEntries({
+      entries: explicitEntries,
+      explicitSlotKeys,
+      coverOverrides,
+      defaultMuezzinUserId,
+      mosqueId,
+      startDate: from,
+      endDate: to,
+      prayerTimesByDate,
+    });
+
     const userIds = Array.from(
       new Set(
         entries
@@ -350,21 +497,7 @@ export async function getMuezzinRotaForRange(
           .filter(Boolean) as string[]
       )
     );
-    const profileNames: Record<string, string> = {};
-    if (userIds.length) {
-      const { data: profiles, error: profilesErr } = await supabase
-        .from('profiles')
-        .select('id, full_name, display_name, email')
-        .in('id', userIds);
-      if (!profilesErr && profiles) {
-        profiles.forEach((p: any) => {
-          const display = p?.display_name || p?.full_name || p?.email;
-          if (display) profileNames[p.id] = display;
-        });
-      } else if (profilesErr) {
-        console.warn('[getMuezzinRotaForRange] profiles error', profilesErr.message);
-      }
-    }
+    const profileNames = await fetchProfileNameMap(userIds);
 
     if (!mosqueName) {
       try {
@@ -442,6 +575,8 @@ async function buildSlotsForDate(
 
   let dayEntries: StaffRotaEntry[] = [];
   let nameMap: Record<string, string> = {};
+  let defaultMuezzinUserId = workspacePayload?.defaultMuezzinUserId ?? null;
+  let coverOverrideMap: Record<string, CoverOverride> = {};
 
   if (workspacePayload?.mosqueId === mosqueId) {
     dayEntries = (workspacePayload.entries ?? []) as StaffRotaEntry[];
@@ -464,10 +599,13 @@ async function buildSlotsForDate(
       return res;
     })();
 
-    const [rotaRes, coverOverrides] = await Promise.all([
+    const [rotaRes, coverOverrides, fallbackDefaultMuezzinUserId] = await Promise.all([
       rotaPromise,
       fetchCoverOverrideMap(mosqueId, dateIso, dateIso),
+      fetchDefaultMuezzinUserId(mosqueId),
     ]);
+    defaultMuezzinUserId = fallbackDefaultMuezzinUserId;
+    coverOverrideMap = coverOverrides;
 
     const rotaRows = (rotaRes.data ?? []) as (StaffRotaRow & { notes?: string | null })[];
     dayEntries = rotaRows
@@ -502,20 +640,19 @@ async function buildSlotsForDate(
       )
     );
 
-    if (userIds.length) {
-      const { data: profiles, error: profilesErr } = await supabase
-        .from('profiles')
-        .select('id, full_name, display_name')
-        .in('id', userIds);
-      if (!profilesErr && profiles) {
-        profiles.forEach((p: any) => {
-          const display = p?.display_name || p?.full_name;
-          if (display) nameMap[p.id] = display;
-        });
-      } else if (profilesErr) {
-        console.warn('[buildSlotsForDate] profiles error', profilesErr.message);
-      }
-    }
+    Object.assign(nameMap, await fetchProfileNameMap(userIds));
+  }
+
+  const missingProfileIds = Array.from(
+    new Set(
+      [
+        defaultMuezzinUserId,
+        ...dayEntries.map((entry) => entry.muezzin_user_id ?? entry.staff_user_id ?? null),
+      ].filter((id): id is string => !!id && !nameMap[id])
+    )
+  );
+  if (missingProfileIds.length) {
+    Object.assign(nameMap, await fetchProfileNameMap(missingProfileIds));
   }
 
   const now = new Date();
@@ -525,7 +662,12 @@ async function buildSlotsForDate(
       const normalized = normalizeRotaPrayerName(row.prayer_name ?? row.prayer ?? null);
       return normalized === lowerKey;
     }) ?? null;
-    const assignedMuezzinUserId = (entry?.muezzin_user_id ?? entry?.staff_user_id ?? null) as string | null;
+    const override = coverOverrideMap[`${dateIso}:${lowerKey}`];
+    const assignedMuezzinUserId = (
+      entry
+        ? entry.muezzin_user_id ?? entry.staff_user_id ?? null
+        : override?.volunteerUserId ?? defaultMuezzinUserId
+    ) as string | null;
     const slotTimes = (prayerTimes as any)?.[lowerKey] ?? null;
     const adhanTime = slotTimes?.adhan ?? toDate(entry?.adhan_time);
     const iqamaTime = slotTimes?.iqama ?? toDate(entry?.iqama_time);
