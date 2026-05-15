@@ -18,6 +18,7 @@ import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import {
   MosqueMuezzinMember,
   removeMosqueMuezzin,
+  setMosqueDefaultMuezzin,
   setMosqueMuezzinActive,
 } from '@/lib/api/admin/muezzins';
 import { loadMosqueMuezzinWorkspace } from '@/lib/api/admin/muezzinWorkspace';
@@ -56,6 +57,7 @@ export default function LocalAdminMuezzinsScreen() {
   );
   const activeCount = useMemo(() => muezzins.filter((member) => member.isActive).length, [muezzins]);
   const inactiveCount = muezzins.length - activeCount;
+  const defaultCount = useMemo(() => muezzins.filter((member) => member.isDefault).length, [muezzins]);
   const urgentRequestCount = useMemo(
     () => activeRequests.filter((request) => request.urgency === 'urgent').length,
     [activeRequests]
@@ -102,12 +104,41 @@ export default function LocalAdminMuezzinsScreen() {
     setNotice(null);
     try {
       await setMosqueMuezzinActive(selectedMosque.mosqueId, member.userId, !member.isActive);
+      if (member.isActive && member.isDefault) {
+        await setMosqueDefaultMuezzin(selectedMosque.mosqueId, null);
+      }
       setNotice(
         `${member.displayName} is now ${member.isActive ? 'inactive' : 'active'} for ${selectedMosque.name}.`
       );
       await loadWorkspace();
     } catch (err: any) {
       setError(err?.message ?? 'Unable to update this muezzin assignment.');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleSetDefault = async (member: MosqueMuezzinMember) => {
+    if (!selectedMosque) return;
+    if (!member.isActive && !member.isDefault) {
+      setError('Only active muezzins can be set as the default.');
+      return;
+    }
+
+    setBusyKey(`default:${member.userId}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const nextDefaultUserId = member.isDefault ? null : member.userId;
+      await setMosqueDefaultMuezzin(selectedMosque.mosqueId, nextDefaultUserId);
+      setNotice(
+        member.isDefault
+          ? `${member.displayName} is no longer the default muezzin for ${selectedMosque.name}.`
+          : `${member.displayName} is now the default muezzin for unassigned prayers.`
+      );
+      await loadWorkspace();
+    } catch (err: any) {
+      setError(err?.message ?? 'Unable to update the default muezzin.');
     } finally {
       setBusyKey(null);
     }
@@ -128,6 +159,9 @@ export default function LocalAdminMuezzinsScreen() {
             setError(null);
             setNotice(null);
             try {
+              if (member.isDefault) {
+                await setMosqueDefaultMuezzin(selectedMosque.mosqueId, null);
+              }
               await removeMosqueMuezzin(selectedMosque.mosqueId, member.userId);
               setNotice(`${member.displayName} was removed from ${selectedMosque.name}.`);
               await loadWorkspace();
@@ -298,6 +332,7 @@ export default function LocalAdminMuezzinsScreen() {
 
       <View style={styles.metricGrid}>
         <MetricCard label="Active muezzins" value={`${activeCount}`} detail="Ready for rota assignment" />
+        <MetricCard label="Default" value={`${defaultCount}`} detail="Fallback for blank rota slots" />
         <MetricCard label="Inactive" value={`${inactiveCount}`} detail="Temporarily removed from duty" />
         <MetricCard label="Open requests" value={`${activeRequests.length}`} detail="Need local-admin review" />
         <MetricCard label="Urgent" value={`${urgentRequestCount}`} detail="Time-critical coverage gaps" />
@@ -349,7 +384,10 @@ export default function LocalAdminMuezzinsScreen() {
           </View>
         ) : muezzins.length ? (
           muezzins.map((member) => {
-            const isBusy = busyKey === `toggle:${member.userId}` || busyKey === `remove:${member.userId}`;
+            const isBusy =
+              busyKey === `toggle:${member.userId}` ||
+              busyKey === `remove:${member.userId}` ||
+              busyKey === `default:${member.userId}`;
             return (
               <View key={member.userId} style={styles.memberRow}>
                 <View style={{ flex: 1, gap: 4 }}>
@@ -360,8 +398,17 @@ export default function LocalAdminMuezzinsScreen() {
                     {member.email ?? 'No email available'}
                   </AppText>
                 </View>
-                <StatusPill active={member.isActive} />
+                <View style={styles.pillRow}>
+                  <StatusPill active={member.isActive} />
+                  {member.isDefault ? <DefaultPill /> : null}
+                </View>
                 <View style={styles.memberActions}>
+                  <AppButton
+                    title={member.isDefault ? 'Clear Default' : 'Set Default'}
+                    variant="ghost"
+                    onPress={() => handleSetDefault(member)}
+                    disabled={isBusy || (!member.isActive && !member.isDefault)}
+                  />
                   <AppButton
                     title={member.isActive ? 'Deactivate' : 'Activate'}
                     variant="ghost"
@@ -502,6 +549,16 @@ function StatusPill({ active }: { active: boolean }) {
   );
 }
 
+function DefaultPill() {
+  return (
+    <View style={[styles.pill, styles.pillDefault]}>
+      <AppText variant="caption" style={[styles.pillText, styles.pillTextDefault]}>
+        Default
+      </AppText>
+    </View>
+  );
+}
+
 function UrgencyPill({ urgency }: { urgency: 'standard' | 'urgent' }) {
   const urgent = urgency === 'urgent';
   return (
@@ -588,6 +645,11 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.xs,
     flexWrap: 'wrap',
   },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: tokens.spacing.xs,
+  },
   pill: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10,
@@ -603,6 +665,9 @@ const styles = StyleSheet.create({
   pillUrgent: {
     backgroundColor: '#FEE2E2',
   },
+  pillDefault: {
+    backgroundColor: '#E0F2FE',
+  },
   pillText: {
     fontWeight: tokens.typography.weight.extrabold,
   },
@@ -614,6 +679,9 @@ const styles = StyleSheet.create({
   },
   pillTextUrgent: {
     color: '#B91C1C',
+  },
+  pillTextDefault: {
+    color: '#0369A1',
   },
   requestCard: {
     gap: tokens.spacing.xs,

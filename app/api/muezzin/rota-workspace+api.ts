@@ -66,6 +66,7 @@ type CoverOverride = {
   status: 'provisional_cover' | 'approved';
 };
 
+const ROTA_PRAYERS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as const;
 const ACTIVE_REQUEST_STATUSES = ['open', 'volunteered', 'provisional_cover'] as const;
 const APPROVED_OVERRIDE_STATUSES = ['provisional_cover', 'approved'] as const;
 
@@ -80,7 +81,35 @@ function json(body: unknown, status = 200) {
 
 function normalizePrayerName(value?: string | null) {
   const lower = (value ?? '').toLowerCase();
-  return ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].includes(lower) ? lower : null;
+  return ROTA_PRAYERS.includes(lower as (typeof ROTA_PRAYERS)[number])
+    ? (lower as (typeof ROTA_PRAYERS)[number])
+    : null;
+}
+
+function parseIsoDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+}
+
+function formatUtcDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function buildDateRange(startIso: string, endIso: string) {
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  if (!start || !end) return [];
+
+  const dates: string[] = [];
+  const cursor = new Date(Math.min(start.getTime(), end.getTime()));
+  const finalMs = Math.max(start.getTime(), end.getTime());
+  while (cursor.getTime() <= finalMs) {
+    dates.push(formatUtcDate(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 async function fetchProfileNameMap(supabaseAdmin: any, userIds: string[]) {
@@ -202,6 +231,101 @@ function getPrayerTimeValue(row: PrayerTimesRow | undefined, prayerName: string,
   return null;
 }
 
+async function loadDefaultMuezzinUserId(supabaseAdmin: any, mosqueId: string) {
+  const { data: mosqueRow, error: mosqueError } = await supabaseAdmin
+    .from('mosques')
+    .select('default_muezzin_user_id')
+    .eq('id', mosqueId)
+    .maybeSingle();
+
+  if (mosqueError) {
+    if (['PGRST116', '42703'].includes(mosqueError.code)) return null;
+    throw mosqueError;
+  }
+
+  const defaultUserId = (mosqueRow as { default_muezzin_user_id?: string | null } | null)?.default_muezzin_user_id ?? null;
+  if (!defaultUserId) return null;
+
+  const { data: assignment, error: assignmentError } = await supabaseAdmin
+    .from('muezzins')
+    .select('user_id, is_active')
+    .eq('mosque_id', mosqueId)
+    .eq('user_id', defaultUserId)
+    .maybeSingle();
+
+  if (assignmentError && assignmentError.code !== 'PGRST116') {
+    throw assignmentError;
+  }
+
+  const assignmentRow = assignment as { user_id?: string | null; is_active?: boolean | null } | null;
+  return assignmentRow?.user_id && assignmentRow.is_active !== false ? defaultUserId : null;
+}
+
+function buildExplicitSlotKeys(rows: any[]) {
+  const keys = new Set<string>();
+  rows.forEach((row) => {
+    const prayerName = normalizePrayerName(row?.prayer_name ?? row?.prayer ?? null);
+    const date = row?.date ?? row?.duty_date ?? null;
+    if (date && prayerName) {
+      keys.add(`${date}:${prayerName}`);
+    }
+  });
+  return keys;
+}
+
+function appendDefaultRotaEntries({
+  entries,
+  explicitSlotKeys,
+  coverOverrides,
+  defaultMuezzinUserId,
+  mosqueId,
+  startIso,
+  endIso,
+  prayerTimesByDate,
+}: {
+  entries: StaffRotaEntry[];
+  explicitSlotKeys: Set<string>;
+  coverOverrides: Record<string, CoverOverride>;
+  defaultMuezzinUserId: string | null;
+  mosqueId: string;
+  startIso: string;
+  endIso: string;
+  prayerTimesByDate: Record<string, PrayerTimesRow | undefined>;
+}) {
+  if (!defaultMuezzinUserId) return entries;
+
+  const withDefaults = [...entries];
+  buildDateRange(startIso, endIso).forEach((date) => {
+    ROTA_PRAYERS.forEach((prayerName) => {
+      const key = `${date}:${prayerName}`;
+      if (explicitSlotKeys.has(key)) return;
+
+      const canonicalPrayerRow = prayerTimesByDate[date];
+      const override = coverOverrides[key];
+      const effectiveUserId = override?.volunteerUserId ?? defaultMuezzinUserId;
+      withDefaults.push({
+        id: `default-${mosqueId}-${date}-${prayerName}`,
+        mosque_id: mosqueId,
+        date,
+        duty_date: date,
+        prayer_name: prayerName,
+        prayer: prayerName,
+        muezzin_user_id: effectiveUserId,
+        staff_user_id: effectiveUserId,
+        role_on_duty: 'default',
+        adhan_time: getPrayerTimeValue(canonicalPrayerRow, prayerName, 'adhan'),
+        iqama_time: getPrayerTimeValue(canonicalPrayerRow, prayerName, 'iqama'),
+        notes:
+          override?.status === 'provisional_cover'
+            ? 'Emergency cover pending local-admin confirmation.'
+            : null,
+      });
+    });
+  });
+
+  return withDefaults;
+}
+
 export const GET: RequestHandler = async (request) => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -261,15 +385,17 @@ export const GET: RequestHandler = async (request) => {
   const mosqueName = primaryMosque.name ?? null;
 
   try {
-    const [staffRows, coverOverrides, requestRows, prayerTimesRows] = await Promise.all([
+    const [staffRows, coverOverrides, requestRows, prayerTimesRows, defaultMuezzinUserId] = await Promise.all([
       loadStaffRotaRows(supabaseAdmin, mosqueId, startIso, endIso),
       loadCoverOverrides(supabaseAdmin, mosqueId, startIso, endIso),
       loadActiveRequests(supabaseAdmin, mosqueId),
       loadPrayerTimesRows(supabaseAdmin, mosqueId, startIso, endIso),
+      loadDefaultMuezzinUserId(supabaseAdmin, mosqueId),
     ]);
     const prayerTimesByDate = Object.fromEntries(prayerTimesRows.map((row) => [row.date, row]));
+    const explicitSlotKeys = buildExplicitSlotKeys(staffRows);
 
-    const entries: StaffRotaEntry[] = staffRows
+    const explicitEntries: StaffRotaEntry[] = staffRows
       .map((row) => {
         const prayerName = normalizePrayerName(row?.prayer_name ?? row?.prayer ?? null);
         const date = row?.date ?? row?.duty_date ?? null;
@@ -297,6 +423,17 @@ export const GET: RequestHandler = async (request) => {
       })
       .filter(Boolean) as StaffRotaEntry[];
 
+    const entries = appendDefaultRotaEntries({
+      entries: explicitEntries,
+      explicitSlotKeys,
+      coverOverrides,
+      defaultMuezzinUserId,
+      mosqueId,
+      startIso,
+      endIso,
+      prayerTimesByDate,
+    });
+
     const relatedUserIds = Array.from(
       new Set(
         [
@@ -321,6 +458,7 @@ export const GET: RequestHandler = async (request) => {
       mosqueId,
       mosqueName,
       userId,
+      defaultMuezzinUserId,
       myRequests: enrichedRequests.filter((row) => row.requester_user_id === userId),
       openRequests: enrichedRequests.filter((row) => row.requester_user_id !== userId && !row.volunteer_user_id && row.status === 'open'),
       error: null,

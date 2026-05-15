@@ -98,6 +98,38 @@ async function fetchLocalAdminIdsForMosque(mosqueId: string) {
   return Array.from(new Set(((data ?? []) as { user_id: string }[]).map((row) => row.user_id)));
 }
 
+async function fetchDefaultMuezzinUserId(mosqueId: string) {
+  const { data: mosqueRow, error: mosqueError } = await supabase
+    .from('mosques')
+    .select('default_muezzin_user_id')
+    .eq('id', mosqueId)
+    .maybeSingle<{ default_muezzin_user_id?: string | null }>();
+
+  if (mosqueError) {
+    if (!['PGRST116', '42703'].includes(mosqueError.code)) {
+      console.warn('[fetchDefaultMuezzinUserId]', mosqueError.message);
+    }
+    return null;
+  }
+
+  const defaultUserId = mosqueRow?.default_muezzin_user_id ?? null;
+  if (!defaultUserId) return null;
+
+  const { data: assignment, error: assignmentError } = await supabase
+    .from('muezzins')
+    .select('user_id, is_active')
+    .eq('mosque_id', mosqueId)
+    .eq('user_id', defaultUserId)
+    .maybeSingle<{ user_id?: string | null; is_active?: boolean | null }>();
+
+  if (assignmentError && assignmentError.code !== 'PGRST116') {
+    console.warn('[fetchDefaultMuezzinUserId] assignment', assignmentError.message);
+    return null;
+  }
+
+  return assignment?.user_id && assignment.is_active !== false ? defaultUserId : null;
+}
+
 async function fetchStaffRotaRow(mosqueId: string, dateIso: string, prayerName: RotaPrayerName) {
   let data: any = null;
   let error: any = null;
@@ -122,7 +154,25 @@ async function fetchStaffRotaRow(mosqueId: string, dateIso: string, prayerName: 
   }
 
   if (error && error.code !== 'PGRST116') throw error;
-  return (data ?? null) as StaffRotaEntry | null;
+  if (data) return data as StaffRotaEntry;
+
+  const defaultMuezzinUserId = await fetchDefaultMuezzinUserId(mosqueId);
+  if (!defaultMuezzinUserId) return null;
+
+  return {
+    id: `default-${mosqueId}-${dateIso}-${prayerName}`,
+    mosque_id: mosqueId,
+    date: dateIso,
+    duty_date: dateIso,
+    prayer_name: prayerName,
+    prayer: prayerName,
+    muezzin_user_id: defaultMuezzinUserId,
+    staff_user_id: defaultMuezzinUserId,
+    role_on_duty: 'default',
+    notes: null,
+    adhan_time: null,
+    iqama_time: null,
+  } as StaffRotaEntry;
 }
 
 async function writeStaffRotaAssignee(

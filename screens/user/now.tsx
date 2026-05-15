@@ -79,6 +79,7 @@ export default function NowScreen() {
     parseRouteLocation(params.lat, params.lng)
   );
   const playScale = useRef(new Animated.Value(1)).current;
+  const hadActiveStreamRef = useRef(false);
 
   const current = useMemo(() => streams.find((s) => s.id === activeId) ?? streams[0] ?? null, [streams, activeId]);
   const isLiveKitStream = !!(current?.livekit_room_name);
@@ -188,6 +189,7 @@ export default function NowScreen() {
         dedupedByMosque.set(stream.mosque_id, stream);
       });
       const streamRows = Array.from(dedupedByMosque.values());
+      if (streamRows.length > 0) hadActiveStreamRef.current = true;
       const visibleStreams =
         subSet.size > 0
           ? streamRows.filter((stream) => subSet.has(stream.mosque_id) || stream.mosque_id === requestedMosqueId)
@@ -480,15 +482,23 @@ export default function NowScreen() {
   }
 
   if (!current) {
-    const emptyMessage =
-      followedIds.size > 0
+    const justEnded = hadActiveStreamRef.current;
+    const emptyMessage = justEnded
+      ? 'The live Adhan broadcast has concluded.'
+      : followedIds.size > 0
         ? 'No live Adhan is available from your followed mosques right now.'
         : 'No live Adhan is available right now.';
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Nothing live right now</Text>
+          <Text style={styles.emptyTitle}>{justEnded ? 'Adhan has ended' : 'Nothing live right now'}</Text>
           <Text style={styles.emptySubtitle}>{emptyMessage}</Text>
+          <Pressable
+            onPress={() => router.push('/listener-home')}
+            style={({ pressed }) => [styles.homeButton, { opacity: pressed ? 0.75 : 1 }]}
+          >
+            <Text style={styles.homeButtonText}>Go to Home</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -804,6 +814,8 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   emptyTitle: { color: '#0F172A', fontSize: 20, fontWeight: '800', textAlign: 'center' },
   emptySubtitle: { color: '#64748B', fontSize: 14, marginTop: 8, textAlign: 'center' },
+  homeButton: { marginTop: 28, paddingHorizontal: 32, paddingVertical: 14, backgroundColor: '#0A84FF', borderRadius: 14 },
+  homeButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
   error: { color: '#B91C1C', marginTop: 10, fontWeight: '700' },
 
   shadow: { shadowColor: '#000000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
