@@ -30,6 +30,7 @@ export default function AdminStack() {
       <Stack.Screen name="broadcast/[id]" />
       <Stack.Screen name="campaign/[id]" />
       <Stack.Screen name="event/[id]" />
+      <Stack.Screen name="announcement/[id]" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="mosque-onboarding" />
     </Stack>

@@ -1,32 +1,46 @@
 import { Redirect, useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
-import { AppCard } from '@/components/ui/app-card';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppText } from '@/components/ui/app-text';
 import { ScreenContainer } from '@/components/ui/screen-container';
-import { AdminBanner } from '@/components/admin/AdminBanner';
 import { tokens } from '@/theme/tokens';
 import { useRoleFlags } from '@/lib/roles';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { useAuth } from '@/lib/auth';
 
+type ToolDef = {
+  title: string;
+  description: string;
+  href: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  iconBg: string;
+  iconColor: string;
+  requiresMosque: boolean;
+};
+
+type ToolSectionProps = {
+  label: string;
+  tools: ToolDef[];
+  disabledAll: boolean;
+  router: ReturnType<typeof useRouter>;
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
-  const { loading: roleLoading, isAdmin, isMuezzin, isLocalAdmin, isMainAdmin, role } = useRoleFlags();
+  const { loading: roleLoading, isAdmin, isMuezzin, isLocalAdmin, isMainAdmin, role, hasDualStaffAccess } = useRoleFlags();
   const { mosques, selectedMosque, loading: mosqueLoading, error, setSelectedMosque } = useAdminMosque();
   const { session } = useAuth();
   const [refreshing, setRefreshing] = React.useState(false);
 
   const disableActions = !selectedMosque;
   const locationLabel = selectedMosque
-    ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') || 'Mosque dashboard'
+    ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') || null
     : null;
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    try {
-      // This screen is already the workspace landing page; avoid dispatching a grouped-route jump.
-    } finally {
+    try {} finally {
       setRefreshing(false);
     }
   };
@@ -34,17 +48,13 @@ export default function AdminDashboard() {
   if (roleLoading || mosqueLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator />
-        <AppText variant="body" style={styles.loadingText}>
-          Loading...
-        </AppText>
+        <ActivityIndicator color={tokens.color.status.info} />
+        <AppText variant="body" style={styles.loadingText}>Loading…</AppText>
       </View>
     );
   }
 
-  if (isMuezzin && !isAdmin) {
-    return <Redirect href={'/' as any} />;
-  }
+  if (isMuezzin && !isAdmin) return <Redirect href={'/' as any} />;
 
   if (!isAdmin) {
     return (
@@ -56,353 +66,370 @@ export default function AdminDashboard() {
     );
   }
 
+  const dailyTools: ToolDef[] = [
+    {
+      title: 'Prayer Times',
+      description: isMainAdmin
+        ? 'Upload timetable files or make manual corrections.'
+        : 'Set adhan and iqama times for each prayer.',
+      href: '/(admin)/prayer-times',
+      icon: 'time-outline',
+      iconBg: '#EFF6FF',
+      iconColor: '#2563EB',
+      requiresMosque: true,
+    },
+    {
+      title: 'Staff Rota',
+      description: 'Assign muezzins and keep daily coverage organised.',
+      href: '/(admin)/staff-rota',
+      icon: 'people-outline',
+      iconBg: '#F5F3FF',
+      iconColor: '#7C3AED',
+      requiresMosque: true,
+    },
+    {
+      title: 'Muezzins',
+      description: 'Invite, activate, and manage cover requests.',
+      href: '/(admin)/muezzins',
+      icon: 'mic-outline',
+      iconBg: '#ECFDF5',
+      iconColor: '#059669',
+      requiresMosque: true,
+    },
+  ];
+
+  const contentTools: ToolDef[] = [
+    {
+      title: 'Events',
+      description: 'Review and manage upcoming mosque events.',
+      href: '/(admin)/events',
+      icon: 'calendar-outline',
+      iconBg: '#FFF7ED',
+      iconColor: '#EA580C',
+      requiresMosque: true,
+    },
+    {
+      title: 'Admin Settings',
+      description: 'Default mosque and account preferences.',
+      href: '/(admin)/settings',
+      icon: 'settings-outline',
+      iconBg: '#F1F5F9',
+      iconColor: '#475569',
+      requiresMosque: false,
+    },
+  ];
+
+  const systemTools: ToolDef[] = isMainAdmin
+    ? [
+        {
+          title: 'Create Mosque',
+          description: 'Register a new mosque and assign local admins.',
+          href: '/(admin)/mosque-onboarding',
+          icon: 'add-circle-outline',
+          iconBg: '#F0FDFA',
+          iconColor: '#0D9488',
+          requiresMosque: false,
+        },
+      ]
+    : [];
+
   return (
     <ScreenContainer
       contentStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tokens.color.status.info} />}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tokens.color.status.info} />
+      }
     >
-      <View style={styles.hero}>
-        <View style={styles.heroCopy}>
-          <AppText variant="label" style={styles.eyebrow}>
-            Local Admin
+      {/* ── Mosque header ── */}
+      <View style={styles.header}>
+        <AppText variant="label" style={styles.eyebrow}>Local Admin</AppText>
+        <View style={styles.mosqueRow}>
+          <AppText variant="sectionTitle" style={styles.mosqueName} numberOfLines={1}>
+            {selectedMosque?.name ?? 'No mosque assigned'}
           </AppText>
-          <AppText variant="sectionTitle" style={styles.title}>
-            Mosque console
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary} style={styles.subtitle}>
-            Run the day-to-day operation from one tighter control surface.
-          </AppText>
-        </View>
-        <AppCard style={styles.managingCard}>
-          <View style={styles.managingHeader}>
-            <AppText variant="caption" color={tokens.color.text.secondary}>
-              Active workspace
-            </AppText>
-            <View style={styles.workspaceBadge}>
-              <AppText variant="caption" style={styles.workspaceBadgeText}>
-                {selectedMosque ? 'Ready' : 'Needs selection'}
-              </AppText>
+          {selectedMosque && (
+            <View style={styles.readyBadge}>
+              <View style={styles.readyDot} />
+              <AppText variant="caption" style={styles.readyText}>Ready</AppText>
             </View>
-          </View>
-          <AppText variant="title" style={styles.managingTitle}>
-            {selectedMosque?.name ?? 'Select a mosque'}
-          </AppText>
+          )}
+        </View>
+        {locationLabel ? (
+          <AppText variant="body" color={tokens.color.text.secondary}>{locationLabel}</AppText>
+        ) : !selectedMosque ? (
           <AppText variant="body" color={tokens.color.text.secondary}>
-            {selectedMosque ? locationLabel : 'Choose the mosque you want to manage before opening a tool.'}
+            Assign a mosque to unlock daily operations.
           </AppText>
-        </AppCard>
+        ) : null}
+        {hasDualStaffAccess ? (
+          <Pressable
+            onPress={() => router.push('/role-entry' as any)}
+            style={({ pressed }) => [styles.switchWorkspaceBtn, pressed && styles.pressed]}
+          >
+            <Ionicons name="swap-horizontal-outline" size={15} color="#2563EB" />
+            <AppText style={styles.switchWorkspaceBtnText}>Switch to Muezzin view</AppText>
+          </Pressable>
+        ) : null}
       </View>
 
-      <View style={styles.statusGrid}>
-        <AppCard style={styles.statCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>Role</AppText>
-          <AppText variant="title" style={styles.statValue}>{isLocalAdmin ? 'Local admin' : 'Admin'}</AppText>
-          <AppText variant="caption" color={tokens.color.text.secondary}>Mosque-scoped operational access</AppText>
-        </AppCard>
-        <AppCard style={styles.statCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>Mosques</AppText>
-          <AppText variant="title" style={styles.statValue}>{mosques.length}</AppText>
-          <AppText variant="caption" color={tokens.color.text.secondary}>Available in this console</AppText>
-        </AppCard>
-      </View>
-
-      {mosques.length > 1 ? (
-        <View style={styles.selectorSection}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
-            Switch mosque
+      {/* ── Multi-mosque switcher ── */}
+      {mosques.length > 1 && (
+        <View style={styles.switcher}>
+          <AppText variant="caption" color={tokens.color.text.muted} style={styles.switcherLabel}>
+            SWITCH MOSQUE
           </AppText>
-          <View style={styles.selectorRow}>
+          <View style={styles.switcherRow}>
             {mosques.map((m) => {
               const active = selectedMosque?.mosqueId === m.mosqueId;
               return (
                 <Pressable
                   key={m.mosqueId}
                   onPress={() => setSelectedMosque(m.mosqueId)}
-                  style={({ pressed }) => [styles.mosqueChip, active && styles.mosqueChipActive, pressed && styles.pressed]}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    active && styles.chipActive,
+                    pressed && styles.pressed,
+                  ]}
                 >
-                  <AppText style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
+                  <AppText
+                    style={[styles.chipText, active && styles.chipTextActive]}
+                    numberOfLines={1}
+                  >
                     {m.name}
-                  </AppText>
-                  <AppText variant="caption" style={[styles.chipSub, active && styles.chipSubActive]} numberOfLines={1}>
-                    {[m.city, m.country].filter(Boolean).join(', ') || 'Mosque'}
                   </AppText>
                 </Pressable>
               );
             })}
           </View>
         </View>
-      ) : null}
+      )}
 
-      {!mosques.length && !selectedMosque ? (
-        <AppCard subtle style={styles.emptyState}>
-          <AppText variant="title" style={styles.emptyTitle}>
-            No admin mosque found
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary}>
-            You are not set up as a local admin for any mosque yet. Contact the main admin to be assigned.
+      {/* ── No mosque assigned ── */}
+      {!mosques.length && (
+        <View style={styles.emptyCard}>
+          <Ionicons name="alert-circle-outline" size={28} color={tokens.color.text.muted} />
+          <AppText variant="body" color={tokens.color.text.secondary} style={styles.emptyText}>
+            You are not assigned as local admin for any mosque yet. Contact the main admin to be set up.
           </AppText>
           {error ? (
-            <AppText variant="caption" color={tokens.color.status.danger}>
-              {error}
-            </AppText>
+            <AppText variant="caption" color={tokens.color.status.danger}>{error}</AppText>
           ) : null}
-        </AppCard>
-      ) : null}
-
-      {selectedMosque ? (
-        <AdminBanner
-          tone="info"
-          title="Current workspace"
-          message={`Managing ${selectedMosque.name}${locationLabel ? `, ${locationLabel}` : ''}. Pull down to refresh access or updates.`}
-        />
-      ) : null}
-
-      <View style={styles.sectionHeader}>
-        <AppText variant="caption" color={tokens.color.text.secondary}>Operations</AppText>
-        <AppText variant="title" style={styles.sectionTitle}>Daily control</AppText>
-      </View>
-      <View style={styles.toolGrid}>
-        <AdminCard
-          router={router}
-          title="Prayer Times"
-          description={
-            isMainAdmin
-              ? 'Upload timetable files or make manual schedule exceptions across mosques.'
-              : 'Make day-level adhan and iqama corrections for your assigned mosque.'
-          }
-          href="/(admin)/prayer-times"
-          disabled={disableActions}
-          accent="Schedule"
-        />
-        <AdminCard
-          router={router}
-          title="Staff Rota"
-          description="Assign muezzins and keep daily coverage organised."
-          href="/(admin)/staff-rota"
-          disabled={disableActions}
-          accent="Operations"
-        />
-        <AdminCard
-          router={router}
-          title="Muezzins"
-          description="Invite mosque muezzins, control account activity, and review cover requests."
-          href="/(admin)/muezzins"
-          disabled={disableActions}
-          accent="Team"
-        />
-      </View>
-      {isMainAdmin && (
-        <View style={styles.sectionHeader}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>System Management</AppText>
-          <AppText variant="title" style={styles.sectionTitle}>Global Administration</AppText>
         </View>
       )}
-      {isMainAdmin && (
-        <View style={styles.toolGrid}>
-          <AdminCard
-            router={router}
-            title="Create Mosque"
-            description="Set up a new mosque with basic information and assign local admins."
-            href="/(admin)/mosque-onboarding"
-            disabled={false}
-            accent="Setup"
-          />
-        </View>
-      )}
-      <View style={styles.sectionHeader}>
-        <AppText variant="caption" color={tokens.color.text.secondary}>Content</AppText>
-        <AppText variant="title" style={styles.sectionTitle}>Mosque presence</AppText>
-      </View>
-      <View style={styles.toolGrid}>
-        <AdminCard
-          router={router}
-          title="Events"
-          description="Review upcoming mosque events and open each listing in detail."
-          href="/(admin)/events"
-          disabled={disableActions}
-          accent="Content"
-        />
-        <AdminCard
-          router={router}
-          title="Admin Settings"
-          description="Review your default mosque and account-level preferences."
-          href="/(admin)/settings"
-          disabled={false}
-          accent="Account"
-        />
-      </View>
 
-      {__DEV__ ? (
-        <AppCard subtle style={styles.debugCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
+      {/* ── Daily operations ── */}
+      <ToolSection
+        label="Daily operations"
+        tools={dailyTools}
+        disabledAll={disableActions}
+        router={router}
+      />
+
+      {/* ── System management (main admin only) ── */}
+      {systemTools.length > 0 && (
+        <ToolSection
+          label="System management"
+          tools={systemTools}
+          disabledAll={false}
+          router={router}
+        />
+      )}
+
+      {/* ── Content & settings ── */}
+      <ToolSection
+        label="Content & settings"
+        tools={contentTools}
+        disabledAll={false}
+        router={router}
+      />
+
+      {/* ── Dev diagnostics ── */}
+      {__DEV__ && (
+        <View style={styles.debugCard}>
+          <AppText variant="caption" color={tokens.color.text.muted} style={styles.debugHeader}>
             Diagnostics
           </AppText>
-          <AppText variant="title" style={styles.debugTitle}>
-            Environment snapshot
-          </AppText>
-          <AppText variant="caption" style={styles.debugLine}>User ID: {session?.user?.id ?? 'unknown'}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>Role: {role ?? session?.user?.role ?? 'unknown'}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>Email: {(session?.user as any)?.email ?? 'unknown'}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>isAdmin: {isAdmin ? 'true' : 'false'}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>isLocalAdmin: {isLocalAdmin ? 'true' : 'false'}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>isMuezzin: {isMuezzin ? 'true' : 'false'}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>Admin mosques: {mosques.length}</AppText>
-          <AppText variant="caption" style={styles.debugLine}>
-            Selected mosque: {selectedMosque ? `${selectedMosque.name} (${selectedMosque.mosqueId})` : 'none'}
-          </AppText>
+          {[
+            `User: ${session?.user?.id ?? 'unknown'}`,
+            `Role: ${role ?? 'unknown'}  ·  Email: ${(session?.user as any)?.email ?? 'unknown'}`,
+            `isAdmin: ${isAdmin}  ·  isLocalAdmin: ${isLocalAdmin}  ·  isMuezzin: ${isMuezzin}`,
+            `Mosques: ${mosques.length}  ·  Selected: ${selectedMosque?.name ?? 'none'}${selectedMosque ? ` (${selectedMosque.mosqueId})` : ''}`,
+          ].map((line, i) => (
+            <AppText key={i} variant="caption" style={styles.debugLine}>{line}</AppText>
+          ))}
           {error ? (
-            <AppText variant="caption" color={tokens.color.status.danger}>
-              Error: {error}
-            </AppText>
+            <AppText variant="caption" color={tokens.color.status.danger}>Error: {error}</AppText>
           ) : null}
-        </AppCard>
-      ) : null}
+        </View>
+      )}
     </ScreenContainer>
   );
 }
 
-type CardProps = {
-  title: string;
-  description: string;
-  href: string;
-  accent: string;
-  disabled?: boolean;
-  router: ReturnType<typeof useRouter>;
-};
-
-function AdminCard({ title, description, href, router, disabled, accent }: CardProps) {
-  const handlePress = () => {
-    if (disabled) return;
-    router.push(href as any);
-  };
-
+function ToolSection({ label, tools, disabledAll, router }: ToolSectionProps) {
   return (
-    <Pressable onPress={handlePress} style={({ pressed }) => [styles.card, pressed && !disabled && styles.pressed, disabled && styles.cardDisabled]}>
-      <View style={styles.cardTop}>
-        <View style={styles.cardAccent}>
-          <AppText variant="caption" style={styles.cardAccentText}>
-            {accent}
-          </AppText>
-        </View>
-        <AppText variant="caption" color={disabled ? tokens.color.text.muted : '#0369A1'} style={styles.cardState}>
-          {disabled ? 'Locked' : 'Open'}
-        </AppText>
+    <View style={styles.section}>
+      <AppText variant="caption" color={tokens.color.text.muted} style={styles.sectionLabel}>
+        {label.toUpperCase()}
+      </AppText>
+      <View style={styles.sectionCard}>
+        {tools.map((tool, index) => {
+          const isDisabled = disabledAll && tool.requiresMosque;
+          const isLast = index === tools.length - 1;
+          return (
+            <React.Fragment key={tool.href}>
+              <Pressable
+                onPress={() => { if (!isDisabled) router.push(tool.href as any); }}
+                style={({ pressed }) => [
+                  styles.row,
+                  pressed && !isDisabled && styles.rowPressed,
+                  isDisabled && styles.rowDisabled,
+                ]}
+              >
+                <View style={[styles.iconWrap, { backgroundColor: isDisabled ? '#F1F5F9' : tool.iconBg }]}>
+                  <Ionicons
+                    name={tool.icon}
+                    size={20}
+                    color={isDisabled ? tokens.color.text.muted : tool.iconColor}
+                  />
+                </View>
+                <View style={styles.rowText}>
+                  <AppText variant="body" style={[styles.rowTitle, isDisabled && styles.rowTitleDisabled]}>
+                    {tool.title}
+                  </AppText>
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={styles.rowDesc} numberOfLines={1}>
+                    {isDisabled ? 'Select a mosque to unlock' : tool.description}
+                  </AppText>
+                </View>
+                <Ionicons
+                  name={isDisabled ? 'lock-closed-outline' : 'chevron-forward'}
+                  size={16}
+                  color={tokens.color.text.muted}
+                />
+              </Pressable>
+              {!isLast && <View style={styles.divider} />}
+            </React.Fragment>
+          );
+        })}
       </View>
-      <View style={styles.cardBody}>
-        <AppText variant="title" style={styles.cardTitle}>
-          {title}
-        </AppText>
-        <AppText variant="body" color={tokens.color.text.secondary} style={styles.cardDescription}>
-          {description}
-        </AppText>
-      </View>
-      <View style={styles.cardFooter}>
-        <AppText variant="body" color={disabled ? tokens.color.text.muted : '#0F172A'} style={styles.cardLink}>
-          {disabled ? 'Select a mosque first' : 'Enter tool'}
-        </AppText>
-        <AppText variant="body" color={disabled ? tokens.color.text.muted : '#0369A1'} style={styles.cardChevron}>
-          {`>`}
-        </AppText>
-      </View>
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  loadingText: { marginTop: 8 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, padding: 24 },
+  loadingText: { color: tokens.color.text.secondary },
   muted: { textAlign: 'center' },
-  pressed: { opacity: 0.92 },
-  container: { gap: 14 },
-  hero: { gap: 10 },
-  heroCopy: { gap: 6 },
-  eyebrow: { color: '#0369A1' },
-  title: { fontSize: 22, lineHeight: 26 },
-  subtitle: { lineHeight: 20, fontSize: 13 },
-  managingCard: { gap: 6, backgroundColor: '#FEFFFF', padding: 14, borderRadius: 20, borderColor: '#DCEAF6' },
-  managingHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  workspaceBadge: {
+  pressed: { opacity: 0.88 },
+  container: { gap: 20, paddingBottom: 48 },
+
+  // Header
+  header: { gap: 4, paddingTop: 4 },
+  eyebrow: { color: '#0369A1', fontWeight: tokens.typography.weight.bold, fontSize: tokens.typography.size.sm },
+  mosqueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  mosqueName: { fontSize: 26, lineHeight: 32, fontWeight: tokens.typography.weight.extrabold, flex: 1 },
+  readyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: tokens.radius.pill,
     backgroundColor: '#ECFDF5',
   },
-  workspaceBadgeText: {
-    color: '#047857',
-    fontWeight: tokens.typography.weight.bold,
+  readyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#059669' },
+  readyText: { color: '#047857', fontWeight: tokens.typography.weight.bold },
+
+  // Switch workspace
+  switchWorkspaceBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
   },
-  managingTitle: { fontSize: 19, lineHeight: 23 },
-  statusGrid: { flexDirection: 'row', gap: tokens.spacing.sm },
-  statCard: { flex: 1, gap: 6, padding: 14, borderRadius: 18, backgroundColor: '#FFFFFF' },
-  statValue: { fontSize: 18, lineHeight: 22 },
-  selectorSection: { gap: 10 },
-  selectorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  mosqueChip: {
-    borderRadius: 16,
+  switchWorkspaceBtnText: { fontSize: 13, fontWeight: tokens.typography.weight.semibold, color: '#2563EB' },
+
+  // Mosque switcher
+  switcher: { gap: 8 },
+  switcherLabel: { fontSize: 11, letterSpacing: 0.6, fontWeight: tokens.typography.weight.bold },
+  switcherRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: tokens.radius.pill,
     borderWidth: 1,
     borderColor: tokens.color.border.subtle,
-    padding: 12,
-    backgroundColor: '#FFFFFF',
-    minWidth: 140,
-    gap: 3,
+    backgroundColor: tokens.color.bg.surface,
   },
-  mosqueChipActive: { borderColor: '#0EA5E9', backgroundColor: '#E0F2FE' },
-  chipText: { fontWeight: tokens.typography.weight.extrabold, color: '#0F172A' },
-  chipTextActive: { color: '#0C4A6E' },
-  chipSub: { color: '#64748B' },
-  chipSubActive: { color: '#075985' },
-  emptyState: { gap: 6, borderRadius: 18 },
-  emptyTitle: { fontSize: 18 },
-  sectionHeader: { gap: 0, marginTop: 2 },
-  sectionTitle: { fontSize: 17, lineHeight: 22 },
-  toolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  card: {
-    width: '48.5%',
-    borderRadius: 20,
+  chipActive: { borderColor: '#0EA5E9', backgroundColor: '#E0F2FE' },
+  chipText: { fontSize: tokens.typography.size.sm, fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.secondary },
+  chipTextActive: { color: '#0C4A6E', fontWeight: tokens.typography.weight.bold },
+
+  // Empty state
+  emptyCard: {
+    gap: 10,
+    padding: 20,
+    borderRadius: tokens.radius.xl,
+    backgroundColor: tokens.color.bg.subtle,
     borderWidth: 1,
-    borderColor: '#DFE8F1',
+    borderColor: tokens.color.border.subtle,
+    alignItems: 'center',
+  },
+  emptyText: { textAlign: 'center', lineHeight: 22 },
+
+  // Tool section
+  section: { gap: 8 },
+  sectionLabel: { fontSize: 11, letterSpacing: 0.8, fontWeight: tokens.typography.weight.bold },
+  sectionCard: {
+    borderRadius: tokens.radius.xl,
+    backgroundColor: tokens.color.bg.surface,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    overflow: 'hidden',
+    ...tokens.shadow.card,
+  },
+
+  // Tool row
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    backgroundColor: tokens.color.bg.surface,
+  },
+  rowPressed: { backgroundColor: '#F8FAFC' },
+  rowDisabled: { opacity: 0.5 },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: tokens.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  rowText: { flex: 1, gap: 2 },
+  rowTitle: { fontSize: 15, fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary },
+  rowTitleDisabled: { color: tokens.color.text.muted },
+  rowDesc: { fontSize: tokens.typography.size.xs, lineHeight: 16 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: tokens.color.border.subtle, marginLeft: 70 },
+
+  // Debug
+  debugCard: {
+    gap: 4,
     padding: 14,
-    backgroundColor: '#FFFFFF',
-    gap: 12,
-    minHeight: 168,
-    justifyContent: 'space-between',
+    borderRadius: tokens.radius.lg,
+    backgroundColor: tokens.color.bg.subtle,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
   },
-  cardDisabled: { opacity: 0.6 },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-  },
-  cardAccent: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: tokens.radius.pill,
-    backgroundColor: '#E6F6FF',
-  },
-  cardAccentText: {
-    color: '#0369A1',
-    fontWeight: tokens.typography.weight.bold,
-  },
-  cardState: {
-    fontWeight: tokens.typography.weight.bold,
-  },
-  cardBody: {
-    gap: 8,
-  },
-  cardTitle: { fontSize: 20, lineHeight: 24 },
-  cardDescription: { lineHeight: 19, fontSize: 13 },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  cardLink: { fontWeight: tokens.typography.weight.extrabold, fontSize: 14 },
-  cardChevron: { fontWeight: tokens.typography.weight.extrabold, fontSize: 16 },
-  debugCard: { gap: 4, marginTop: tokens.spacing.xs },
-  debugTitle: { fontSize: 16 },
-  debugLine: { color: '#475569' },
+  debugHeader: { fontWeight: tokens.typography.weight.bold, marginBottom: 4 },
+  debugLine: { color: '#64748B' },
 });

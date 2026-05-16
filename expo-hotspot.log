@@ -1,0 +1,319 @@
+env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL EXPO_PUBLIC_API_BASE_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN EXPO_FORCE_WEBCONTAINER_ENV
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+React Compiler enabled
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+Web node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 6/12)
+λ node_modules\expo-router\node\render.js ░░░░░░░░░░░░░░░░  5.8% ( 11/109)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (12/25)
+λ node_modules\expo-router\node\render.js ▓░░░░░░░░░░░░░░░  6.8% ( 54/281)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (12/25)
+λ node_modules\expo-router\node\render.js ▓░░░░░░░░░░░░░░░ 11.6% (124/364)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% ( 29/107)
+λ node_modules\expo-router\node\render.js ▓▓▓░░░░░░░░░░░░░ 20.9% (219/483)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% ( 29/107)
+λ node_modules\expo-router\node\render.js ▓▓▓▓░░░░░░░░░░░░ 26.7% (280/542)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% ( 29/107)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓░░░░░░░░░░ 37.6% (374/619)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% ( 46/159)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.2% (448/645)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% ( 97/313)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.2% (467/667)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (109/335)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.5% (496/725)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (109/335)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.5% (525/739)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (109/335)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓░░░░░░░░ 55.1% (569/778)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (159/381)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 61.8% (647/823)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (210/453)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 64.2% (664/829)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (246/496)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 64.2% (664/829)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (289/531)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 64.6% (668/831)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (313/556)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.8% (705/899)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 35.5% (325/572)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.8% ( 775/1007)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 43.5% (417/685)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.8% ( 818/1045)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 43.5% (443/711)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.8% ( 857/1089)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 43.7% (483/731)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.8% ( 884/1094)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.1% (505/747)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 67.9% ( 903/1096)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.7% (532/755)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.9% ( 925/1107)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 50.1% (541/764)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 77.2% ( 997/1135)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 59.1% (672/874)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 82.0% (1045/1154)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+| Dynamic import at line 89: require(s). This module may not work as intended when deployed to a runtime.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 61.7% (748/962)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 86.7% (1107/1189)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 62.2% (768/974)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.1% (1150/1304)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 71.5% (842/996)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.1% (1150/1304)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+| Dynamic import at line 135: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 43: require(s). This module may not work as intended when deployed to a runtime.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 77.8% ( 939/1081)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.1% (1185/1327)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+| Dynamic import at line 11: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 22: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 20: require(s). This module may not work as intended when deployed to a runtime.
+| Dynamic import at line 38: require(s). This module may not work as intended when deployed to a runtime.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 77.9% ( 998/1131)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1320/1414)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 82.9% (1100/1235)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1370/1536)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.3% (1185/1291)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1412/1552)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 87.9% (1234/1348)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1481/1594)
+Android node_modules\expo-router\entry.js ▓░░░░░░░░░░░░░░░  9.0% (3/5)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 87.9% (1288/1385)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.9% (1558/1648)
+Android node_modules\expo-router\entry.js ▓▓░░░░░░░░░░░░░░ 13.2% ( 4/11)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.1% (1342/1421)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1625/1697)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (11/27)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.1% (1370/1445)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.5% (1640/1713)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 14/116)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.1% (1419/1487)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.4% (1689/1738)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 16/134)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.1% (1419/1487)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.6% (1697/1752)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 44/274)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.5% (1427/1497)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1720/1769)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (119/357)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.1% (1462/1515)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1748/1775)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (177/451)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.1% (1489/1530)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1748/1775)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (196/465)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.1% (1489/1530)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1748/1775)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (200/478)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.1% (1489/1530)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1748/1775)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (242/507)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.1% (1489/1530)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1748/1775)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 27.3% (319/610)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.4% (1523/1543)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.4% (1774/1788)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 37.1% (452/768)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.4% (1527/1547)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.4% (1774/1788)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 37.1% (484/834)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.4% (1527/1547)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.4% (1774/1788)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.2% (540/854)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.4% (1527/1547)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.4% (1774/1788)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 43.5% (569/863)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.7% (1531/1549)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.4% (1774/1788)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.3% (631/911)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1537/1554)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1787/1790)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.2% (695/944)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1541/1555)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1787/1790)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 55.9% ( 798/1093)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1552/1570)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1790/1790)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 58.5% ( 933/1220)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1552/1570)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1790/1790)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% (1069/1285)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.5% (1567/1579)
+λ node_modules\expo-router\node\render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1790/1790)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.9% (1189/1385)
+λ Bundled 188898ms node_modules\expo-router\node\render.js (1790 modules)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.0% (1571/1579)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 79.7% (1302/1458)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.0% (1571/1579)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 87.9% (1401/1494)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.0% (1571/1579)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.7% (1523/1646)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.0% (1571/1579)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.5% (1645/1742)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.0% (1571/1579)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.1% (1717/1801)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web Bundled 216622ms node_modules\expo-router\entry.js (1579 modules)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.5% (1818/1844)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.1% (1844/1852)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 29.8% (103/266)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.5% (1857/1862)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 29.8% (259/492)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1859/1862)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 32.8% (330/576)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1859/1862)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓░░░░░░░░░░░ 33.8% (344/595)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1861/1866)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 41.4% (465/731)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1861/1866)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.7% (555/787)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1861/1866)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.5% (593/806)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1861/1866)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 61.6% (703/903)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1869/1869)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 67.2% (799/975)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1869/1869)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 71.2% ( 986/1191)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1869/1869)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 79.3% (1181/1338)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android Bundled 182762ms node_modules\expo-router\entry.js (1869 modules)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1869/1869)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 83.3% (1251/1374)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android Bundled 69997ms node_modules\expo-router\entry.js (1 module)
+Android Bundled 11886ms node_modules\expo-router\entry.js (1 module)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.1% (1332/1419)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.3% (1439/1493)
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1585/1585)
+Web Bundled 53111ms node_modules\expo-router\entry.js (1585 modules)
+ LOG  [web] Logs will appear in the browser console
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android Bundled 2517ms node_modules\expo-router\entry.js (1 module)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android Bundled 221ms node_modules\expo-router\entry.js (1 module)
+ WARN  [expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+ WARN  The app is running using the Legacy Architecture. The Legacy Architecture is deprecated and will be removed in a future version of React Native. Please consider migrating to the New Architecture. For more information, please see https://reactnative.dev/blog/2024/10/23/the-new-architecture-is-here
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": false, "role": "user", "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [useAdminMosque] mosques state [] selected null error null
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(admin)"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [adminMosques] no auth user [AuthSessionMissingError: Auth session missing!]
+ LOG  [useAdminMosque] mosques state [] selected null error Auth session missing!
+ LOG  [RootNavigator] redirect sign-in {"pathname": "/", "segments": ["(admin)"]}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(admin)"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] redirect sign-in {"pathname": "/", "segments": []}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": false, "role": "user", "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [auth] signIn attempt {"emailDomain": "gmail.com", "projectRef": "yecbsezhwvpdkuzmmziv"}
+ LOG  [auth] signIn failed {"message": "Network request failed", "projectRef": "yecbsezhwvpdkuzmmziv", "status": 0}
+ ERROR  [TypeError: Network request failed] 
+
+Call Stack
+  setTimeout$argument_0 (node_modules\whatwg-fetch\dist\fetch.umd.js)
+  apply (<native>)
+  _allocateCallback$argument_0 (node_modules\react-native\Libraries\Core\Timers\JSTimers.js)
+  _callTimer (node_modules\react-native\Libraries\Core\Timers\JSTimers.js)
+  callTimers (node_modules\react-native\Libraries\Core\Timers\JSTimers.js)
+  apply (<native>)
+  __callFunction (node_modules\react-native\Libraries\BatchedBridge\MessageQueue.js)
+  __guard$argument_0 (node_modules\react-native\Libraries\BatchedBridge\MessageQueue.js)
+  __guard (node_modules\react-native\Libraries\BatchedBridge\MessageQueue.js)
+  callFunctionReturnFlushedQueue (node_modules\react-native\Libraries\BatchedBridge\MessageQueue.js)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android Bundled 1065ms node_modules\expo-router\entry.js (1 module)
+ WARN  [expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+ WARN  The app is running using the Legacy Architecture. The Legacy Architecture is deprecated and will be removed in a future version of React Native. Please consider migrating to the New Architecture. For more information, please see https://reactnative.dev/blog/2024/10/23/the-new-architecture-is-here
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": false, "role": "user", "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [useAdminMosque] mosques state [] selected null error null
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(admin)"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [adminMosques] no auth user [AuthSessionMissingError: Auth session missing!]
+ LOG  [useAdminMosque] mosques state [] selected null error Auth session missing!
+ LOG  [RootNavigator] redirect sign-in {"pathname": "/", "segments": ["(admin)"]}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(admin)"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] redirect sign-in {"pathname": "/", "segments": []}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": [], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": false, "role": "user", "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [auth] signIn attempt {"emailDomain": "gmail.com", "projectRef": "yecbsezhwvpdkuzmmziv"}
+ LOG  [RootNavigator] redirect target {"currentRoot": "/(auth)", "isAtGroupedRootIndex": false, "pathname": "/sign-in", "segments": ["(auth)", "sign-in"], "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": false, "role": null, "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["(auth)", "sign-in"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["(auth)", "sign-in"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["(auth)", "sign-in"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": true, "rolesLoading": true, "segments": ["(auth)", "sign-in"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [auth] signIn succeeded {"projectRef": "yecbsezhwvpdkuzmmziv", "userId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2"}
+λ Bundled 2965ms app\api\session-access+api.ts (88 modules)
+ LOG  [RootNavigator] redirect target {"currentRoot": "/(auth)", "isAtGroupedRootIndex": false, "pathname": "/sign-in", "segments": ["(auth)", "sign-in"], "targetHref": "/role-entry", "targetStack": "/role-entry"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/sign-in", "preferredEntry": null, "preferredEntryLoaded": true, "role": "local_admin", "roleSelectionLoaded": true, "roleSelectionRequired": true, "rolesLoading": false, "segments": ["(auth)", "sign-in"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/role-entry", "targetStack": "/role-entry"}
+ LOG  [RootNavigator] redirect target {"currentRoot": "/", "isAtGroupedRootIndex": true, "pathname": "/", "segments": [], "targetHref": "/role-entry", "targetStack": "/role-entry"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/", "preferredEntry": null, "preferredEntryLoaded": true, "role": "local_admin", "roleSelectionLoaded": true, "roleSelectionRequired": true, "rolesLoading": false, "segments": [], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/role-entry", "targetStack": "/role-entry"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": false, "role": "user", "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["role-entry"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["role-entry"], "sessionUserId": null, "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": true, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": false, "role": null, "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": false, "role": null, "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": false, "roleSelectionRequired": false, "rolesLoading": true, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": false, "roleSelectionRequired": true, "rolesLoading": true, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": true, "role": null, "roleSelectionLoaded": true, "roleSelectionRequired": true, "rolesLoading": true, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/listener-home", "targetStack": "/listener-home"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/role-entry", "preferredEntry": null, "preferredEntryLoaded": true, "role": "local_admin", "roleSelectionLoaded": true, "roleSelectionRequired": true, "rolesLoading": false, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/role-entry", "targetStack": "/role-entry"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/role-entry", "preferredEntry": "admin", "preferredEntryLoaded": true, "role": "local_admin", "roleSelectionLoaded": true, "roleSelectionRequired": true, "rolesLoading": false, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/role-entry", "targetStack": "/role-entry"}
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/role-entry", "preferredEntry": "admin", "preferredEntryLoaded": true, "role": "local_admin", "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["role-entry"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/admin-home", "targetStack": "/(admin)"}
+ LOG  [useAdminMosque] mosques state [] selected null error null
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/admin-home", "preferredEntry": "admin", "preferredEntryLoaded": true, "role": "local_admin", "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["admin-home"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/admin-home", "targetStack": "/(admin)"}
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [RootNavigator] {"authLoading": false, "pathname": "/events", "preferredEntry": "admin", "preferredEntryLoaded": true, "role": "local_admin", "roleSelectionLoaded": true, "roleSelectionRequired": false, "rolesLoading": false, "segments": ["(admin)", "events"], "sessionUserId": "aef08a87-4ebc-4820-b916-1b52cb2d27b2", "targetHref": "/admin-home", "targetStack": "/(admin)"}
+ LOG  [useAdminMosque] mosques state [] selected null error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+λ Bundled 68ms app\api\session-access+api.ts (1 module)
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+λ Bundled 8ms app\api\session-access+api.ts (1 module)
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
+λ app\api\session-access+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 129ms app\api\session-access+api.ts (1 module)
+ LOG  [useAdminMosque] mosques state [] selected null error null
+ LOG  [useAdminMosque] mosques state [{"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"}] selected {"city": "Harrow, London", "country": "United Kingdom", "mosqueId": "52fbe3bf-2d08-4009-9921-208afb5b3169", "name": "Harrow Mosque"} error null
