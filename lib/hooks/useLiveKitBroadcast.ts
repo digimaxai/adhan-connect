@@ -392,6 +392,7 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
         setLiveConnectionState('connected');
       });
       room.on(runtime.RoomEvent.Disconnected, () => {
+        console.log('[LK] room disconnected');
         pushDiagnostics('room-disconnected');
         setLiveConnectionState('idle');
         if (mountedRef.current) {
@@ -416,6 +417,10 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
       await room.connect(tokenData.livekitUrl, tokenData.token, {
         autoSubscribe: false,
       });
+      console.log('[LK] room connected', {
+        localIdentity: room.localParticipant?.identity ?? null,
+        localSid: room.localParticipant?.sid ?? null,
+      });
       pushDiagnostics('room-connected');
 
       pushDiagnostics('creating-local-audio-track');
@@ -433,6 +438,12 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
         audioPreset: runtime.AudioPresets?.music,
         dtx: false,
         red: true,
+      });
+      console.log('[LK] microphone track published', {
+        sid: publication?.trackSid ?? publication?.sid ?? null,
+        muted: publication?.isMuted ?? audioTrack?.isMuted ?? null,
+        mediaEnabled: audioTrack?.mediaStreamTrack?.enabled ?? null,
+        mediaMuted: audioTrack?.mediaStreamTrack?.muted ?? null,
       });
       audioTrackRef.current = audioTrack;
       pushDiagnostics('microphone-live', {
