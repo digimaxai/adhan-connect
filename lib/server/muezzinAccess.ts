@@ -52,7 +52,7 @@ function dedupeMosques(rows: MuezzinMosqueSummary[]) {
 
 async function hydrateMosqueSummaries(
   supabaseAdmin: SupabaseClient<any, any, any>,
-  rows: Array<{ mosqueId: string; joined?: MosqueJoinRow | null }>
+  rows: { mosqueId: string; joined?: MosqueJoinRow | null }[]
 ) {
   const missingIds = Array.from(new Set(rows.filter((row) => !row.joined).map((row) => row.mosqueId)));
   const hydrated = new Map<string, MosqueJoinRow>();

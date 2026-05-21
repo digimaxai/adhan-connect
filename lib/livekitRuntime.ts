@@ -160,20 +160,20 @@ function installBasePolyfills(diagnostics: LiveKitRuntimeDiagnostics) {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('react-native-url-polyfill').setupURLPolyfill();
     addStep(diagnostics, 'url-polyfill');
   } catch {}
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('promise.allsettled').shim();
     addStep(diagnostics, 'promise-allsettled-polyfill');
   } catch {}
 
   try {
     if (!Array.prototype.at) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('array.prototype.at').shim();
       addStep(diagnostics, 'array-at-polyfill');
     }
@@ -184,7 +184,7 @@ function installBasePolyfills(diagnostics: LiveKitRuntimeDiagnostics) {
       typeof globalAny.ReadableStream === 'undefined' ||
       typeof globalAny.WritableStream === 'undefined'
     ) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const streams = require('web-streams-polyfill');
       globalAny.ReadableStream = globalAny.ReadableStream ?? streams.ReadableStream;
       globalAny.WritableStream = globalAny.WritableStream ?? streams.WritableStream;
@@ -207,7 +207,7 @@ function installBasePolyfills(diagnostics: LiveKitRuntimeDiagnostics) {
 
   if (typeof globalAny.atob !== 'function' || typeof globalAny.btoa !== 'function') {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const base64 = require('base64-js');
       globalAny.atob =
         globalAny.atob ??
@@ -282,7 +282,7 @@ export function loadLiveKitRuntime(): Runtime {
 
   let reactNativeSdk: any = null;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     reactNativeSdk = require('@livekit/react-native');
     diagnostics.reactNativeModuleKeys = safeKeys(reactNativeSdk);
     addStep(diagnostics, '@livekit/react-native loaded');
@@ -305,7 +305,7 @@ export function loadLiveKitRuntime(): Runtime {
     if (!NativeModules.WebRTCModule) {
       throw new Error('WebRTC native module not found.');
     }
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const webRTC = require('@livekit/react-native-webrtc');
     diagnostics.webRTCModuleKeys = safeKeys(NativeModules.WebRTCModule);
     if (typeof webRTC.registerGlobals !== 'function') {
@@ -327,7 +327,7 @@ export function loadLiveKitRuntime(): Runtime {
 
   installBasePolyfills(diagnostics);
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const client = require('livekit-client');
   diagnostics.clientModuleKeys = safeKeys(client);
   assertClientExports(client);

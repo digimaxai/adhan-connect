@@ -79,6 +79,15 @@ export default function AdminDashboard() {
       requiresMosque: true,
     },
     {
+      title: 'Jumuah',
+      description: 'Manage Friday slots, capacity guidance, and attendance planning.',
+      href: '/(admin)/jumuah',
+      icon: 'business-outline',
+      iconBg: '#ECFDF5',
+      iconColor: '#059669',
+      requiresMosque: true,
+    },
+    {
       title: 'Staff Rota',
       description: 'Assign muezzins and keep daily coverage organised.',
       href: '/(admin)/staff-rota',
@@ -106,6 +115,15 @@ export default function AdminDashboard() {
       icon: 'calendar-outline',
       iconBg: '#FFF7ED',
       iconColor: '#EA580C',
+      requiresMosque: true,
+    },
+    {
+      title: 'Daily Quotes',
+      description: 'Set a spiritual reflection for followers to see each day.',
+      href: '/(admin)/quotes',
+      icon: 'book-outline',
+      iconBg: '#FFFBF2',
+      iconColor: '#D97706',
       requiresMosque: true,
     },
     {

@@ -66,7 +66,7 @@ async function getDefaultMuezzinUserId(mosqueId: string) {
 
 export async function getMosqueMuezzinMembers(mosqueId: string): Promise<MosqueMuezzinMember[]> {
   let rows:
-    | Array<{ user_id: string; is_active?: boolean | null; created_at?: string | null }>
+    | { user_id: string; is_active?: boolean | null; created_at?: string | null }[]
     | null = null;
   let error: any = null;
 

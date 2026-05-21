@@ -424,6 +424,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
         connectPromiseRef.current = null;
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     disconnect,
     options.mosqueId,
@@ -444,6 +445,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
       return;
     }
     void connect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options.mosqueId, options.livekitRoomName, options.autoConnect, connect, disconnect]);
 
   // Disconnect on unmount.
@@ -454,6 +456,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
         roomRef.current = null;
       }
       activeRoomNameRef.current = null;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       remoteTracksRef.current.clear();
       if (audioSessionStartedRef.current) {
         ignoreMaybeAsync(() => audioSessionRef.current?.stopAudioSession?.());

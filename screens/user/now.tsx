@@ -391,7 +391,7 @@ export default function NowScreen() {
     } finally {
       setResolvingStreamId((prev) => (prev === stream.id ? null : prev));
     }
-  }, [safeVolume]);
+  }, [listenerLocationPayload, safeVolume]);
 
   const pausePlayback = useCallback(async () => {
     try {

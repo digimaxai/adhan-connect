@@ -36,6 +36,13 @@ type RotaRow = {
   adhan_time?: string | Date | null;
 };
 
+type MosquePrayerGeoRow = {
+  lat: number | null;
+  lng: number | null;
+  prayer_calculation_method?: number | null;
+  prayer_school?: number | null;
+};
+
 const safeDate = (value?: string | Date | null): Date | null => {
   if (!value) return null;
   const parsed = value instanceof Date ? value : new Date(value);
@@ -62,6 +69,16 @@ const emptyNormalized = (): NormalizedPrayerTimes => ({
   isha: { adhan: null, iqama: null },
 });
 
+function normalizePrayerTimesRowWithBase(row: PrayerTimesRow, dateIso: string): NormalizedPrayerTimes {
+  return {
+    fajr: { adhan: safeDateWithBase(row.fajr_adhan_time, dateIso), iqama: safeDateWithBase(row.fajr_iqama_time, dateIso) },
+    dhuhr: { adhan: safeDateWithBase(row.dhuhr_adhan_time, dateIso), iqama: safeDateWithBase(row.dhuhr_iqama_time, dateIso) },
+    asr: { adhan: safeDateWithBase(row.asr_adhan_time, dateIso), iqama: safeDateWithBase(row.asr_iqama_time, dateIso) },
+    maghrib: { adhan: safeDateWithBase(row.maghrib_adhan_time, dateIso), iqama: safeDateWithBase(row.maghrib_iqama_time, dateIso) },
+    isha: { adhan: safeDateWithBase(row.isha_adhan_time, dateIso), iqama: safeDateWithBase(row.isha_iqama_time, dateIso) },
+  };
+}
+
 const formatLocalDate = (d: Date) => {
   const year = d.getFullYear();
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
@@ -69,13 +86,16 @@ const formatLocalDate = (d: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-function isServerPrayerTimesPayload(value: unknown): value is { row?: PrayerTimesRow | null; error?: string | null } {
+function isServerPrayerTimesPayload(value: unknown): value is { row?: PrayerTimesRow | null; error?: string | null; source?: string | null } {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Record<string, unknown>;
   return 'row' in payload || 'error' in payload;
 }
 
-async function loadDailyPrayerTimesViaServer(mosqueId: string, dateIso: string): Promise<PrayerTimesRow | null> {
+async function loadDailyPrayerTimesViaServer(
+  mosqueId: string,
+  dateIso: string
+): Promise<{ row: PrayerTimesRow | null; source?: string | null } | null> {
   if (!supportsServerApi()) return null;
 
   const endpoints = resolveApiUrls('/api/prayer-times-daily');
@@ -96,13 +116,82 @@ async function loadDailyPrayerTimesViaServer(mosqueId: string, dateIso: string):
       if (!contentType.includes('application/json') || !isServerPrayerTimesPayload(payload)) {
         continue;
       }
-      return (payload.row ?? null) as PrayerTimesRow | null;
+      return { row: (payload.row ?? null) as PrayerTimesRow | null, source: payload.source ?? null };
     } catch (error) {
       console.warn('[getDailyPrayerTimes] server fallback error', error);
     }
   }
 
   return null;
+}
+
+async function loadMosquePrayerGeo(mosqueId: string): Promise<MosquePrayerGeoRow | null> {
+  const { data: geoFull, error: geoFullErr } = await supabase
+    .from('mosques')
+    .select('lat, lng, prayer_calculation_method, prayer_school')
+    .eq('id', mosqueId)
+    .maybeSingle<MosquePrayerGeoRow>();
+
+  if (!geoFullErr) return geoFull;
+
+  // Some deployed databases may not have calculation-method columns yet.
+  console.warn('[getDailyPrayerTimes] mosqueGeo full fetch error (column may be missing):', geoFullErr.message);
+  const { data: geoBasic, error: geoBasicErr } = await supabase
+    .from('mosques')
+    .select('lat, lng')
+    .eq('id', mosqueId)
+    .maybeSingle<{ lat: number | null; lng: number | null }>();
+
+  if (!geoBasicErr) {
+    return geoBasic ? { lat: geoBasic.lat, lng: geoBasic.lng } : null;
+  }
+
+  console.warn('[getDailyPrayerTimes] mosqueGeo basic fetch error:', geoBasicErr.message);
+  return null;
+}
+
+async function fillPartialPrayerTimesFromAladhan(
+  mosqueId: string,
+  dateIso: string,
+  normalized: NormalizedPrayerTimes
+): Promise<NormalizedPrayerTimes> {
+  const nullPrayers = PRAYER_NAMES.filter((p) => normalized[p].adhan === null);
+  if (nullPrayers.length === 0 || nullPrayers.length === PRAYER_NAMES.length) return normalized;
+
+  try {
+    const geoRow = await loadMosquePrayerGeo(mosqueId);
+    if (geoRow?.lat == null || geoRow.lng == null) return normalized;
+
+    const method = geoRow.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
+    const school = geoRow.prayer_school ?? 0;
+    const timings = await fetchAladhanTimes(geoRow.lat, geoRow.lng, dateIso, method, school);
+    if (!timings) return normalized;
+
+    const aladhanMap: Partial<Record<PrayerName, string>> = {
+      fajr: timings.Fajr,
+      dhuhr: timings.Dhuhr,
+      asr: timings.Asr,
+      maghrib: timings.Maghrib,
+      isha: timings.Isha,
+    };
+    const filled: NormalizedPrayerTimes = {
+      fajr: { ...normalized.fajr },
+      dhuhr: { ...normalized.dhuhr },
+      asr: { ...normalized.asr },
+      maghrib: { ...normalized.maghrib },
+      isha: { ...normalized.isha },
+    };
+
+    nullPrayers.forEach((p) => {
+      if (aladhanMap[p]) {
+        filled[p] = { adhan: safeDateWithBase(aladhanMap[p]!, dateIso), iqama: filled[p].iqama };
+      }
+    });
+    return filled;
+  } catch (fillErr: any) {
+    console.warn('[getDailyPrayerTimes] partial override Aladhan fill threw', fillErr?.message ?? fillErr);
+    return normalized;
+  }
 }
 
 export function normalizePrayerTimes(row?: PrayerTimesRow | null): NormalizedPrayerTimes | null {
@@ -131,15 +220,12 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   // Example: for Harrow on 2025-12-09, if prayer_times has edited times and mosque_prayer_times still holds imported ones, this helper returns the prayer_times values for all prayers.
   const dateIso = formatLocalDate(date);
 
-  const serverRow = await loadDailyPrayerTimesViaServer(mosqueId, dateIso);
-  if (serverRow) {
-    return {
-      fajr: { adhan: safeDateWithBase(serverRow.fajr_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.fajr_iqama_time, dateIso) },
-      dhuhr: { adhan: safeDateWithBase(serverRow.dhuhr_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.dhuhr_iqama_time, dateIso) },
-      asr: { adhan: safeDateWithBase(serverRow.asr_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.asr_iqama_time, dateIso) },
-      maghrib: { adhan: safeDateWithBase(serverRow.maghrib_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.maghrib_iqama_time, dateIso) },
-      isha: { adhan: safeDateWithBase(serverRow.isha_adhan_time, dateIso), iqama: safeDateWithBase(serverRow.isha_iqama_time, dateIso) },
-    };
+  const serverResult = await loadDailyPrayerTimesViaServer(mosqueId, dateIso);
+  if (serverResult?.row) {
+    const serverNormalized = normalizePrayerTimesRowWithBase(serverResult.row, dateIso);
+    return serverResult.source === 'prayer_times' || !serverResult.source
+      ? fillPartialPrayerTimesFromAladhan(mosqueId, dateIso, serverNormalized)
+      : serverNormalized;
   }
 
   let normalized: NormalizedPrayerTimes | null = null;
@@ -154,13 +240,11 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
       .maybeSingle<PrayerTimesRow>();
 
     if (!primaryErr && primary) {
-      normalized = {
-        fajr: { adhan: safeDateWithBase(primary.fajr_adhan_time, dateIso), iqama: safeDateWithBase(primary.fajr_iqama_time, dateIso) },
-        dhuhr: { adhan: safeDateWithBase(primary.dhuhr_adhan_time, dateIso), iqama: safeDateWithBase(primary.dhuhr_iqama_time, dateIso) },
-        asr: { adhan: safeDateWithBase(primary.asr_adhan_time, dateIso), iqama: safeDateWithBase(primary.asr_iqama_time, dateIso) },
-        maghrib: { adhan: safeDateWithBase(primary.maghrib_adhan_time, dateIso), iqama: safeDateWithBase(primary.maghrib_iqama_time, dateIso) },
-        isha: { adhan: safeDateWithBase(primary.isha_adhan_time, dateIso), iqama: safeDateWithBase(primary.isha_iqama_time, dateIso) },
-      };
+      normalized = await fillPartialPrayerTimesFromAladhan(
+        mosqueId,
+        dateIso,
+        normalizePrayerTimesRowWithBase(primary, dateIso)
+      );
     } else if (primaryErr && primaryErr.code !== 'PGRST116') {
       // RLS or permission errors should not block fallback; log and continue to legacy.
       console.warn('[getDailyPrayerTimes] primary prayer_times fetch error', primaryErr.message ?? primaryErr);
@@ -247,14 +331,13 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   // Only fires when the mosque has coordinates; returns astronomically correct
   // times based on the mosque's chosen calculation method and Asr school.
   try {
-    type GeoRow = { lat: number | null; lng: number | null; prayer_calculation_method?: number | null; prayer_school?: number | null };
-    let mosqueGeo: GeoRow | null = null;
+    let mosqueGeo: MosquePrayerGeoRow | null = null;
 
     const { data: geoFull, error: geoFullErr } = await supabase
       .from('mosques')
       .select('lat, lng, prayer_calculation_method, prayer_school')
       .eq('id', mosqueId)
-      .maybeSingle<GeoRow>();
+      .maybeSingle<MosquePrayerGeoRow>();
 
     if (!geoFullErr) {
       mosqueGeo = geoFull;

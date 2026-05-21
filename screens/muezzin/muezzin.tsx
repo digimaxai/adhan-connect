@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View, SafeAreaView } from 'react-native';
-import { AdhanBroadcast, PrayerName, formatTimeWithTz, labelForPrayer } from '../../lib/adhans';
+import { AdhanBroadcast, PrayerName, labelForPrayer } from '../../lib/adhans';
 import { useAuth } from '../../lib/auth';
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
@@ -79,7 +79,7 @@ export default function MuezzinToolsScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { loading, isMuezzin } = useRoleFlags();
-  const log = (...args: any[]) => console.log('[MuezzinScreen]', ...args);
+  const log = React.useCallback((...args: any[]) => console.log('[MuezzinScreen]', ...args), []);
 
   const [primaryMosque, setPrimaryMosque] = useState<MosqueInfo | null>(null);
   const [upcoming, setUpcoming] = useState<BroadcastLike | null>(null);
@@ -94,7 +94,7 @@ export default function MuezzinToolsScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const load = async () => {
+  const load = React.useCallback(async () => {
     setBusy(true);
     setErr(null);
     try {
@@ -136,12 +136,12 @@ export default function MuezzinToolsScreen() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [isMuezzin, log, session?.user?.id]);
 
   useFocusEffect(
     React.useCallback(() => {
-      load();
-    }, [])
+      void load();
+    }, [load])
   );
 
   const handlePrimaryAction = () => {
@@ -198,7 +198,7 @@ export default function MuezzinToolsScreen() {
         d.setHours(h, m, 0, 0);
         return { name, when: d, timeLabel: t };
       })
-      .filter(Boolean) as Array<{ name: PrayerName; when: Date; timeLabel: string }>;
+      .filter(Boolean) as { name: PrayerName; when: Date; timeLabel: string }[];
 
     const upcomingSorted = entries.filter((e) => e.when > nowDate).sort((a, b) => a.when.getTime() - b.when.getTime());
     return upcomingSorted[0] ?? null;
@@ -220,8 +220,7 @@ export default function MuezzinToolsScreen() {
 
   const activeBroadcast = normalizeBroadcast(upcoming ?? liveInfo.currentAdhan ?? syntheticFromTimes, primaryMosque);
   const derived = deriveState(activeBroadcast, liveInfo.isLive, now);
-  const scheduledIso = activeBroadcast?.scheduled_for ?? activeBroadcast?.scheduled_at ?? null;
-  const scheduledLabel = scheduledIso ? formatTimeWithTz(activeBroadcast as any) : null;
+
   useEffect(() => {
     log('derived state', {
       derived,
@@ -230,6 +229,7 @@ export default function MuezzinToolsScreen() {
       primaryMosque,
       prayerTimes: prayerTimes.times,
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derived.state, derived.countdownText, activeBroadcast?.id, liveInfo.isLive, primaryMosque?.id, prayerTimes.times]);
 
   const heroButtonLabel =
@@ -273,7 +273,7 @@ export default function MuezzinToolsScreen() {
         </View>
       ) : !primaryMosque ? (
         <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E2E8F0' }}>
-          <Text style={{ fontWeight: '800', fontSize: 16, color: '#0F172A' }}>You're not assigned to a mosque yet</Text>
+          <Text style={{ fontWeight: '800', fontSize: 16, color: '#0F172A' }}>{"You're not assigned to a mosque yet"}</Text>
           <Text style={{ color: '#475569', marginTop: 8 }}>
             Ask your mosque admin to add you as a muezzin in Adhan Connect.
           </Text>
@@ -358,7 +358,7 @@ export default function MuezzinToolsScreen() {
               marginTop: 14,
             }}
           >
-            <Text style={{ fontWeight: '800', fontSize: 16, color: '#0F172A' }}>Today's adhans</Text>
+            <Text style={{ fontWeight: '800', fontSize: 16, color: '#0F172A' }}>{"Today's adhans"}</Text>
             {primaryMosque?.name ? <Text style={{ color: '#64748B', marginTop: 4 }}>Based on {primaryMosque.name}</Text> : null}
             <View style={{ marginTop: 12, gap: 10 }}>
               {todayRows.map((row) => (

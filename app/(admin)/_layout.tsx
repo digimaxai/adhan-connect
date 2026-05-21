@@ -23,6 +23,7 @@ export default function AdminStack() {
       <Stack.Screen name="index" />
       <Stack.Screen name="manage-mosques" />
       <Stack.Screen name="events" />
+      <Stack.Screen name="jumuah" />
       <Stack.Screen name="prayer-times/index" />
       <Stack.Screen name="staff-rota/index" />
       <Stack.Screen name="muezzins" />
@@ -33,6 +34,7 @@ export default function AdminStack() {
       <Stack.Screen name="announcement/[id]" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="mosque-onboarding" />
+      <Stack.Screen name="quotes" />
     </Stack>
   );
 }

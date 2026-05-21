@@ -1,7 +1,7 @@
-// app/campaign/[id].tsx
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
@@ -9,36 +9,56 @@ type CampaignRow = {
   id: string;
   title?: string | null;
   description?: string | null;
-  raised?: number | null;
-  goal?: number | null;
+  raised_cents?: number | null;
+  goal_cents?: number | null;
+  end_at?: string | null;
   mosque_name?: string | null;
 };
 
-const formatCurrency = (n?: number | null) => `£${(n ?? 0).toLocaleString()}`;
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const formatCurrency = (cents?: number | null) =>
+  `£${((cents ?? 0) / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
 
 export default function CampaignDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [campaign, setCampaign] = useState<CampaignRow | null>(null);
   const [amount, setAmount] = useState<number>(10);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       if (!id) return;
-      const { data } = await supabase
-        .from('campaigns')
-        .select('id,title,description,raised,goal, mosques(name)')
-        .eq('id', id)
-        .maybeSingle();
-      if (data) {
-        setCampaign({
-          id: data.id,
-          title: data.title,
-          description: data.description,
-          raised: data.raised,
-          goal: data.goal,
-          mosque_name: (data as any).mosques?.name ?? null,
-        });
+      setLoading(true);
+      try {
+        const { data } = await supabase
+          .from('campaigns')
+          .select('id,title,description,raised_cents,goal_cents,end_at,mosques(name)')
+          .eq('id', id)
+          .eq('status', 'active')
+          .or(`end_at.is.null,end_at.gte.${formatLocalDate(new Date())}`)
+          .maybeSingle();
+        setCampaign(
+          data
+            ? {
+                id: data.id,
+                title: data.title,
+                description: data.description,
+                raised_cents: data.raised_cents,
+                goal_cents: data.goal_cents,
+                end_at: data.end_at,
+                mosque_name: (data as any).mosques?.name ?? null,
+              }
+            : null
+        );
+      } finally {
+        setLoading(false);
       }
     };
     load();
@@ -46,12 +66,12 @@ export default function CampaignDetail() {
 
   const pct = (() => {
     if (!campaign) return 0;
-    const goal = campaign.goal && campaign.goal > 0 ? campaign.goal : 1;
-    return Math.min(100, Math.round(((campaign.raised ?? 0) / goal) * 100));
+    const goal = campaign.goal_cents && campaign.goal_cents > 0 ? campaign.goal_cents : 1;
+    return Math.min(100, Math.round(((campaign.raised_cents ?? 0) / goal) * 100));
   })();
 
   const donate = () => {
-    Alert.alert('Thank you', `Donated ${formatCurrency(amount)} to ${campaign?.title ?? 'campaign'}`);
+    Alert.alert('Donation flow', `Donation checkout for ${formatCurrency(amount * 100)} will open here.`);
   };
 
   const preset = [5, 10, 20, 50];
@@ -61,47 +81,63 @@ export default function CampaignDetail() {
       <ScrollView contentContainerStyle={styles.body}>
         <View style={styles.topBar}>
           <Pressable onPress={() => router.back()} hitSlop={10}>
-            <Text style={styles.back}>{'<'}</Text>
+            <Ionicons name="chevron-back" size={24} color="#111111" />
           </Pressable>
           <Text style={styles.title}>Campaign</Text>
           <View style={{ width: 24 }} />
         </View>
 
-        <View style={[styles.card, styles.shadow]}>
-          <Text style={styles.campaignTitle}>{campaign?.title ?? 'Campaign'}</Text>
-          <Text style={styles.subtle}>{campaign?.mosque_name ?? ''}</Text>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${pct}%` }]} />
-          </View>
-          <Text style={styles.meta}>{`${formatCurrency(campaign?.raised)} raised of ${formatCurrency(campaign?.goal)}`}</Text>
-          {campaign?.description ? <Text style={styles.desc}>{campaign.description}</Text> : null}
-        </View>
+        {loading ? (
+          <View style={styles.centered}><ActivityIndicator color="#1E7BF6" /></View>
+        ) : campaign ? (
+          <>
+            <View style={[styles.card, styles.shadow]}>
+              <Text style={styles.campaignTitle}>{campaign.title ?? 'Campaign'}</Text>
+              {campaign.mosque_name ? <Text style={styles.subtle}>{campaign.mosque_name}</Text> : null}
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${pct}%` }]} />
+              </View>
+              <Text style={styles.meta}>{`${formatCurrency(campaign.raised_cents)} raised of ${formatCurrency(campaign.goal_cents)} goal`}</Text>
+              {campaign.end_at ? (
+                <Text style={styles.meta}>Ends {new Date(campaign.end_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+              ) : null}
+              {campaign.description ? <Text style={styles.desc}>{campaign.description}</Text> : null}
+            </View>
 
-        <View style={[styles.card, styles.shadow]}>
-          <Text style={styles.cardTitle}>Choose amount</Text>
-          <View style={styles.pillRow}>
-            {preset.map((v) => (
-              <Pressable
-                key={v}
-                onPress={() => setAmount(v)}
-                style={({ pressed }) => [
-                  styles.amountPill,
-                  amount === v && styles.amountPillActive,
-                  { opacity: pressed ? 0.85 : 1 },
-                ]}
-              >
-                <Text style={[styles.amountText, amount === v && styles.amountTextActive]}>{formatCurrency(v)}</Text>
-              </Pressable>
-            ))}
+            <View style={[styles.card, styles.shadow]}>
+              <Text style={styles.cardTitle}>Choose amount</Text>
+              <View style={styles.pillRow}>
+                {preset.map((value) => (
+                  <Pressable
+                    key={value}
+                    onPress={() => setAmount(value)}
+                    style={({ pressed }) => [
+                      styles.amountPill,
+                      amount === value && styles.amountPillActive,
+                      { opacity: pressed ? 0.85 : 1 },
+                    ]}
+                  >
+                    <Text style={[styles.amountText, amount === value && styles.amountTextActive]}>{formatCurrency(value * 100)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.meta}>Selected: {formatCurrency(amount * 100)}</Text>
+            </View>
+          </>
+        ) : (
+          <View style={[styles.card, styles.shadow]}>
+            <Text style={styles.campaignTitle}>Campaign unavailable</Text>
+            <Text style={styles.desc}>This campaign may be paused, ended, or no longer public.</Text>
           </View>
-          <Text style={styles.meta}>Selected: {formatCurrency(amount)}</Text>
-        </View>
+        )}
       </ScrollView>
-      <View style={styles.sticky}>
-        <Pressable onPress={donate} style={({ pressed }) => [styles.primaryBtn, { opacity: pressed ? 0.9 : 1 }]}>
-          <Text style={styles.primaryText}>{`Donate ${formatCurrency(amount)}`}</Text>
-        </Pressable>
-      </View>
+      {campaign ? (
+        <View style={styles.sticky}>
+          <Pressable onPress={donate} style={({ pressed }) => [styles.primaryBtn, { opacity: pressed ? 0.9 : 1 }]}>
+            <Text style={styles.primaryText}>{`Donate ${formatCurrency(amount * 100)}`}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -109,8 +145,8 @@ export default function CampaignDetail() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8F8F9' },
   body: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
+  centered: { paddingVertical: 48, alignItems: 'center' },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
-  back: { fontSize: 22, color: '#111111', fontWeight: '700' },
   title: { fontSize: 20, fontWeight: '800', color: '#111111' },
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)', marginTop: 8 },
   campaignTitle: { fontSize: 20, fontWeight: '800', color: '#111111' },

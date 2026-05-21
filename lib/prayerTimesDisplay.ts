@@ -60,7 +60,7 @@ export function computeNextPrayerSummary(
   return {
     name: chosen.name,
     scheduledAt: chosen.when,
-    label: chosen.when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    label: chosen.when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
     remaining: formatRemaining(chosen.when, now),
   };
 }
@@ -82,7 +82,7 @@ export function computeNextPrayerSummaryAcrossDays(
     return {
       name: upcomingToday.name,
       scheduledAt: upcomingToday.when,
-      label: upcomingToday.when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      label: upcomingToday.when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
       remaining: formatRemaining(upcomingToday.when, now),
     };
   }
@@ -100,7 +100,7 @@ export function computeNextPrayerSummaryAcrossDays(
   return {
     name: nextTomorrow.name,
     scheduledAt: nextTomorrow.when,
-    label: nextTomorrow.when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    label: nextTomorrow.when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
     remaining: formatRemaining(nextTomorrow.when, now),
   };
 }

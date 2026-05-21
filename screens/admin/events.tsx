@@ -310,6 +310,7 @@ export default function ContentHubScreen() {
     setCampaigns([]);
     setNotices([]);
     if (selectedMosque) loadTab(tab, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMosque?.mosqueId]);
 
   useEffect(() => {
