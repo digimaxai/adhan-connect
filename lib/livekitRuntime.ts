@@ -29,6 +29,8 @@ export type LiveKitRuntimeDiagnostics = {
     WritableStream: boolean;
     atob: boolean;
     btoa: boolean;
+    Event: boolean;
+    CustomEvent: boolean;
   };
   error: string | null;
   stack: string | null;
@@ -130,6 +132,8 @@ function collectGlobalDiagnostics(): LiveKitRuntimeDiagnostics['globals'] {
     WritableStream: typeof globalAny.WritableStream === 'function',
     atob: typeof globalAny.atob === 'function',
     btoa: typeof globalAny.btoa === 'function',
+    Event: typeof globalAny.Event === 'function',
+    CustomEvent: typeof globalAny.CustomEvent === 'function',
   };
 }
 
@@ -158,6 +162,8 @@ function installBasePolyfills(diagnostics: LiveKitRuntimeDiagnostics) {
       devicePixelRatio: PixelRatio.get(),
     };
   }
+
+  installDomEventFallbacks(diagnostics);
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -234,6 +240,86 @@ function installBasePolyfills(diagnostics: LiveKitRuntimeDiagnostics) {
   ) {
     installTextEncodingFallback();
     addStep(diagnostics, 'text-encoding-fallback');
+  }
+}
+
+function installDomEventFallbacks(diagnostics: LiveKitRuntimeDiagnostics) {
+  if (typeof globalAny.Event !== 'function') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const webRTC = require('@livekit/react-native-webrtc');
+      if (typeof webRTC.Event === 'function') {
+        globalAny.Event = webRTC.Event;
+        addStep(diagnostics, 'webrtc-event-polyfill');
+      }
+      if (typeof globalAny.EventTarget !== 'function' && typeof webRTC.EventTarget === 'function') {
+        globalAny.EventTarget = webRTC.EventTarget;
+        addStep(diagnostics, 'webrtc-eventtarget-polyfill');
+      }
+    } catch {}
+  }
+
+  if (typeof globalAny.Event !== 'function') {
+    globalAny.Event = class Event {
+      static NONE = 0;
+      static CAPTURING_PHASE = 1;
+      static AT_TARGET = 2;
+      static BUBBLING_PHASE = 3;
+
+      type: string;
+      bubbles: boolean;
+      cancelable: boolean;
+      composed: boolean;
+      currentTarget: unknown = null;
+      defaultPrevented = false;
+      eventPhase = 0;
+      isTrusted = false;
+      target: unknown = null;
+      timeStamp = Date.now();
+
+      constructor(type: string, init: { bubbles?: boolean; cancelable?: boolean; composed?: boolean } = {}) {
+        this.type = String(type);
+        this.bubbles = !!init.bubbles;
+        this.cancelable = !!init.cancelable;
+        this.composed = !!init.composed;
+      }
+
+      composedPath() {
+        return [];
+      }
+
+      preventDefault() {
+        if (this.cancelable) this.defaultPrevented = true;
+      }
+
+      stopImmediatePropagation() {}
+
+      stopPropagation() {}
+    };
+    addStep(diagnostics, 'event-fallback-polyfill');
+  }
+
+  if (typeof globalAny.CustomEvent !== 'function') {
+    globalAny.CustomEvent = class CustomEvent extends globalAny.Event {
+      detail: unknown;
+
+      constructor(
+        type: string,
+        init: { bubbles?: boolean; cancelable?: boolean; composed?: boolean; detail?: unknown } = {}
+      ) {
+        super(type, init);
+        this.detail = init.detail;
+      }
+    };
+    addStep(diagnostics, 'customevent-fallback-polyfill');
+  }
+
+  if (globalAny.window) {
+    globalAny.window.Event = globalAny.window.Event ?? globalAny.Event;
+    globalAny.window.CustomEvent = globalAny.window.CustomEvent ?? globalAny.CustomEvent;
+    if (globalAny.EventTarget) {
+      globalAny.window.EventTarget = globalAny.window.EventTarget ?? globalAny.EventTarget;
+    }
   }
 }
 

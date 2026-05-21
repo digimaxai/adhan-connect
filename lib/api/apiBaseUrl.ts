@@ -83,6 +83,41 @@ function addNativeCandidatesFromBase(candidates: Set<string>, baseUrl: string, n
   }
 }
 
+function nativeLoopbackBaseFor(value: string | null | undefined) {
+  const normalized = normalizeHttpLikeUrl(value);
+  if (!normalized) return null;
+
+  try {
+    const parsed = new URL(normalized);
+    if (!['10.0.2.2', 'localhost', '0.0.0.0'].includes(parsed.hostname)) {
+      return null;
+    }
+
+    const pathname = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+    return `${parsed.protocol}//127.0.0.1${parsed.port ? `:${parsed.port}` : ''}${pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+function shouldPreferUsbReverseLoopback() {
+  if (Platform.OS !== 'android') return false;
+
+  const platformConstants = (Platform as any).constants ?? {};
+  const deviceSignature = [
+    platformConstants.Brand,
+    platformConstants.Fingerprint,
+    platformConstants.Manufacturer,
+    platformConstants.Model,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  const isEmulator = /(generic|sdk_gphone|emulator|ranchu|goldfish)/.test(deviceSignature);
+  return !isEmulator;
+}
+
 function resolveNativeDevBaseUrls() {
   const bases: string[] = [];
   const addBase = (value: string | null | undefined) => {
@@ -180,8 +215,22 @@ export function resolveApiUrls(path: string): string[] {
   const envBase = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
 
   if (Platform.OS !== 'web') {
+    const preferUsbReverseLoopback = shouldPreferUsbReverseLoopback();
     for (const nativeDevBase of resolveNativeDevBaseUrls()) {
+      if (preferUsbReverseLoopback) {
+        const loopbackBase = nativeLoopbackBaseFor(nativeDevBase);
+        if (loopbackBase) {
+          addNativeCandidatesFromBase(candidates, loopbackBase, normalized);
+        }
+      }
       addNativeCandidatesFromBase(candidates, nativeDevBase, normalized);
+    }
+
+    if (preferUsbReverseLoopback) {
+      const envLoopbackBase = nativeLoopbackBaseFor(envBase);
+      if (envLoopbackBase) {
+        addNativeCandidatesFromBase(candidates, envLoopbackBase, normalized);
+      }
     }
   }
 

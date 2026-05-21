@@ -7,3 +7,46 @@ Your project may not work correctly until you install the expected versions of t
 Error: Premature close
     at onclose (node:internal/streams/end-of-stream:162:30)
     at processTicksAndRejections (node:internal/process/task_queues:85:11)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+    at runNextTicks (node:internal/process/task_queues:69:3)
+    at processTimers (node:internal/timers:520:9)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+    at runNextTicks (node:internal/process/task_queues:69:3)
+    at processTimers (node:internal/timers:520:9)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+    at runNextTicks (node:internal/process/task_queues:69:3)
+    at processTimers (node:internal/timers:520:9)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+    at runNextTicks (node:internal/process/task_queues:69:3)
+    at processImmediate (node:internal/timers:453:9)
+    at process.callbackTrampoline (node:internal/async_hooks:130:17)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)

@@ -68,12 +68,35 @@ async function selectSpeakerOutput(audioSession: any) {
     const outputs = typeof audioSession?.getAudioOutputs === 'function'
       ? await audioSession.getAudioOutputs()
       : [];
-    if (Array.isArray(outputs) && outputs.includes('speaker')) {
-      await audioSession.selectAudioOutput?.('speaker');
-      console.log('[LK subscribe] selected speaker output');
+    const preferredOutput =
+      Array.isArray(outputs) && outputs.includes('speaker')
+        ? 'speaker'
+        : Array.isArray(outputs) && outputs.includes('force_speaker')
+          ? 'force_speaker'
+          : null;
+    if (preferredOutput) {
+      await audioSession.selectAudioOutput?.(preferredOutput);
+      console.log('[LK subscribe] selected speaker output', preferredOutput);
     }
   } catch (error: any) {
     console.log('[LK subscribe] speaker output selection skipped', error?.message ?? String(error));
+  }
+}
+
+async function startRoomAudio(room: any, audioSession: any, volume: number, source: string) {
+  try {
+    await audioSession?.setDefaultRemoteAudioTrackVolume?.(volume);
+    await selectSpeakerOutput(audioSession);
+    if (typeof room?.startAudio === 'function') {
+      await room.startAudio();
+    }
+    console.log('[LK subscribe] audio playback ready', source, {
+      canPlaybackAudio: typeof room?.canPlaybackAudio === 'boolean' ? room.canPlaybackAudio : null,
+    });
+    return true;
+  } catch (error: any) {
+    console.warn('[LK subscribe] audio playback start failed', source, error?.message ?? String(error));
+    return false;
   }
 }
 
@@ -329,6 +352,14 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
           setIsPlaying(false);
         }
       });
+      if (runtime.RoomEvent.AudioPlaybackStatusChanged) {
+        room.on(runtime.RoomEvent.AudioPlaybackStatusChanged, (playing: boolean) => {
+          console.log('[LK subscribe] audio playback status changed', playing);
+          if (remoteTracksRef.current.size > 0 && mountedRef.current) {
+            setIsPlaying(!!playing);
+          }
+        });
+      }
 
       const adoptRemoteAudioTrack = (track: any, source = 'event') => {
         if (track.kind === 'audio') {
@@ -341,17 +372,22 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
             track.setVolume?.(volumeRef.current);
           } catch {}
           ignoreMaybeAsync(() => audioSessionRef.current?.setDefaultRemoteAudioTrackVolume?.(volumeRef.current));
-          void selectSpeakerOutput(audioSessionRef.current);
+          void startRoomAudio(roomRef.current, audioSessionRef.current, volumeRef.current, source);
           diagnosticsRef.current = mergeLiveKitDiagnostics(diagnosticsRef.current, 'listener-audio-subscribed', {
             steps: [
               ...(diagnosticsRef.current?.steps ?? []),
               `subscribed:${trackId}`,
               `source:${source}`,
               `playback-gain:${volumeRef.current.toFixed(1)}x`,
+              `muted:${track.isMuted ?? track.mediaStreamTrack?.muted ?? 'unknown'}`,
             ],
           });
           if (mountedRef.current) setDiagnostics(diagnosticsRef.current);
-          console.log('[LK subscribe] audio track subscribed', trackId, source);
+          console.log('[LK subscribe] audio track subscribed', trackId, source, {
+            kind: track.kind,
+            muted: track.isMuted ?? track.mediaStreamTrack?.muted ?? null,
+            enabled: track.mediaStreamTrack?.enabled ?? null,
+          });
           if (mountedRef.current) setIsPlaying(true);
         }
       };
@@ -370,8 +406,8 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
       };
 
       // Track remote audio publications so we can control volume.
-      room.on(runtime.RoomEvent.TrackSubscribed, (track: any) => {
-        adoptRemoteAudioTrack(track, 'event');
+      room.on(runtime.RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
+        adoptRemoteAudioTrack(track, `event:${participant?.identity ?? 'remote'}:${publication?.trackSid ?? publication?.sid ?? 'audio'}`);
       });
       room.on(runtime.RoomEvent.TrackUnsubscribed, (track: any) => {
         remoteTracksRef.current.delete(track.sid);
@@ -386,6 +422,7 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
       diagnosticsRef.current = mergeLiveKitDiagnostics(diagnosticsRef.current, 'listener-room-connected');
       if (mountedRef.current) setDiagnostics(diagnosticsRef.current);
       adoptPublishedRemoteAudioTracks();
+      void startRoomAudio(room, audioSessionRef.current, volumeRef.current, 'room-connected');
 
       if (mountedRef.current) setConnectionState('connected');
     } catch (err) {
