@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import DateSelector from '../../components/admin/DateSelector';
+import { DateSelector } from '../../components/admin/DateSelector';
 import { useAuth } from '../../lib/auth';
 import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
@@ -29,7 +29,7 @@ export default function StaffRotaScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Record<string, Assignment>>({});
-  const [muezzins, setMuezzins] = useState<Array<{ user_id: string; name: string }>>([]);
+  const [muezzins, setMuezzins] = useState<{ user_id: string; name: string }[]>([]);
   const [pickerPrayer, setPickerPrayer] = useState<string | null>(null);
 
   const dateIso = useMemo(() => selectedDate.toISOString().slice(0, 10), [selectedDate]);
@@ -120,6 +120,7 @@ export default function StaffRotaScreen() {
       }
     };
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mosqueId, dateIso]);
 
   const setAssignment = (prayer: string, patch: Partial<Assignment>) => {

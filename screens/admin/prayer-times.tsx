@@ -6,9 +6,9 @@ import { useRoleFlags } from '../../lib/roles';
 import { supabase } from '../../lib/supabase';
 import { getPrayerTimesByDate, PrayerTimesRow, upsertPrayerTimes } from '../../lib/api/admin/prayerTimes';
 import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
-import DateSelector from '../../components/admin/DateSelector';
+import { DateSelector } from '../../components/admin/DateSelector';
 
-const prayers: Array<{ key: keyof PrayerTimeForm; label: string }> = [
+const prayers: { key: keyof PrayerTimeForm; label: string }[] = [
   { key: 'fajr', label: 'Fajr' },
   { key: 'dhuhr', label: 'Dhuhr' },
   { key: 'asr', label: 'Asr' },
@@ -104,6 +104,7 @@ export default function PrayerTimesAdminScreen() {
       }
     };
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mosqueId, dateIso]);
 
   const openTimePicker = (prayer: keyof PrayerTimeForm, field: 'adhan' | 'iqama') => {

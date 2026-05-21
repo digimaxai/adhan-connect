@@ -1,0 +1,7 @@
+env: load .env.local .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_REDIRECT_URL EXPO_PUBLIC_API_BASE_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_URL SUPABASE_URL SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN EXPO_FORCE_WEBCONTAINER_ENV
+Starting project at C:\Users\hmakh\Documents\Project\adhan-connect
+React Compiler enabled
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+› Opening exp://127.0.0.1:8081 on Pixel_8

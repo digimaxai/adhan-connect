@@ -82,6 +82,12 @@ export default function AdminEventForm() {
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
     if (!selectedMosque && isNew) { setError('No mosque selected.'); return; }
+    if (!dateTime) { setError('Date and time are required.'); return; }
+    const capacityValue = capacity.trim() ? parseInt(capacity.trim(), 10) : null;
+    if (capacityValue != null && (!Number.isFinite(capacityValue) || capacityValue <= 0)) {
+      setError('Capacity must be a whole number.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -89,8 +95,8 @@ export default function AdminEventForm() {
         title: title.trim(),
         description: description.trim() || null,
         location: location.trim() || null,
-        capacity: capacity.trim() ? parseInt(capacity.trim(), 10) : null,
-        start_at: dateTime ? dateTime.toISOString() : null,
+        capacity: capacityValue,
+        start_at: dateTime.toISOString(),
         status,
         is_public: isPublic,
       };

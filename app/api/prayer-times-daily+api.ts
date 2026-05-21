@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
+import { DEFAULT_ALADHAN_METHOD, fetchAladhanTimes } from '../../lib/api/aladhan';
 
 type PrayerTimesRow = {
   date?: string | null;
@@ -14,6 +15,25 @@ type PrayerTimesRow = {
   isha_adhan_time?: string | null;
   isha_iqama_time?: string | null;
 };
+
+type MosqueRow = {
+  id: string;
+  status: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  prayer_calculation_method?: number | null;
+  prayer_school?: number | null;
+};
+
+const PRAYER_ADHAN_FIELDS = {
+  fajr: 'fajr_adhan_time',
+  dhuhr: 'dhuhr_adhan_time',
+  asr: 'asr_adhan_time',
+  maghrib: 'maghrib_adhan_time',
+  isha: 'isha_adhan_time',
+} as const;
+
+type PrayerKey = keyof typeof PRAYER_ADHAN_FIELDS;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -63,11 +83,26 @@ export const GET: RequestHandler = async (request) => {
     },
   });
 
-  const { data: mosque, error: mosqueError } = await supabaseAdmin
+  let mosque: MosqueRow | null = null;
+  let mosqueError: any = null;
+
+  const mosqueFull = await supabaseAdmin
     .from('mosques')
-    .select('id, status')
+    .select('id, status, lat, lng, prayer_calculation_method, prayer_school')
     .eq('id', mosqueId)
-    .maybeSingle();
+    .maybeSingle<MosqueRow>();
+  if (mosqueFull.error?.code === '42703') {
+    const mosqueBasic = await supabaseAdmin
+      .from('mosques')
+      .select('id, status, lat, lng')
+      .eq('id', mosqueId)
+      .maybeSingle<MosqueRow>();
+    mosque = mosqueBasic.data ?? null;
+    mosqueError = mosqueBasic.error;
+  } else {
+    mosque = mosqueFull.data ?? null;
+    mosqueError = mosqueFull.error;
+  }
 
   if (mosqueError) {
     return json({ error: mosqueError.message || 'Unable to inspect mosque status.' }, 500);
@@ -89,7 +124,35 @@ export const GET: RequestHandler = async (request) => {
   }
 
   if (row) {
-    return json({ row: row as PrayerTimesRow });
+    const primaryRow = { ...(row as PrayerTimesRow) };
+    const nullPrayers = (Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[]).filter(
+      (prayer) => !primaryRow[PRAYER_ADHAN_FIELDS[prayer]]
+    );
+
+    if (nullPrayers.length > 0 && nullPrayers.length < Object.keys(PRAYER_ADHAN_FIELDS).length) {
+      const lat = mosque.lat;
+      const lng = mosque.lng;
+      if (lat != null && lng != null) {
+        const method = mosque.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
+        const school = mosque.prayer_school ?? 0;
+        const timings = await fetchAladhanTimes(lat, lng, dateIso, method, school);
+        if (timings) {
+          const aladhanMap: Record<PrayerKey, string> = {
+            fajr: timings.Fajr,
+            dhuhr: timings.Dhuhr,
+            asr: timings.Asr,
+            maghrib: timings.Maghrib,
+            isha: timings.Isha,
+          };
+          nullPrayers.forEach((prayer) => {
+            const field = PRAYER_ADHAN_FIELDS[prayer];
+            primaryRow[field] = buildIso(dateIso, aladhanMap[prayer]);
+          });
+        }
+      }
+    }
+
+    return json({ row: primaryRow, source: 'prayer_times' });
   }
 
   const { data: legacy, error: legacyError } = await supabaseAdmin

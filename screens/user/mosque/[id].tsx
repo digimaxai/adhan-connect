@@ -1,30 +1,36 @@
 // app/mosque/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { labelForPrayer, PrayerName } from '../../lib/adhans';
 import { supabase } from '../../lib/supabase';
 import { useLiveStreamForMosque } from '../../shared/hooks/useLiveStreamForMosque';
 import { getDailyPrayerTimes } from '../../../lib/api/prayerTimesUnified';
+import {
+  crowdState,
+  formatJumuahTime,
+  isFridayToday,
+  JumuahSlot,
+  JumuahSummary,
+  legacyJumuahSlot,
+  nextFridayDate,
+  summaryFromRows,
+} from '../../../lib/jumuah';
 
 type Mosque = {
   id: string;
   name: string;
   city?: string | null;
   country?: string | null;
-  address?: string | null;
-  website?: string | null;
-  phone?: string | null;
   jumuah1_time?: string | null;
   jumuah2_time?: string | null;
   slug?: string | null;
 };
 
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
-type StreamRow = { is_live: boolean; status?: string | null };
 type BroadcastRow = { id: string; prayer: PrayerName; scheduled_for: string; started_at?: string | null; ended_at?: string | null };
 type EventRow = {
   id: string;
@@ -40,15 +46,45 @@ type CampaignRow = {
   goal_cents?: number | null;
   end_at?: string | null;
 };
-type AnnouncementRow = { id: string; title?: string | null; summary?: string | null; created_at?: string | null };
-
-const fallbackTimes: Record<PrayerName, string> = {
-  fajr: '05:18',
-  dhuhr: '12:58',
-  asr: '15:27',
-  maghrib: '17:42',
-  isha: '19:05',
+type AnnouncementRow = {
+  id: string;
+  title?: string | null;
+  summary?: string | null;
+  created_at?: string | null;
+  is_urgent?: boolean | null;
+  is_pinned?: boolean | null;
 };
+const FOLLOW_LIMIT = 10;
+
+function startOfTodayIso() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString();
+}
+
+function formatCurrency(cents?: number | null) {
+  return `£${((cents ?? 0) / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
+}
+
+function campaignScore(campaign: CampaignRow) {
+  const end = campaign.end_at ? new Date(campaign.end_at).getTime() : Number.MAX_SAFE_INTEGER;
+  const raised = campaign.raised_cents ?? 0;
+  return end - Math.min(raised, 1_000_000);
+}
+
+function dateChip(startAt: string | null): { label: string; color: string; bg: string } | null {
+  if (!startAt) return null;
+  const ev = new Date(startAt);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const evStart = new Date(ev.getFullYear(), ev.getMonth(), ev.getDate());
+  const diffDays = Math.round((evStart.getTime() - todayStart.getTime()) / 86400000);
+  if (diffDays < 0) return null;
+  if (diffDays === 0) return { label: 'TODAY', color: '#fff', bg: '#DC2626' };
+  if (diffDays === 1) return { label: 'TOMORROW', color: '#fff', bg: '#D97706' };
+  if (diffDays <= 7) return { label: ev.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }), color: '#fff', bg: '#0369A1' };
+  return { label: ev.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), color: '#475569', bg: '#F1F5F9' };
+}
 
 const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
   if (!normalized) return null;
@@ -61,11 +97,12 @@ const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDaily
 };
 
 export default function MosquePage() {
-  const { id, name: nameParam, city: cityParam, country: countryParam } = useLocalSearchParams<{
+  const { id, name: nameParam, city: cityParam, country: countryParam, focus } = useLocalSearchParams<{
     id: string;
     name?: string;
     city?: string;
     country?: string;
+    focus?: string;
   }>();
   const router = useRouter();
   const { session } = useAuth();
@@ -78,13 +115,22 @@ export default function MosquePage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
+  const [jumuahSlots, setJumuahSlots] = useState<JumuahSlot[]>([]);
+  const [jumuahSummary, setJumuahSummary] = useState<Record<string, JumuahSummary>>({});
   const [following, setFollowing] = useState<boolean>(false);
   const [subCount, setSubCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [resolvedId, setResolvedId] = useState<string | null>(null);
+  const [expandedNoticeIds, setExpandedNoticeIds] = useState<Set<string>>(() => new Set());
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionOffsetsRef = useRef<Record<string, number>>({});
 
   const isUuid = (v?: string) => !!v && /^[0-9a-fA-F-]{36}$/.test(v);
+
+  const rememberSection = useCallback((key: string) => (event: LayoutChangeEvent) => {
+    sectionOffsetsRef.current[key] = event.nativeEvent.layout.y;
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -92,7 +138,7 @@ export default function MosquePage() {
       setLoading(true);
       try {
         let base = null as any;
-        const selectCols = 'id,name,city,country,address,website,phone,jumuah1_time,jumuah2_time,slug';
+        const selectCols = 'id,name,city,country,jumuah1_time,jumuah2_time,slug';
 
         if (id && isUuid(id)) {
           const { data } = await supabase.from('mosques').select(selectCols).eq('id', id).maybeSingle();
@@ -136,6 +182,8 @@ export default function MosquePage() {
           setEvents([]);
           setCampaigns([]);
           setAnnouncements([]);
+          setJumuahSlots([]);
+          setJumuahSummary({});
           setFollowing(false);
           return;
         }
@@ -146,9 +194,6 @@ export default function MosquePage() {
             name: base?.name ?? nameParam ?? id ?? 'Mosque',
             city: base?.city ?? cityParam ?? '',
             country: base?.country ?? countryParam ?? '',
-            address: base?.address ?? null,
-            website: base?.website ?? null,
-            phone: base?.phone ?? null,
             jumuah1_time: base?.jumuah1_time ?? null,
             jumuah2_time: base?.jumuah2_time ?? null,
             slug: base?.slug ?? null,
@@ -156,8 +201,13 @@ export default function MosquePage() {
         );
         setResolvedId(actualId);
 
-        const [{ data: streamData }, { data: recordingData }, { data: subData }, announcementsRes, subCountRes] = await Promise.all([
-          supabase.from('streams').select('is_live,status').eq('mosque_id', actualId).maybeSingle(),
+        const [
+          { data: recordingData },
+          { data: subData },
+          announcementsRes,
+          jumuahSlotsRes,
+          subCountRes,
+        ] = await Promise.all([
           supabase
             .from('adhan_broadcasts')
             .select('id,prayer,scheduled_for,started_at,ended_at')
@@ -168,7 +218,21 @@ export default function MosquePage() {
           userId
             ? supabase.from('subscriptions').select('id').eq('user_id', userId).eq('mosque_id', actualId).maybeSingle()
             : Promise.resolve({ data: null }),
-          supabase.from('announcements').select('id,title,summary,created_at').eq('mosque_id', actualId).order('created_at', { ascending: false }).limit(5),
+          supabase
+            .from('announcements')
+            .select('id,title,summary,created_at,is_urgent,is_pinned')
+            .eq('mosque_id', actualId)
+            .eq('status', 'published')
+            .order('is_pinned', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(10),
+          supabase
+            .from('mosque_jumuah_slots')
+            .select('id,label,khutbah_at,salah_at,venue,language,imam,capacity,notes')
+            .eq('mosque_id', actualId)
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true })
+            .order('salah_at', { ascending: true }),
           userId
             ? supabase.from('subscriptions').select('id', { count: 'exact', head: true }).eq('user_id', userId)
             : Promise.resolve({ count: 0 }),
@@ -176,12 +240,16 @@ export default function MosquePage() {
 
         let eventsArr: EventRow[] = [];
         let campaignsArr: CampaignRow[] = [];
+        const upcomingFrom = startOfTodayIso();
 
         try {
           const { data: ev, error: evErr } = await supabase
             .from('events')
-            .select('*')
+            .select('id,title,start_at,description,location')
             .eq('mosque_id', actualId)
+            .eq('status', 'published')
+            .eq('is_public', true)
+            .gte('start_at', upcomingFrom)
             .order('start_at', { ascending: true, nullsFirst: false })
             .limit(20);
           if (evErr) {
@@ -192,26 +260,15 @@ export default function MosquePage() {
           console.warn('events fetch exception', e?.message);
           eventsArr = [];
         }
-        if (eventsArr.length === 0 && base?.slug) {
-          try {
-            const { data: ev2, error: evErr2 } = await supabase
-              .from('events')
-              .select('*')
-              .eq('slug', base.slug)
-              .order('start_at', { ascending: true, nullsFirst: false })
-              .limit(20);
-            if (evErr2) console.warn('events slug fetch error', evErr2.message);
-            eventsArr = Array.isArray(ev2) ? (ev2 as any[]) : eventsArr;
-          } catch (e: any) {
-            console.warn('events slug fetch exception', e?.message);
-          }
-        }
 
         try {
           const { data: cs, error: csErr } = await supabase
             .from('campaigns')
-            .select('*')
+            .select('id,title,raised_cents,goal_cents,end_at')
             .eq('mosque_id', actualId)
+            .eq('status', 'active')
+            .or(`end_at.is.null,end_at.gte.${todayIso}`)
+            .order('end_at', { ascending: true, nullsFirst: false })
             .limit(10);
           if (csErr) {
             console.warn('campaigns fetch error', csErr.message);
@@ -221,18 +278,17 @@ export default function MosquePage() {
           console.warn('campaigns fetch exception', e?.message);
           campaignsArr = [];
         }
-        if (campaignsArr.length === 0 && base?.slug) {
-          try {
-            const { data: cs2, error: csErr2 } = await supabase
-              .from('campaigns')
-              .select('*')
-              .eq('slug', base.slug)
-              .limit(10);
-            if (csErr2) console.warn('campaigns slug fetch error', csErr2.message);
-            campaignsArr = Array.isArray(cs2) ? (cs2 as any[]) : campaignsArr;
-          } catch (e: any) {
-            console.warn('campaigns slug fetch exception', e?.message);
-          }
+        const slotsArr = Array.isArray(jumuahSlotsRes.data) ? (jumuahSlotsRes.data as JumuahSlot[]) : [];
+        let summaryMap: Record<string, JumuahSummary> = {};
+        if (slotsArr.length) {
+          const slotIds = slotsArr.map((slot) => slot.id);
+          const fridayDate = nextFridayDate();
+          const summaryRes = await supabase
+            .from('jumuah_slot_attendance_summary')
+            .select('slot_id,attendee_count,household_count')
+            .eq('friday_date', fridayDate)
+            .in('slot_id', slotIds);
+          summaryMap = summaryFromRows(summaryRes.data as JumuahSummary[]);
         }
 
         const fetchNormalizedPrayerTimes = async () => {
@@ -277,28 +333,31 @@ export default function MosquePage() {
         setEvents(eventsArr);
         setCampaigns(campaignsArr);
         setAnnouncements(Array.isArray(announcementsRes.data) ? announcementsRes.data : []);
+        setJumuahSlots(slotsArr);
+        setJumuahSummary(summaryMap);
         setSubCount(subCountRes.count ?? 0);
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [id, nameParam, userId]);
+  }, [cityParam, countryParam, id, nameParam, userId]);
 
   const toggleFollow = async () => {
-    if (!id || !userId || actionLoading) return;
-    if (!following && subCount >= 10) {
-      alert('Maximum Reached\n\nYou can follow up to 10 mosques. Unfollow a mosque to add a new one.\n\nChoose "Manage My Mosques" in Settings.');
+    const targetMosqueId = resolvedId || (id && isUuid(id) ? id : null);
+    if (!targetMosqueId || !userId || actionLoading) return;
+    if (!following && subCount >= FOLLOW_LIMIT) {
+      alert(`Maximum Reached\n\nYou can follow up to ${FOLLOW_LIMIT} mosques. Unfollow a mosque to add a new one.\n\nChoose "Manage My Mosques" in Settings.`);
       return;
     }
     setActionLoading(true);
     try {
       if (following) {
-        await supabase.from('subscriptions').delete().eq('user_id', userId).eq('mosque_id', id);
+        await supabase.from('subscriptions').delete().eq('user_id', userId).eq('mosque_id', targetMosqueId);
         setFollowing(false);
         setSubCount((c) => Math.max(0, c - 1));
       } else {
-        await supabase.from('subscriptions').insert({ user_id: userId, mosque_id: id });
+        await supabase.from('subscriptions').insert({ user_id: userId, mosque_id: targetMosqueId });
         setFollowing(true);
         setSubCount((c) => c + 1);
       }
@@ -327,19 +386,85 @@ export default function MosquePage() {
     () => [mosque?.jumuah1_time, mosque?.jumuah2_time].filter(Boolean) as string[],
     [mosque?.jumuah1_time, mosque?.jumuah2_time]
   );
+  const displayJumuahSlots = useMemo(
+    () => (jumuahSlots.length ? jumuahSlots : jumuahTimes.map((time, index) => legacyJumuahSlot(mosque?.id ?? 'mosque', time, index))),
+    [jumuahSlots, jumuahTimes, mosque?.id]
+  );
+  const previewJumuahSlots = useMemo(() => displayJumuahSlots.slice(0, 3), [displayJumuahSlots]);
+  const hiddenJumuahCount = Math.max(0, displayJumuahSlots.length - previewJumuahSlots.length);
+  const currentDayOfWeek = new Date().getDay();
+  const showJumuahSection = displayJumuahSlots.length > 0 && currentDayOfWeek >= 3 && currentDayOfWeek <= 5;
+  const openJumuahPage = () => {
+    const mosqueId = resolvedId || (id && isUuid(id) ? id : mosque?.id);
+    if (!mosqueId) return;
+    router.push({
+      pathname: '/(user)/jumuah/[id]',
+      params: { id: mosqueId, name: mosque?.name ?? nameParam ?? 'Mosque' },
+    } as any);
+  };
+  const urgentAnnouncements = useMemo(() => announcements.filter((announcement) => announcement.is_urgent), [announcements]);
+  const nonUrgentAnnouncements = useMemo(
+    () => announcements.filter((announcement) => !announcement.is_urgent),
+    [announcements]
+  );
+  const toggleNotice = useCallback((noticeId: string) => {
+    setExpandedNoticeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(noticeId)) next.delete(noticeId);
+      else next.add(noticeId);
+      return next;
+    });
+  }, []);
 
   const highlight = useMemo(() => {
-    if (campaigns.length) return { type: 'campaign' as const, item: campaigns[0] };
-    if (events.length) return { type: 'event' as const, item: events[0] };
-    if (announcements.length) return { type: 'announcement' as const, item: announcements[0] };
+    const now = Date.now();
+    const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+    const upcomingEvent = events.find((event) => {
+      if (!event.start_at) return false;
+      const starts = new Date(event.start_at).getTime();
+      return starts >= now && starts - now <= fourteenDays;
+    });
+    if (upcomingEvent) return { type: 'event' as const, item: upcomingEvent };
+    const campaign = [...campaigns].sort((a, b) => campaignScore(a) - campaignScore(b))[0];
+    if (campaign) return { type: 'campaign' as const, item: campaign };
+    const pinned = announcements.find((announcement) => announcement.is_pinned && !announcement.is_urgent);
+    if (pinned) return { type: 'announcement' as const, item: pinned };
+    const regular = announcements.find((announcement) => !announcement.is_urgent) ?? announcements[0];
+    if (regular) return { type: 'announcement' as const, item: regular };
     return null;
   }, [campaigns, events, announcements]);
+
+  useEffect(() => {
+    if (loading || !focus) return;
+    const target = Array.isArray(focus) ? focus[0] : focus;
+    const sectionKey =
+      target === 'urgent'
+        ? 'urgent'
+        : target === 'campaign' || target === 'campaigns'
+        ? 'campaigns'
+        : target === 'event' || target === 'events'
+        ? 'events'
+        : target === 'announcement' || target === 'announcements'
+        ? 'announcements'
+        : target === 'jumuah'
+        ? 'jumuah'
+        : target;
+
+    const timer = setTimeout(() => {
+      const y = sectionOffsetsRef.current[sectionKey];
+      if (typeof y === 'number') {
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [announcements.length, campaigns.length, events.length, focus, loading, showJumuahSection, urgentAnnouncements.length]);
 
   if (!id) return null;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.body}>
         <View style={styles.topBar}>
           <Pressable onPress={() => router.back()} hitSlop={10}>
             <Ionicons name="chevron-back" size={22} color="#0F172A" />
@@ -404,6 +529,43 @@ export default function MosquePage() {
           </View>
         )}
 
+        {urgentAnnouncements.length > 0 && (
+          <View onLayout={rememberSection('urgent')} style={[styles.urgentCard, styles.shadow]}>
+            <View style={styles.urgentHeader}>
+              <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+              <Text style={styles.urgentHeaderText}>Important notices</Text>
+            </View>
+            {urgentAnnouncements.slice(0, 3).map((notice) => {
+              const expanded = expandedNoticeIds.has(notice.id);
+              return (
+                <Pressable
+                  key={notice.id}
+                  onPress={() => toggleNotice(notice.id)}
+                  style={({ pressed }) => [styles.urgentRow, pressed && styles.pressed]}
+                >
+                  <View style={styles.urgentTitleRow}>
+                    <Text style={styles.urgentTitle} numberOfLines={expanded ? undefined : 1}>
+                      {notice.title ?? 'Urgent notice'}
+                    </Text>
+                    {notice.summary ? (
+                      <Ionicons
+                        name={expanded ? 'chevron-up' : 'chevron-down'}
+                        size={15}
+                        color="#991B1B"
+                      />
+                    ) : null}
+                  </View>
+                  {notice.summary ? (
+                    <Text style={styles.urgentSummary} numberOfLines={expanded ? undefined : 2}>
+                      {notice.summary}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
         {highlight && (
           <Pressable
             onPress={() => {
@@ -434,7 +596,7 @@ export default function MosquePage() {
             </Text>
             <Text style={styles.bannerSubtitle} numberOfLines={2}>
               {highlight.type === 'campaign'
-                ? `£${((highlight.item as CampaignRow).raised_cents ?? 0) / 100} raised`
+                ? `${formatCurrency((highlight.item as CampaignRow).raised_cents)} raised`
                 : highlight.type === 'event'
                 ? new Date((highlight.item as EventRow).start_at ?? '').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                 : (highlight.item as AnnouncementRow).summary ?? ''}
@@ -476,46 +638,96 @@ export default function MosquePage() {
                 <Text style={styles.timeValue}>{row.time}</Text>
               </View>
             ))}
-            {jumuahTimes.map((t, idx) => (
-              <View key={`${t}-${idx}`} style={styles.timeRow}>
-              <Text style={styles.timeName}>{`Jumu'ah ${idx + 1}`}</Text>
-                <Text style={styles.timeValue}>{t}</Text>
-              </View>
-            ))}
           </View>
         </View>
 
-        <View style={[styles.card, styles.shadow]}>
+        {showJumuahSection && (
+          <View onLayout={rememberSection('jumuah')} style={[styles.card, styles.shadow]}>
+            <View style={styles.cardHeaderRow}>
+              <View>
+                <Text style={styles.cardTitle}>{isFridayToday() ? "Jumu'ah Today" : "Jumu'ah This Friday"}</Text>
+                <Text style={styles.cardSubtitle}>Prayer times and crowd guidance for Friday.</Text>
+              </View>
+            </View>
+            <View style={styles.divider} />
+            {previewJumuahSlots.map((slot) => {
+              const count = jumuahSummary[slot.id]?.attendee_count ?? 0;
+              const crowd = crowdState(count, slot.capacity);
+              const isLegacy = slot.id.startsWith('legacy-');
+              return (
+                <View key={slot.id} style={styles.jumuahRow}>
+                  <View style={styles.jumuahTimeBox}>
+                    <Text style={styles.jumuahTime}>{formatJumuahTime(slot.salah_at) ?? '--:--'}</Text>
+                    {slot.khutbah_at ? <Text style={styles.jumuahKhutbah}>Khutbah {formatJumuahTime(slot.khutbah_at)}</Text> : null}
+                  </View>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={styles.jumuahTitle} numberOfLines={1}>{slot.label ?? "Jumu'ah"}</Text>
+                    {[slot.venue, slot.language].filter(Boolean).length ? (
+                      <Text style={styles.jumuahMeta} numberOfLines={1}>{[slot.venue, slot.language].filter(Boolean).join(' / ')}</Text>
+                    ) : null}
+                    {!isLegacy ? (
+                      <View style={styles.crowdWrap}>
+                        <View
+                          style={[
+                            styles.crowdPill,
+                            crowd.tone === 'danger'
+                              ? styles.crowdDanger
+                              : crowd.tone === 'warning'
+                              ? styles.crowdWarning
+                              : crowd.tone === 'busy'
+                              ? styles.crowdBusy
+                              : crowd.tone === 'calm'
+                              ? styles.crowdCalm
+                              : styles.crowdNeutral,
+                          ]}
+                        >
+                          <Text style={styles.crowdText}>{crowd.label}</Text>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+            <Pressable onPress={openJumuahPage} style={({ pressed }) => [styles.jumuahCta, pressed && styles.pressed]}>
+              <View>
+                <Text style={styles.jumuahCtaText}>{"See all Jumu’ah times"}</Text>
+                {hiddenJumuahCount > 0 ? <Text style={styles.jumuahMoreText}>+{hiddenJumuahCount} more time{hiddenJumuahCount === 1 ? '' : 's'} available</Text> : null}
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#0369A1" />
+            </Pressable>
+          </View>
+        )}
+
+        <View onLayout={rememberSection('events')} style={[styles.card, styles.shadow]}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitle}>Events</Text>
           </View>
           <View style={styles.divider} />
           {events.length === 0 && <Text style={styles.empty}>No upcoming events at this time.</Text>}
           {events.slice(0, 3).map((ev) => {
-            const when = ev.start_at
+            const chip = dateChip(ev.start_at ?? null);
+            const timeStr = ev.start_at
               ? new Date(ev.start_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-              : '';
+              : null;
             return (
-              <View key={ev.id} style={styles.eventRow}>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text style={styles.eventTitle} numberOfLines={1}>
-                    {ev.title ?? 'Event'}
-                  </Text>
-                  {when ? (
-                    <Text style={styles.eventMeta} numberOfLines={1}>
-                      {when}
-                    </Text>
-                  ) : null}
-                  {ev.description ? (
-                    <Text style={styles.eventSummary} numberOfLines={2}>
-                      {ev.description}
-                    </Text>
-                  ) : null}
+              <Pressable
+                key={ev.id}
+                onPress={() => router.push({ pathname: '/event/[id]', params: { id: ev.id } })}
+                style={({ pressed }) => [styles.eventRow, { opacity: pressed ? 0.88 : 1 }]}
+              >
+                {chip && (
+                  <View style={[styles.eventDateChip, { backgroundColor: chip.bg }]}>
+                    <Text style={[styles.eventDateChipText, { color: chip.color }]}>{chip.label}</Text>
+                  </View>
+                )}
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.eventTitle} numberOfLines={1}>{ev.title ?? 'Event'}</Text>
+                  {timeStr ? <Text style={styles.eventMeta}>{timeStr}</Text> : null}
+                  {ev.location ? <Text style={styles.eventMeta} numberOfLines={1}>{ev.location}</Text> : null}
                 </View>
-                <Pressable onPress={() => router.push({ pathname: '/event/[id]', params: { id: ev.id } })} style={({ pressed }) => [styles.eventButton, { opacity: pressed ? 0.9 : 1 }]}>
-                  <Text style={styles.eventButtonText}>Details</Text>
-                </Pressable>
-              </View>
+                <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />
+              </Pressable>
             );
           })}
           {events.length > 3 && (
@@ -525,7 +737,7 @@ export default function MosquePage() {
           )}
         </View>
 
-        <View style={[styles.card, styles.shadow]}>
+        <View onLayout={rememberSection('campaigns')} style={[styles.card, styles.shadow]}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitle}>Campaigns & Donations</Text>
           </View>
@@ -544,7 +756,7 @@ export default function MosquePage() {
                 <View style={styles.progressTrack}>
                   <View style={[styles.progressFill, { width: `${pct}%` }]} />
                 </View>
-                <Text style={styles.campaignMeta}>{`£${raised.toLocaleString()} raised of £${goal.toLocaleString()} goal`}</Text>
+                <Text style={styles.campaignMeta}>{`${formatCurrency(c.raised_cents)} raised of ${formatCurrency(c.goal_cents)} goal`}</Text>
                 <Pressable onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: c.id } })} style={({ pressed }) => [styles.eventButton, { opacity: pressed ? 0.9 : 1 }]}>
                   <Text style={styles.eventButtonText}>Donate</Text>
                 </Pressable>
@@ -557,6 +769,37 @@ export default function MosquePage() {
             </Pressable>
           )}
         </View>
+
+        {nonUrgentAnnouncements.length > 0 && (
+          <View onLayout={rememberSection('announcements')} style={[styles.card, styles.shadow]}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Announcements</Text>
+            </View>
+            <View style={styles.divider} />
+            {nonUrgentAnnouncements.slice(0, 5).map((notice) => (
+              <View
+                key={notice.id}
+                style={[
+                  styles.noticeRow,
+                  notice.is_urgent && styles.noticeRowUrgent,
+                  notice.is_pinned && !notice.is_urgent && styles.noticeRowPinned,
+                ]}
+              >
+                <View style={styles.noticeIcon}>
+                  <Ionicons
+                    name={notice.is_urgent ? 'alert-circle' : notice.is_pinned ? 'pin' : 'megaphone-outline'}
+                    size={16}
+                    color={notice.is_urgent ? '#B91C1C' : notice.is_pinned ? '#92400E' : '#0369A1'}
+                  />
+                </View>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.noticeTitle} numberOfLines={1}>{notice.title ?? 'Announcement'}</Text>
+                  {notice.summary ? <Text style={styles.noticeSummary} numberOfLines={2}>{notice.summary}</Text> : null}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={[styles.card, styles.shadow]}>
           <Text style={styles.cardTitle}>About This Mosque</Text>
@@ -591,7 +834,7 @@ export default function MosquePage() {
         <Pressable onPress={toggleFollow} disabled={actionLoading} style={({ pressed }) => [styles.followBtn, { opacity: pressed || actionLoading ? 0.85 : 1 }]}>
           <Text style={styles.followText}>{following ? 'Unfollow Mosque' : 'Follow Mosque'}</Text>
         </Pressable>
-        {!following && subCount >= 3 && <Text style={styles.limitNote}>You are following 3 mosques (maximum).</Text>}
+        {!following && subCount >= FOLLOW_LIMIT && <Text style={styles.limitNote}>{`You are following ${FOLLOW_LIMIT} mosques (maximum).`}</Text>}
 
         {loading && (
           <View style={{ marginTop: 12 }}>
@@ -606,6 +849,7 @@ export default function MosquePage() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8F8F9' },
   body: { paddingHorizontal: 16, paddingBottom: 32, gap: 16 },
+  pressed: { opacity: 0.85 },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
   title: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '800', color: '#0F172A', paddingHorizontal: 12 },
 
@@ -657,6 +901,15 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, gap: 10 },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
+  cardSubtitle: { color: '#64748B', fontSize: 12, marginTop: 3 },
+
+  urgentCard: { backgroundColor: '#FEF2F2', borderRadius: 16, padding: 14, gap: 10, borderWidth: 1, borderColor: '#FECACA' },
+  urgentHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  urgentHeaderText: { color: '#991B1B', fontSize: 14, fontWeight: '800' },
+  urgentRow: { paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#DC2626', gap: 3 },
+  urgentTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  urgentTitle: { flex: 1, color: '#7F1D1D', fontSize: 14, fontWeight: '800' },
+  urgentSummary: { color: '#991B1B', fontSize: 12, lineHeight: 17 },
 
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB', marginVertical: 8 },
   timesTable: { gap: 10 },
@@ -664,10 +917,38 @@ const styles = StyleSheet.create({
   timeName: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
   timeValue: { fontWeight: '800', color: '#0F172A', fontSize: 14 },
 
-  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  jumuahRow: { flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  jumuahTimeBox: { width: 78, alignItems: 'flex-start', gap: 3 },
+  jumuahTime: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
+  jumuahKhutbah: { color: '#64748B', fontSize: 11, fontWeight: '700' },
+  jumuahTitle: { color: '#0F172A', fontSize: 14, fontWeight: '800' },
+  jumuahMeta: { color: '#64748B', fontSize: 12 },
+  crowdWrap: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  crowdPill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
+  crowdText: { fontSize: 11, fontWeight: '800', color: '#0F172A' },
+  crowdNeutral: { backgroundColor: '#F1F5F9' },
+  crowdCalm: { backgroundColor: '#DCFCE7' },
+  crowdBusy: { backgroundColor: '#FEF3C7' },
+  crowdWarning: { backgroundColor: '#FED7AA' },
+  crowdDanger: { backgroundColor: '#FECACA' },
+  jumuahCta: {
+    marginTop: 4,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  jumuahCtaText: { color: '#0369A1', fontSize: 13, fontWeight: '900' },
+  jumuahMoreText: { color: '#64748B', fontSize: 11, marginTop: 2 },
+
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  eventDateChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, minWidth: 64, alignItems: 'center' },
+  eventDateChipText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   eventTitle: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
   eventMeta: { color: '#475569', fontSize: 12 },
-  eventSummary: { color: '#475569', fontSize: 12 },
   eventButton: { backgroundColor: '#E2E8F0', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
   eventButtonText: { fontWeight: '800', color: '#0F172A', fontSize: 12 },
   viewAllBtn: { marginTop: 8, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#E0F2FE' },
@@ -678,6 +959,13 @@ const styles = StyleSheet.create({
   campaignMeta: { color: '#475569', fontSize: 12 },
   progressTrack: { height: 6, backgroundColor: '#E5E7EB', borderRadius: 8, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#1E7BF6' },
+
+  noticeRow: { flexDirection: 'row', gap: 10, paddingVertical: 10, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#E2E8F0' },
+  noticeRowUrgent: { borderLeftColor: '#DC2626', backgroundColor: '#FEF2F2' },
+  noticeRowPinned: { borderLeftColor: '#F59E0B', backgroundColor: '#FFFBEB' },
+  noticeIcon: { width: 24, alignItems: 'center', paddingTop: 1 },
+  noticeTitle: { color: '#0F172A', fontSize: 14, fontWeight: '800' },
+  noticeSummary: { color: '#475569', fontSize: 12, lineHeight: 17 },
 
   aboutText: { color: '#475569', fontSize: 13 },
   recordRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },

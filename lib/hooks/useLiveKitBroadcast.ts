@@ -275,6 +275,7 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
     }
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { Audio } = require('expo-av');
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
@@ -335,6 +336,7 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
       diagnosticsRef.current = runtime.diagnostics;
       if (mountedRef.current) setDiagnostics(runtime.diagnostics);
       console.log('[LK] runtime ready:', runtime.diagnostics);
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { Audio } = require('expo-av');
 
       pushDiagnostics('requesting-microphone-permission');
@@ -459,6 +461,7 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
       audioTrackRef.current = null;
       stopAudioLevelPolling();
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { Audio } = require('expo-av');
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
@@ -487,7 +490,7 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
         connectPromiseRef.current = null;
       }
     }
-  }, [options, pushDiagnostics, startAudioLevelPolling, stopAudioLevelPolling]);
+  }, [options, pushDiagnostics, setLiveConnectionState, startAudioLevelPolling, stopAudioLevelPolling]);
 
   useEffect(() => {
     return () => {

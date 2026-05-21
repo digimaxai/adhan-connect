@@ -1,0 +1,3 @@
+CommandError: Input is required, but 'npx expo' is in non-interactive mode.
+Required input:
+> Expo Go 54.0.8 is recommended for SDK 54.0.0 (Pixel_8 is using 54.0.7). Learn more: https://docs.expo.dev/develop/tools/#expo-go. Install the recommended Expo Go version?

@@ -45,7 +45,7 @@ export type MuezzinSummary = {
 export async function getMuezzinsForMosque(mosqueId: string): Promise<MuezzinSummary[]> {
   try {
     // Primary query: avoid joins so RLS on profiles can't filter out the base rows.
-    let data: Array<{ user_id: string; is_active?: boolean | null }> | null = null;
+    let data: { user_id: string; is_active?: boolean | null }[] | null = null;
     let error: any = null;
     ({ data, error } = await supabase
       .from('muezzins')
@@ -80,7 +80,7 @@ export async function getMuezzinsForMosque(mosqueId: string): Promise<MuezzinSum
 async function fetchProfilesForUsers(userIds: string[]) {
   if (!userIds.length) return {} as Record<string, string>;
   try {
-    let data: Array<{ id: string; full_name?: string | null; email?: string | null }> | null = null;
+    let data: { id: string; full_name?: string | null; email?: string | null }[] | null = null;
     let error: any = null;
     ({ data, error } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds));
     if (error && error.code === '42703') {
@@ -113,7 +113,7 @@ export async function getStaffRotaByDate(mosqueId: string, dateIso: string) {
 export async function upsertStaffRotaForDate(
   mosqueId: string,
   dateIso: string,
-  assignments: Array<Omit<StaffRotaRow, 'mosque_id' | 'date'>>
+  assignments: Omit<StaffRotaRow, 'mosque_id' | 'date'>[]
 ) {
   if (!assignments.length) return [];
   const rows = assignments.map((a) => ({
@@ -134,14 +134,14 @@ export async function getStaffRotaForDate(mosqueId: string, date: Date): Promise
   try {
     const baseSelect =
       'prayer_name, muezzin_user_id, staff_user_id, notes, adhan_time, iqama_time';
-    let data: Array<{
+    let data: {
       prayer_name?: string | null;
       muezzin_user_id?: string | null;
       staff_user_id?: string | null;
       notes?: string | null;
       adhan_time?: string | null;
       iqama_time?: string | null;
-    }> | null = null;
+    }[] | null = null;
     let error: any = null;
     ({ data, error } = await supabase
       .from('staff_rota')
@@ -423,7 +423,7 @@ async function notifyRotaChanges(args: {
   args.previousRows.forEach((row) => previousMap.set(row.prayer_name, row));
   args.nextRows.forEach((row) => nextMap.set(row.prayer_name, row));
 
-  const notifications: Array<{
+  const notifications: {
     user_id: string;
     mosque_id: string;
     actor_user_id: string;
@@ -431,7 +431,7 @@ async function notifyRotaChanges(args: {
     title: string;
     body: string;
     metadata: Record<string, unknown>;
-  }> = [];
+  }[] = [];
 
   PRAYERS.forEach((prayerName) => {
     const previous = previousMap.get(prayerName);

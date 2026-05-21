@@ -6,7 +6,8 @@
 
 alter table public.events
   add column if not exists status text not null default 'published',
-  add column if not exists is_public boolean not null default true;
+  add column if not exists is_public boolean not null default true,
+  add column if not exists location text;
 
 alter table public.events
   drop constraint if exists events_status_check;
@@ -18,6 +19,8 @@ comment on column public.events.status is
   'Lifecycle state: draft (hidden), published (visible to followers), cancelled.';
 comment on column public.events.is_public is
   'When false the event is hidden from the mosque follower page even if published.';
+comment on column public.events.location is
+  'Optional venue or room label for public event details.';
 
 -- Campaigns -----------------------------------------------------------------
 
@@ -33,7 +36,7 @@ alter table public.campaigns
   add column if not exists status text not null default 'active';
 
 alter table public.campaigns
-  alter column status set default 'active'::public.campaign_status;
+  alter column status set default 'active';
 
 alter table public.campaigns
   drop constraint if exists campaigns_status_check;

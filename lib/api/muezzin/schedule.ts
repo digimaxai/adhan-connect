@@ -269,7 +269,7 @@ function buildDateRange(start: Date, end: Date) {
   return dates;
 }
 
-function buildExplicitSlotKeys(rows: Array<Partial<StaffRotaEntry> | StaffRotaRow>) {
+function buildExplicitSlotKeys(rows: (Partial<StaffRotaEntry> | StaffRotaRow)[]) {
   const keys = new Set<string>();
   rows.forEach((row) => {
     const prayerName = normalizeRotaPrayerName(row.prayer_name ?? row.prayer ?? null);
