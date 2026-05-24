@@ -11,7 +11,6 @@ import {
   JumuahIntent,
   JumuahSlot,
   JumuahSummary,
-  legacyJumuahSlot,
   nextFridayDate,
   summaryFromRows,
   intentsFromRows,
@@ -23,8 +22,6 @@ type Mosque = {
   name: string;
   city?: string | null;
   country?: string | null;
-  jumuah1_time?: string | null;
-  jumuah2_time?: string | null;
   slug?: string | null;
 };
 
@@ -76,6 +73,12 @@ export default function JumuahDetailScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const fallbackMosqueName = useMemo(() => {
+    const candidate = Array.isArray(nameParam) ? nameParam[0] : nameParam;
+    if (candidate && !isUuid(candidate)) return candidate;
+    const idCandidate = Array.isArray(id) ? id[0] : id;
+    return idCandidate && !isUuid(idCandidate) ? idCandidate : 'Mosque';
+  }, [id, nameParam]);
 
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [slots, setSlots] = useState<JumuahSlot[]>([]);
@@ -95,7 +98,7 @@ export default function JumuahDetailScreen() {
       setError(null);
 
       try {
-        const selectCols = 'id,name,city,country,jumuah1_time,jumuah2_time,slug';
+        const selectCols = 'id,name,city,country,slug';
         let base: Mosque | null = null;
 
         if (isUuid(id)) {
@@ -128,10 +131,7 @@ export default function JumuahDetailScreen() {
         if (slotError) throw slotError;
 
         const structuredSlots = Array.isArray(slotRows) ? (slotRows as JumuahSlot[]) : [];
-        const fallbackSlots = [base.jumuah1_time, base.jumuah2_time]
-          .filter(Boolean)
-          .map((time, index) => legacyJumuahSlot(base.id, time as string, index));
-        const displaySlots = structuredSlots.length ? structuredSlots : fallbackSlots;
+        const displaySlots = structuredSlots;
 
         let summaryMap: Record<string, JumuahSummary> = {};
         let intentMap: Record<string, number> = {};
@@ -184,7 +184,7 @@ export default function JumuahDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id, nameParam, userId]);
+  }, [fallbackMosqueName, id, nameParam, userId]);
 
   const fridayLabel = useMemo(() => fridayDisplayLabel(), []);
   const mosqueLocation = useMemo(() => locationLabel(mosque), [mosque]);
@@ -273,7 +273,7 @@ export default function JumuahDetailScreen() {
         ) : (
           <>
             <View style={styles.header}>
-              <Text style={styles.title}>{mosque?.name ?? nameParam ?? 'Mosque'}</Text>
+              <Text style={styles.title}>{mosque?.name ?? fallbackMosqueName}</Text>
               {mosqueLocation ? <Text style={styles.location}>{mosqueLocation}</Text> : null}
               <View style={styles.datePill}>
                 <Ionicons name="calendar-outline" size={15} color="#0369A1" />
