@@ -15,7 +15,6 @@ import {
   isFridayToday,
   JumuahSlot,
   JumuahSummary,
-  legacyJumuahSlot,
   nextFridayDate,
   summaryFromRows,
 } from '../../../lib/jumuah';
@@ -25,8 +24,6 @@ type Mosque = {
   name: string;
   city?: string | null;
   country?: string | null;
-  jumuah1_time?: string | null;
-  jumuah2_time?: string | null;
   slug?: string | null;
 };
 
@@ -66,12 +63,6 @@ function formatCurrency(cents?: number | null) {
   return `£${((cents ?? 0) / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
 }
 
-function campaignScore(campaign: CampaignRow) {
-  const end = campaign.end_at ? new Date(campaign.end_at).getTime() : Number.MAX_SAFE_INTEGER;
-  const raised = campaign.raised_cents ?? 0;
-  return end - Math.min(raised, 1_000_000);
-}
-
 function dateChip(startAt: string | null): { label: string; color: string; bg: string } | null {
   if (!startAt) return null;
   const ev = new Date(startAt);
@@ -86,12 +77,23 @@ function dateChip(startAt: string | null): { label: string; color: string; bg: s
   return { label: ev.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), color: '#475569', bg: '#F1F5F9' };
 }
 
+const toHm = (d: Date | null) =>
+  d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
+
 const mapNormalizedPrayerTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
   if (!normalized) return null;
-  const toHm = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null);
   const mapped: PrayerTimes = {};
   (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
     mapped[name] = toHm(normalized?.[name]?.adhan ?? null);
+  });
+  return mapped;
+};
+
+const mapNormalizedIqamaTimes = (normalized: Awaited<ReturnType<typeof getDailyPrayerTimes>>): PrayerTimes | null => {
+  if (!normalized) return null;
+  const mapped: PrayerTimes = {};
+  (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).forEach((name) => {
+    mapped[name] = toHm(normalized?.[name]?.iqama ?? null);
   });
   return mapped;
 };
@@ -111,6 +113,10 @@ export default function MosquePage() {
 
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [prayers, setPrayers] = useState<PrayerTimes | null>(null);
+  const [iqamaTimes, setIqamaTimes] = useState<PrayerTimes | null>(null);
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [showAllCampaigns, setShowAllCampaigns] = useState(false);
   const [recordings, setRecordings] = useState<BroadcastRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -127,6 +133,12 @@ export default function MosquePage() {
   const sectionOffsetsRef = useRef<Record<string, number>>({});
 
   const isUuid = (v?: string) => !!v && /^[0-9a-fA-F-]{36}$/.test(v);
+  const fallbackMosqueName = useMemo(() => {
+    const candidate = Array.isArray(nameParam) ? nameParam[0] : nameParam;
+    if (candidate && !isUuid(candidate)) return candidate;
+    const idCandidate = Array.isArray(id) ? id[0] : id;
+    return idCandidate && !isUuid(idCandidate) ? idCandidate : 'Mosque';
+  }, [id, nameParam]);
 
   const rememberSection = useCallback((key: string) => (event: LayoutChangeEvent) => {
     sectionOffsetsRef.current[key] = event.nativeEvent.layout.y;
@@ -138,7 +150,7 @@ export default function MosquePage() {
       setLoading(true);
       try {
         let base = null as any;
-        const selectCols = 'id,name,city,country,jumuah1_time,jumuah2_time,slug';
+        const selectCols = 'id,name,city,country,slug';
 
         if (id && isUuid(id)) {
           const { data } = await supabase.from('mosques').select(selectCols).eq('id', id).maybeSingle();
@@ -171,13 +183,14 @@ export default function MosquePage() {
           setMosque(
             base ?? {
               id: '',
-              name: nameParam ?? id ?? 'Mosque',
+              name: fallbackMosqueName,
               city: cityParam ?? '',
               country: countryParam ?? '',
             }
           );
           setResolvedId('');
           setPrayers(null);
+          setIqamaTimes(null);
           setRecordings([]);
           setEvents([]);
           setCampaigns([]);
@@ -191,11 +204,9 @@ export default function MosquePage() {
         setMosque(
           base ?? {
             id: actualId,
-            name: base?.name ?? nameParam ?? id ?? 'Mosque',
+            name: base?.name ?? fallbackMosqueName,
             city: base?.city ?? cityParam ?? '',
             country: base?.country ?? countryParam ?? '',
-            jumuah1_time: base?.jumuah1_time ?? null,
-            jumuah2_time: base?.jumuah2_time ?? null,
             slug: base?.slug ?? null,
           }
         );
@@ -328,6 +339,7 @@ export default function MosquePage() {
 
         const normalizedPrayer = await fetchNormalizedPrayerTimes();
         setPrayers(mapNormalizedPrayerTimes(normalizedPrayer));
+        setIqamaTimes(mapNormalizedIqamaTimes(normalizedPrayer));
         setRecordings((recordingData as BroadcastRow[]) ?? []);
         setFollowing(!!subData);
         setEvents(eventsArr);
@@ -341,7 +353,7 @@ export default function MosquePage() {
       }
     };
     load();
-  }, [cityParam, countryParam, id, nameParam, userId]);
+  }, [cityParam, countryParam, fallbackMosqueName, id, nameParam, userId]);
 
   const toggleFollow = async () => {
     const targetMosqueId = resolvedId || (id && isUuid(id) ? id : null);
@@ -368,32 +380,59 @@ export default function MosquePage() {
 
   const displayTimes = useMemo(() => {
     const t = prayers || {};
+    const iq = iqamaTimes || {};
     const fmt = (val?: string | null) => {
-      if (!val) return '--:--';
+      if (!val) return null;
       const parts = val.split(':');
       if (parts.length >= 2) return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
       return val;
     };
     return (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]).map((p) => ({
+      key: p as PrayerName,
       name: labelForPrayer(p),
-      time: fmt(t[p]),
+      adhan: fmt(t[p]) ?? '--:--',
+      iqama: fmt(iq[p]),
     }));
-  }, [prayers]);
+  }, [prayers, iqamaTimes]);
+
+  const hasIqamaTimes = useMemo(
+    () => iqamaTimes != null && Object.values(iqamaTimes).some((v) => v != null),
+    [iqamaTimes]
+  );
+
+  const nextPrayerName = useMemo<PrayerName | null>(() => {
+    if (!prayers) return null;
+    const now = new Date(clockMs);
+    const msForHhmm = (hhmm: string | null | undefined): number | null => {
+      if (!hhmm) return null;
+      const parts = hhmm.split(':');
+      if (parts.length < 2) return null;
+      const h = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      if (isNaN(h) || isNaN(m)) return null;
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
+    };
+    for (const p of ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as PrayerName[]) {
+      const ms = msForHhmm(prayers[p]);
+      if (ms !== null && ms > now.getTime()) return p;
+    }
+    return null;
+  }, [prayers, clockMs]);
 
   const recent = useMemo(() => recordings.slice(0, 1), [recordings]);
   const city = useMemo(() => [mosque?.city, mosque?.country].filter(Boolean).join(', '), [mosque]);
-  const jumuahTimes = useMemo(
-    () => [mosque?.jumuah1_time, mosque?.jumuah2_time].filter(Boolean) as string[],
-    [mosque?.jumuah1_time, mosque?.jumuah2_time]
-  );
   const displayJumuahSlots = useMemo(
-    () => (jumuahSlots.length ? jumuahSlots : jumuahTimes.map((time, index) => legacyJumuahSlot(mosque?.id ?? 'mosque', time, index))),
-    [jumuahSlots, jumuahTimes, mosque?.id]
+    () => jumuahSlots,
+    [jumuahSlots]
   );
   const previewJumuahSlots = useMemo(() => displayJumuahSlots.slice(0, 3), [displayJumuahSlots]);
   const hiddenJumuahCount = Math.max(0, displayJumuahSlots.length - previewJumuahSlots.length);
-  const currentDayOfWeek = new Date().getDay();
-  const showJumuahSection = displayJumuahSlots.length > 0 && currentDayOfWeek >= 3 && currentDayOfWeek <= 5;
+  useEffect(() => {
+    const id = setInterval(() => setClockMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const showJumuahSection = displayJumuahSlots.length > 0;
   const openJumuahPage = () => {
     const mosqueId = resolvedId || (id && isUuid(id) ? id : mosque?.id);
     if (!mosqueId) return;
@@ -416,23 +455,8 @@ export default function MosquePage() {
     });
   }, []);
 
-  const highlight = useMemo(() => {
-    const now = Date.now();
-    const fourteenDays = 14 * 24 * 60 * 60 * 1000;
-    const upcomingEvent = events.find((event) => {
-      if (!event.start_at) return false;
-      const starts = new Date(event.start_at).getTime();
-      return starts >= now && starts - now <= fourteenDays;
-    });
-    if (upcomingEvent) return { type: 'event' as const, item: upcomingEvent };
-    const campaign = [...campaigns].sort((a, b) => campaignScore(a) - campaignScore(b))[0];
-    if (campaign) return { type: 'campaign' as const, item: campaign };
-    const pinned = announcements.find((announcement) => announcement.is_pinned && !announcement.is_urgent);
-    if (pinned) return { type: 'announcement' as const, item: pinned };
-    const regular = announcements.find((announcement) => !announcement.is_urgent) ?? announcements[0];
-    if (regular) return { type: 'announcement' as const, item: regular };
-    return null;
-  }, [campaigns, events, announcements]);
+  const visibleEventsForSection = events;
+  const visibleCampaignsForSection = campaigns;
 
   useEffect(() => {
     if (loading || !focus) return;
@@ -465,13 +489,13 @@ export default function MosquePage() {
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <ScrollView ref={scrollRef} contentContainerStyle={styles.body}>
+
+        {/* ── Top bar ── */}
         <View style={styles.topBar}>
           <Pressable onPress={() => router.back()} hitSlop={10}>
             <Ionicons name="chevron-back" size={22} color="#0F172A" />
           </Pressable>
-          <Text style={styles.title} numberOfLines={1}>
-            {mosque?.name ?? 'Mosque'}
-          </Text>
+          <Text style={styles.title} numberOfLines={1}>{mosque?.name ?? 'Mosque'}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Pressable hitSlop={10}>
               <Ionicons name="share-outline" size={18} color="#0F172A" />
@@ -482,20 +506,32 @@ export default function MosquePage() {
           </View>
         </View>
 
+        {/* ── Identity card + inline Follow pill ── */}
         <View style={[styles.identityCard, styles.shadow]}>
           <View style={styles.identityAvatar}>
             <Text style={styles.identityInitials}>{mosque?.name?.slice(0, 2).toUpperCase() ?? 'MS'}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.identityName} numberOfLines={1}>
-              {mosque?.name ?? 'Mosque'}
-            </Text>
-            <Text style={styles.identityCity} numberOfLines={1}>
-              {city || 'City, Country'}
-            </Text>
+            <Text style={styles.identityName} numberOfLines={1}>{mosque?.name ?? 'Mosque'}</Text>
+            <Text style={styles.identityCity} numberOfLines={1}>{city || 'City, Country'}</Text>
           </View>
+          <Pressable
+            onPress={toggleFollow}
+            disabled={actionLoading}
+            style={({ pressed }) => [
+              styles.followPill,
+              following && styles.followPillActive,
+              (pressed || actionLoading) && { opacity: 0.8 },
+            ]}
+          >
+            <Ionicons name={following ? 'checkmark' : 'add'} size={14} color={following ? '#0369A1' : '#64748B'} />
+            <Text style={[styles.followPillText, following && styles.followPillTextActive]}>
+              {following ? 'Following' : 'Follow'}
+            </Text>
+          </Pressable>
         </View>
 
+        {/* ── Live broadcast ── */}
         {liveInfo.isLive && (
           <View style={[styles.liveCard, styles.shadow]}>
             <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
@@ -504,24 +540,15 @@ export default function MosquePage() {
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={styles.liveBadge}>
-                    <Text style={styles.liveBadgeText}>LIVE</Text>
-                  </View>
+                  <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>LIVE</Text></View>
                   <Text style={styles.liveSmall}>{city || 'Broadcasting Adhan'}</Text>
                 </View>
-                <Text style={styles.liveTitle} numberOfLines={1}>
-                  {mosque?.name ?? 'Mosque'}
-                </Text>
+                <Text style={styles.liveTitle} numberOfLines={1}>{mosque?.name ?? 'Mosque'}</Text>
                 <Text style={styles.liveSubtitle}>Broadcasting Adhan</Text>
               </View>
             </View>
             <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: '/(user)/now',
-                  params: { mosqueId: resolvedId ?? id },
-                })
-              }
+              onPress={() => router.push({ pathname: '/(user)/now', params: { mosqueId: resolvedId ?? id } })}
               style={({ pressed }) => [styles.livePrimary, { opacity: pressed ? 0.9 : 1 }]}
             >
               <Text style={styles.livePrimaryText}>Listen Live</Text>
@@ -529,6 +556,7 @@ export default function MosquePage() {
           </View>
         )}
 
+        {/* ── Urgent notices ── */}
         {urgentAnnouncements.length > 0 && (
           <View onLayout={rememberSection('urgent')} style={[styles.urgentCard, styles.shadow]}>
             <View style={styles.urgentHeader}>
@@ -547,106 +575,172 @@ export default function MosquePage() {
                     <Text style={styles.urgentTitle} numberOfLines={expanded ? undefined : 1}>
                       {notice.title ?? 'Urgent notice'}
                     </Text>
-                    {notice.summary ? (
-                      <Ionicons
-                        name={expanded ? 'chevron-up' : 'chevron-down'}
-                        size={15}
-                        color="#991B1B"
-                      />
-                    ) : null}
+                    {notice.summary
+                      ? <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color="#991B1B" />
+                      : null}
                   </View>
-                  {notice.summary ? (
-                    <Text style={styles.urgentSummary} numberOfLines={expanded ? undefined : 2}>
-                      {notice.summary}
-                    </Text>
-                  ) : null}
+                  {notice.summary
+                    ? <Text style={styles.urgentSummary} numberOfLines={expanded ? undefined : 2}>{notice.summary}</Text>
+                    : null}
                 </Pressable>
               );
             })}
           </View>
         )}
 
-        {highlight && (
-          <Pressable
-            onPress={() => {
-              if (highlight.type === 'event') router.push({ pathname: '/event/[id]', params: { id: highlight.item.id } });
-              if (highlight.type === 'campaign') router.push({ pathname: '/campaign/[id]', params: { id: highlight.item.id } });
-            }}
-            style={({ pressed }) => [
-              styles.banner,
-              styles.shadow,
-              {
-                backgroundColor:
-                  highlight.type === 'campaign' ? '#F0FFF4' : highlight.type === 'event' ? '#F3F8FF' : '#FFFDF3',
-                opacity: pressed ? 0.94 : 1,
-              },
-            ]}
-          >
-            <View style={styles.bannerTag}>
-              <Text style={styles.bannerTagText}>
-                {highlight.type === 'campaign' ? 'Campaign' : highlight.type === 'event' ? 'Upcoming' : 'Announcement'}
-              </Text>
+        {/* ── Events ── */}
+        {visibleEventsForSection.length > 0 && (
+          <View onLayout={rememberSection('events')} style={[styles.card, styles.shadow]}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Events</Text>
             </View>
-            <Text style={styles.bannerTitle} numberOfLines={2}>
-              {highlight.type === 'campaign'
-                ? (highlight.item as CampaignRow).title ?? 'Campaign'
-                : highlight.type === 'event'
-                ? (highlight.item as EventRow).title ?? 'Event'
-                : (highlight.item as AnnouncementRow).title ?? 'Announcement'}
-            </Text>
-            <Text style={styles.bannerSubtitle} numberOfLines={2}>
-              {highlight.type === 'campaign'
-                ? `${formatCurrency((highlight.item as CampaignRow).raised_cents)} raised`
-                : highlight.type === 'event'
-                ? new Date((highlight.item as EventRow).start_at ?? '').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                : (highlight.item as AnnouncementRow).summary ?? ''}
-            </Text>
-            {highlight.type === 'campaign' && (
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width: `${Math.min(
-                        100,
-                        Math.round(
-                          (((highlight.item as CampaignRow).raised_cents ?? 0) / 100) /
-                            Math.max(1, ((highlight.item as CampaignRow).goal_cents ?? 1) / 100) *
-                            100
-                        )
-                      )}%`,
-                    },
-                  ]}
-                />
-              </View>
+            <View style={styles.divider} />
+            {(showAllEvents ? visibleEventsForSection : visibleEventsForSection.slice(0, 5)).map((ev) => {
+              const chip = dateChip(ev.start_at ?? null);
+              const timeStr = ev.start_at
+                ? new Date(ev.start_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : null;
+              return (
+                <Pressable
+                  key={ev.id}
+                  onPress={() => router.push({ pathname: '/event/[id]', params: { id: ev.id } })}
+                  style={({ pressed }) => [styles.eventRow, { opacity: pressed ? 0.88 : 1 }]}
+                >
+                  {chip && (
+                    <View style={[styles.eventDateChip, { backgroundColor: chip.bg }]}>
+                      <Text style={[styles.eventDateChipText, { color: chip.color }]}>{chip.label}</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <Text style={styles.eventTitle} numberOfLines={1}>{ev.title ?? 'Event'}</Text>
+                    {timeStr ? <Text style={styles.eventMeta}>{timeStr}</Text> : null}
+                    {ev.location ? <Text style={styles.eventMeta} numberOfLines={1}>{ev.location}</Text> : null}
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />
+                </Pressable>
+              );
+            })}
+            {!showAllEvents && visibleEventsForSection.length > 5 && (
+              <Pressable
+                onPress={() => setShowAllEvents(true)}
+                style={({ pressed }) => [styles.viewAllBtn, { opacity: pressed ? 0.9 : 1 }]}
+              >
+                <Text style={styles.viewAllText}>Show all {visibleEventsForSection.length} events</Text>
+              </Pressable>
             )}
-            <Pressable style={styles.bannerButton}>
-              <Text style={styles.bannerButtonText}>{highlight.type === 'campaign' ? 'Donate Now' : 'View Details'}</Text>
-            </Pressable>
-          </Pressable>
+          </View>
         )}
 
+        {/* ── Campaigns & Donations ── */}
+        <View onLayout={rememberSection('campaigns')} style={[styles.card, styles.shadow]}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Campaigns & Donations</Text>
+          </View>
+          <View style={styles.divider} />
+          {visibleCampaignsForSection.length === 0 && (
+            <Text style={styles.empty}>No active campaigns. Check back soon.</Text>
+          )}
+          {(showAllCampaigns ? visibleCampaignsForSection : visibleCampaignsForSection.slice(0, 3)).map((c) => {
+            const raised = (c.raised_cents ?? 0) / 100;
+            const goalRaw = c.goal_cents ?? 0;
+            const goal = goalRaw > 0 ? goalRaw / 100 : 1;
+            const pct = Math.min(100, Math.round((raised / goal) * 100));
+            return (
+              <View key={c.id} style={styles.campaignRow}>
+                <Text style={styles.campaignTitle} numberOfLines={1}>{c.title ?? 'Campaign'}</Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${pct}%` }]} />
+                </View>
+                <Text style={styles.campaignMeta}>
+                  {`${formatCurrency(c.raised_cents)} raised of ${formatCurrency(c.goal_cents)} goal`}
+                </Text>
+                <Pressable
+                  onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: c.id } })}
+                  style={({ pressed }) => [styles.donateBtn, { opacity: pressed ? 0.9 : 1 }]}
+                >
+                  <Text style={styles.donateBtnText}>Donate</Text>
+                </Pressable>
+              </View>
+            );
+          })}
+          {!showAllCampaigns && visibleCampaignsForSection.length > 3 && (
+            <Pressable
+              onPress={() => setShowAllCampaigns(true)}
+              style={({ pressed }) => [styles.viewAllBtn, { opacity: pressed ? 0.9 : 1 }]}
+            >
+              <Text style={styles.viewAllText}>Show all {visibleCampaignsForSection.length} campaigns</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {/* ── Announcements (non-urgent) ── */}
+        {nonUrgentAnnouncements.length > 0 && (
+          <View onLayout={rememberSection('announcements')} style={[styles.card, styles.shadow]}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Announcements</Text>
+            </View>
+            <View style={styles.divider} />
+            {nonUrgentAnnouncements.slice(0, 5).map((notice) => (
+              <View
+                key={notice.id}
+                style={[styles.noticeRow, notice.is_pinned && !notice.is_urgent && styles.noticeRowPinned]}
+              >
+                <View style={styles.noticeIcon}>
+                  <Ionicons
+                    name={notice.is_pinned ? 'pin' : 'megaphone-outline'}
+                    size={16}
+                    color={notice.is_pinned ? '#92400E' : '#0369A1'}
+                  />
+                </View>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.noticeTitle} numberOfLines={1}>{notice.title ?? 'Announcement'}</Text>
+                  {notice.summary
+                    ? <Text style={styles.noticeSummary} numberOfLines={2}>{notice.summary}</Text>
+                    : null}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* ── Prayer Times + Iqamah ── */}
         <View style={[styles.card, styles.shadow]}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitle}>Prayer Times</Text>
           </View>
           <View style={styles.divider} />
+          {hasIqamaTimes && (
+            <View style={styles.prayerTableHeader}>
+              <Text style={[styles.prayerColLabel, { flex: 1 }]}>Prayer</Text>
+              <Text style={styles.prayerColLabel}>Adhan</Text>
+              <Text style={styles.prayerColLabel}>Iqamah</Text>
+            </View>
+          )}
           <View style={styles.timesTable}>
-            {displayTimes.map((row) => (
-              <View key={row.name} style={styles.timeRow}>
-                <Text style={styles.timeName}>{row.name}</Text>
-                <Text style={styles.timeValue}>{row.time}</Text>
-              </View>
-            ))}
+            {displayTimes.map((row) => {
+              const isNext = row.key === nextPrayerName;
+              return (
+                <View key={row.key} style={[styles.timeRow, isNext && styles.timeRowNext]}>
+                  <Text style={[styles.timeName, isNext && styles.timeNameNext]}>{row.name}</Text>
+                  <Text style={[styles.timeValue, isNext && styles.timeValueNext]}>{row.adhan}</Text>
+                  {hasIqamaTimes && (
+                    <Text style={[styles.timeIqama, isNext && styles.timeValueNext]}>
+                      {row.iqama ?? '-'}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
           </View>
         </View>
 
+        {/* ── Jumu'ah (always shown when slots exist) ── */}
         {showJumuahSection && (
           <View onLayout={rememberSection('jumuah')} style={[styles.card, styles.shadow]}>
             <View style={styles.cardHeaderRow}>
               <View>
                 <Text style={styles.cardTitle}>{isFridayToday() ? "Jumu'ah Today" : "Jumu'ah This Friday"}</Text>
-                <Text style={styles.cardSubtitle}>Prayer times and crowd guidance for Friday.</Text>
+                <Text style={styles.cardSubtitle}>Friday prayer times and congregation guidance.</Text>
               </View>
             </View>
             <View style={styles.divider} />
@@ -658,183 +752,98 @@ export default function MosquePage() {
                 <View key={slot.id} style={styles.jumuahRow}>
                   <View style={styles.jumuahTimeBox}>
                     <Text style={styles.jumuahTime}>{formatJumuahTime(slot.salah_at) ?? '--:--'}</Text>
-                    {slot.khutbah_at ? <Text style={styles.jumuahKhutbah}>Khutbah {formatJumuahTime(slot.khutbah_at)}</Text> : null}
+                    {slot.khutbah_at
+                      ? <Text style={styles.jumuahKhutbah}>Khutbah {formatJumuahTime(slot.khutbah_at)}</Text>
+                      : null}
                   </View>
                   <View style={{ flex: 1, gap: 4 }}>
                     <Text style={styles.jumuahTitle} numberOfLines={1}>{slot.label ?? "Jumu'ah"}</Text>
-                    {[slot.venue, slot.language].filter(Boolean).length ? (
-                      <Text style={styles.jumuahMeta} numberOfLines={1}>{[slot.venue, slot.language].filter(Boolean).join(' / ')}</Text>
-                    ) : null}
-                    {!isLegacy ? (
+                    {[slot.venue, slot.language].filter(Boolean).length
+                      ? <Text style={styles.jumuahMeta} numberOfLines={1}>{[slot.venue, slot.language].filter(Boolean).join(' / ')}</Text>
+                      : null}
+                    {!isLegacy && (
                       <View style={styles.crowdWrap}>
-                        <View
-                          style={[
-                            styles.crowdPill,
-                            crowd.tone === 'danger'
-                              ? styles.crowdDanger
-                              : crowd.tone === 'warning'
-                              ? styles.crowdWarning
-                              : crowd.tone === 'busy'
-                              ? styles.crowdBusy
-                              : crowd.tone === 'calm'
-                              ? styles.crowdCalm
-                              : styles.crowdNeutral,
-                          ]}
-                        >
+                        <View style={[
+                          styles.crowdPill,
+                          crowd.tone === 'danger' ? styles.crowdDanger
+                            : crowd.tone === 'warning' ? styles.crowdWarning
+                            : crowd.tone === 'busy' ? styles.crowdBusy
+                            : crowd.tone === 'calm' ? styles.crowdCalm
+                            : styles.crowdNeutral,
+                        ]}>
                           <Text style={styles.crowdText}>{crowd.label}</Text>
                         </View>
                       </View>
-                    ) : null}
+                    )}
                   </View>
                 </View>
               );
             })}
             <Pressable onPress={openJumuahPage} style={({ pressed }) => [styles.jumuahCta, pressed && styles.pressed]}>
               <View>
-                <Text style={styles.jumuahCtaText}>{"See all Jumu’ah times"}</Text>
-                {hiddenJumuahCount > 0 ? <Text style={styles.jumuahMoreText}>+{hiddenJumuahCount} more time{hiddenJumuahCount === 1 ? '' : 's'} available</Text> : null}
+                <Text style={styles.jumuahCtaText}>{"See all Jumu'ah times"}</Text>
+                {hiddenJumuahCount > 0
+                  ? <Text style={styles.jumuahMoreText}>+{hiddenJumuahCount} more time{hiddenJumuahCount === 1 ? '' : 's'} available</Text>
+                  : null}
               </View>
               <Ionicons name="chevron-forward" size={18} color="#0369A1" />
             </Pressable>
           </View>
         )}
 
-        <View onLayout={rememberSection('events')} style={[styles.card, styles.shadow]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Events</Text>
-          </View>
-          <View style={styles.divider} />
-          {events.length === 0 && <Text style={styles.empty}>No upcoming events at this time.</Text>}
-          {events.slice(0, 3).map((ev) => {
-            const chip = dateChip(ev.start_at ?? null);
-            const timeStr = ev.start_at
-              ? new Date(ev.start_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-              : null;
-            return (
-              <Pressable
-                key={ev.id}
-                onPress={() => router.push({ pathname: '/event/[id]', params: { id: ev.id } })}
-                style={({ pressed }) => [styles.eventRow, { opacity: pressed ? 0.88 : 1 }]}
-              >
-                {chip && (
-                  <View style={[styles.eventDateChip, { backgroundColor: chip.bg }]}>
-                    <Text style={[styles.eventDateChipText, { color: chip.color }]}>{chip.label}</Text>
-                  </View>
-                )}
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={styles.eventTitle} numberOfLines={1}>{ev.title ?? 'Event'}</Text>
-                  {timeStr ? <Text style={styles.eventMeta}>{timeStr}</Text> : null}
-                  {ev.location ? <Text style={styles.eventMeta} numberOfLines={1}>{ev.location}</Text> : null}
-                </View>
-                <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />
-              </Pressable>
-            );
-          })}
-          {events.length > 3 && (
-            <Pressable onPress={() => router.push({ pathname: '/event/[id]', params: { id: events[0].id } })} style={({ pressed }) => [styles.viewAllBtn, { opacity: pressed ? 0.9 : 1 }]}>
-              <Text style={styles.viewAllText}>View All Events</Text>
-            </Pressable>
-          )}
-        </View>
-
-        <View onLayout={rememberSection('campaigns')} style={[styles.card, styles.shadow]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Campaigns & Donations</Text>
-          </View>
-          <View style={styles.divider} />
-          {campaigns.length === 0 && <Text style={styles.empty}>No active campaigns. Check back soon.</Text>}
-          {campaigns.slice(0, 3).map((c) => {
-            const raised = (c.raised_cents ?? 0) / 100;
-            const goalRaw = c.goal_cents ?? 0;
-            const goal = goalRaw > 0 ? goalRaw / 100 : 1;
-            const pct = Math.min(100, Math.round((raised / goal) * 100));
-            return (
-              <View key={c.id} style={styles.campaignRow}>
-                <Text style={styles.campaignTitle} numberOfLines={1}>
-                  {c.title ?? 'Campaign'}
-                </Text>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${pct}%` }]} />
-                </View>
-                <Text style={styles.campaignMeta}>{`${formatCurrency(c.raised_cents)} raised of ${formatCurrency(c.goal_cents)} goal`}</Text>
-                <Pressable onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: c.id } })} style={({ pressed }) => [styles.eventButton, { opacity: pressed ? 0.9 : 1 }]}>
-                  <Text style={styles.eventButtonText}>Donate</Text>
-                </Pressable>
-              </View>
-            );
-          })}
-          {campaigns.length > 3 && (
-            <Pressable onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: campaigns[0].id } })} style={({ pressed }) => [styles.viewAllBtn, { opacity: pressed ? 0.9 : 1 }]}>
-              <Text style={styles.viewAllText}>View All Campaigns</Text>
-            </Pressable>
-          )}
-        </View>
-
-        {nonUrgentAnnouncements.length > 0 && (
-          <View onLayout={rememberSection('announcements')} style={[styles.card, styles.shadow]}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Announcements</Text>
+        {/* ── About (only renders when location data available) ── */}
+        {city ? (
+          <View style={[styles.card, styles.shadow]}>
+            <Text style={styles.cardTitle}>About This Mosque</Text>
+            <View style={styles.aboutRow}>
+              <Ionicons name="location-outline" size={15} color="#64748B" />
+              <Text style={styles.aboutText}>{city}</Text>
             </View>
-            <View style={styles.divider} />
-            {nonUrgentAnnouncements.slice(0, 5).map((notice) => (
-              <View
-                key={notice.id}
-                style={[
-                  styles.noticeRow,
-                  notice.is_urgent && styles.noticeRowUrgent,
-                  notice.is_pinned && !notice.is_urgent && styles.noticeRowPinned,
-                ]}
-              >
-                <View style={styles.noticeIcon}>
-                  <Ionicons
-                    name={notice.is_urgent ? 'alert-circle' : notice.is_pinned ? 'pin' : 'megaphone-outline'}
-                    size={16}
-                    color={notice.is_urgent ? '#B91C1C' : notice.is_pinned ? '#92400E' : '#0369A1'}
-                  />
-                </View>
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={styles.noticeTitle} numberOfLines={1}>{notice.title ?? 'Announcement'}</Text>
-                  {notice.summary ? <Text style={styles.noticeSummary} numberOfLines={2}>{notice.summary}</Text> : null}
-                </View>
-              </View>
-            ))}
           </View>
-        )}
+        ) : null}
 
-        <View style={[styles.card, styles.shadow]}>
-          <Text style={styles.cardTitle}>About This Mosque</Text>
-          <Text style={styles.aboutText}>Basic information about this mosque will appear here soon.</Text>
-        </View>
-
+        {/* ── Last Adhan Broadcast (informational) ── */}
         {recent.length > 0 && (
           <View style={[styles.card, styles.shadow]}>
-            <Text style={styles.cardTitle}>Last Adhan</Text>
+            <Text style={styles.cardTitle}>Last Adhan Broadcast</Text>
             {(() => {
               const b = recent[0];
               const when = new Date(b.scheduled_for);
-              const durationSec =
-                b.started_at && b.ended_at ? Math.max(1, Math.floor((new Date(b.ended_at).getTime() - new Date(b.started_at).getTime()) / 1000)) : null;
+              const durationSec = b.started_at && b.ended_at
+                ? Math.max(1, Math.floor((new Date(b.ended_at).getTime() - new Date(b.started_at).getTime()) / 1000))
+                : null;
               return (
                 <View style={styles.recordRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.recordTitle}>{labelForPrayer(b.prayer)}</Text>
                     <Text style={styles.recordMeta}>
-                      {`${when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${
-                        durationSec ? ` (${durationSec}s)` : ''
-                      }`}
+                      {`${when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${durationSec ? ` · ${durationSec}s` : ''}`}
                     </Text>
                   </View>
-                  <Ionicons name="play-circle-outline" size={22} color="#0F172A" />
+                  <Ionicons name="radio-outline" size={20} color="#94A3B8" />
                 </View>
               );
             })()}
           </View>
         )}
 
-        <Pressable onPress={toggleFollow} disabled={actionLoading} style={({ pressed }) => [styles.followBtn, { opacity: pressed || actionLoading ? 0.85 : 1 }]}>
-          <Text style={styles.followText}>{following ? 'Unfollow Mosque' : 'Follow Mosque'}</Text>
+        {/* ── Follow / Unfollow ── */}
+        <Pressable
+          onPress={toggleFollow}
+          disabled={actionLoading}
+          style={({ pressed }) => [
+            styles.followBtn,
+            following && styles.followBtnUnfollow,
+            { opacity: pressed || actionLoading ? 0.85 : 1 },
+          ]}
+        >
+          <Text style={[styles.followText, following && styles.followTextUnfollow]}>
+            {following ? 'Unfollow Mosque' : 'Follow Mosque'}
+          </Text>
         </Pressable>
-        {!following && subCount >= FOLLOW_LIMIT && <Text style={styles.limitNote}>{`You are following ${FOLLOW_LIMIT} mosques (maximum).`}</Text>}
+        {!following && subCount >= FOLLOW_LIMIT && (
+          <Text style={styles.limitNote}>{`You are following ${FOLLOW_LIMIT} mosques (maximum).`}</Text>
+        )}
 
         {loading && (
           <View style={{ marginTop: 12 }}>
@@ -883,21 +892,6 @@ const styles = StyleSheet.create({
   },
   livePrimaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
 
-  banner: { borderRadius: 16, padding: 18, gap: 8 },
-  bannerTag: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(15,23,42,0.08)' },
-  bannerTagText: { fontSize: 12, fontWeight: '700', color: '#0F172A' },
-  bannerTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
-  bannerSubtitle: { color: '#475569', fontSize: 13 },
-  bannerButton: {
-    marginTop: 6,
-    backgroundColor: '#0EA5E9',
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bannerButtonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
-
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, gap: 10 },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
@@ -913,9 +907,35 @@ const styles = StyleSheet.create({
 
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB', marginVertical: 8 },
   timesTable: { gap: 10 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  timeName: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
-  timeValue: { fontWeight: '800', color: '#0F172A', fontSize: 14 },
+  prayerTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    marginBottom: 2,
+  },
+  prayerColLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    minWidth: 72,
+    textAlign: 'right',
+  },
+  timeRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 3 },
+  timeRowNext: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    marginHorizontal: -8,
+  },
+  timeName: { flex: 1, fontWeight: '700', color: '#0F172A', fontSize: 14 },
+  timeNameNext: { color: '#0369A1', fontWeight: '800' },
+  timeValue: { minWidth: 72, textAlign: 'right', fontWeight: '800', color: '#0F172A', fontSize: 14 },
+  timeValueNext: { color: '#0369A1' },
+  timeIqama: { minWidth: 72, textAlign: 'right', fontWeight: '700', color: '#475569', fontSize: 14 },
 
   jumuahRow: { flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   jumuahTimeBox: { width: 78, alignItems: 'flex-start', gap: 3 },
@@ -949,14 +969,20 @@ const styles = StyleSheet.create({
   eventDateChipText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   eventTitle: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
   eventMeta: { color: '#475569', fontSize: 12 },
-  eventButton: { backgroundColor: '#E2E8F0', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
-  eventButtonText: { fontWeight: '800', color: '#0F172A', fontSize: 12 },
   viewAllBtn: { marginTop: 8, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#E0F2FE' },
   viewAllText: { color: '#0369A1', fontWeight: '800', fontSize: 13 },
 
   campaignRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', gap: 8 },
   campaignTitle: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
   campaignMeta: { color: '#475569', fontSize: 12 },
+  donateBtn: {
+    backgroundColor: '#0EA5E9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donateBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
   progressTrack: { height: 6, backgroundColor: '#E5E7EB', borderRadius: 8, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#1E7BF6' },
 
@@ -967,11 +993,26 @@ const styles = StyleSheet.create({
   noticeTitle: { color: '#0F172A', fontSize: 14, fontWeight: '800' },
   noticeSummary: { color: '#475569', fontSize: 12, lineHeight: 17 },
 
-  aboutText: { color: '#475569', fontSize: 13 },
+  aboutRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  aboutText: { color: '#475569', fontSize: 13, flex: 1 },
   recordRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
   recordTitle: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
   recordMeta: { color: '#475569', fontSize: 12, marginTop: 2 },
 
+  followPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  followPillActive: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
+  followPillText: { fontWeight: '800', fontSize: 13, color: '#64748B' },
+  followPillTextActive: { color: '#0369A1' },
   followBtn: {
     backgroundColor: '#F8FAFC',
     borderRadius: 14,
@@ -983,7 +1024,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 14,
   },
+  followBtnUnfollow: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
   followText: { color: '#0F172A', fontWeight: '800', fontSize: 15 },
+  followTextUnfollow: { color: '#B91C1C' },
   limitNote: { color: '#B91C1C', textAlign: 'center', marginBottom: 12, fontSize: 12, fontWeight: '600' },
   empty: { color: '#94A3B8', fontSize: 13, marginTop: 4 },
 

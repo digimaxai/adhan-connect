@@ -69,6 +69,7 @@ type StreamRow = {
 type DailyQuote = {
   id: string; text_en: string; text_ar?: string | null; source?: string | null;
 };
+type CrossMosqueAlert = { announcement: RawAnnouncement; mosque: Mosque };
 
 const LIVE_REFRESH_MS = 15000;
 
@@ -121,15 +122,15 @@ function initials(name: string) {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
-function formatEventDateTime(iso?: string | null) {
-  if (!iso) return '';
+function formatEventDateParts(iso?: string | null) {
+  if (!iso) return { month: '--', day: '--', time: '' };
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return (
-    d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) +
-    ' · ' +
-    d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  );
+  if (Number.isNaN(d.getTime())) return { month: '--', day: '--', time: '' };
+  return {
+    month: d.toLocaleDateString([], { month: 'short' }).toUpperCase(),
+    day: d.toLocaleDateString([], { day: 'numeric' }),
+    time: d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+  };
 }
 
 function formatCurrencyGBP(cents?: number | null) {
@@ -383,20 +384,25 @@ type PrimaryMosqueContentProps = {
 const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
   mosqueId, announcements, events, campaigns, jumuahSlots, dayOfWeek, router,
 }: PrimaryMosqueContentProps) {
-  const urgent = announcements.find((a) => a.is_urgent) ?? null;
+  const urgentNotices = announcements.filter((a) => a.is_urgent).slice(0, 2);
   const pinned = announcements.find((a) => a.is_pinned && !a.is_urgent) ?? null;
   const recent = announcements.find((a) => !a.is_urgent && !a.is_pinned) ?? null;
   const notice = pinned ?? recent;
-  const nextEvent = events[0] ?? null;
-  const campaign = campaigns[0] ?? null;
+  const visibleEvents = events.slice(0, 3);
+  const visibleCampaigns = campaigns.slice(0, 2);
   const activeSlots = jumuahSlots.slice(0, 3);
   const showJumuah = activeSlots.length > 0 && dayOfWeek >= 3 && dayOfWeek <= 5;
 
-  const hasContent = urgent || notice || nextEvent || campaign || showJumuah;
+  const hasContent =
+    urgentNotices.length > 0 ||
+    notice ||
+    visibleEvents.length > 0 ||
+    visibleCampaigns.length > 0 ||
+    showJumuah;
   if (!hasContent) return null;
 
-  const raisedPct =
-    campaign?.goal_cents && campaign.goal_cents > 0
+  const getRaisedPct = (campaign: RawCampaign) =>
+    campaign.goal_cents && campaign.goal_cents > 0
       ? Math.min(100, Math.round(((campaign.raised_cents ?? 0) / campaign.goal_cents) * 100))
       : null;
 
@@ -404,8 +410,15 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
 
   const navigateTo = (focus: string) => {
     router.push({
-      pathname: '/mosque/[id]',
+      pathname: '/(user)/mosque/[id]',
       params: { id: mosqueId, focus },
+    } as any);
+  };
+
+  const navigateToMosque = () => {
+    router.push({
+      pathname: '/(user)/mosque/[id]',
+      params: { id: mosqueId },
     } as any);
   };
 
@@ -416,8 +429,9 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
       </View>
 
       <View style={styles.contentList}>
-        {urgent ? (
+        {urgentNotices.map((urgent) => (
           <Pressable
+            key={urgent.id}
             onPress={() => navigateTo('urgent')}
             style={({ pressed }) => [styles.contentRow, styles.contentRowUrgent, pressed && styles.contentRowPressed]}
           >
@@ -436,7 +450,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
             </View>
             <Ionicons name="chevron-forward" size={14} color="#B91C1C" />
           </Pressable>
-        ) : null}
+        ))}
 
         {showJumuah ? (
           <Pressable
@@ -467,52 +481,61 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
           </Pressable>
         ) : null}
 
-        {nextEvent ? (
-          <Pressable
-            onPress={() => router.push({ pathname: '/event/[id]', params: { id: nextEvent.id } })}
-            style={({ pressed }) => [styles.contentRow, pressed && styles.contentRowPressed]}
-          >
-            <View style={[styles.contentIcon, styles.contentIconEvent]}>
-              <Ionicons name="calendar-outline" size={16} color="#0369A1" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <AppText style={styles.contentTitle} numberOfLines={1}>{nextEvent.title}</AppText>
-              <AppText variant="caption" style={styles.contentSub} numberOfLines={1}>
-                {formatEventDateTime(nextEvent.start_at)}
-                {nextEvent.location ? ` · ${nextEvent.location}` : ''}
-              </AppText>
-            </View>
-            <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
-          </Pressable>
-        ) : null}
+        {visibleEvents.map((event) => {
+          const eventDate = formatEventDateParts(event.start_at);
+          return (
+            <Pressable
+              key={event.id}
+              onPress={() => router.push({ pathname: '/event/[id]', params: { id: event.id } })}
+              style={({ pressed }) => [styles.contentRow, pressed && styles.contentRowPressed]}
+            >
+              <View style={styles.eventDateChip}>
+                <AppText style={styles.eventDateMonth}>{eventDate.month}</AppText>
+                <AppText style={styles.eventDateDay}>{eventDate.day}</AppText>
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText style={styles.contentTitle} numberOfLines={1}>{event.title}</AppText>
+                <AppText variant="caption" style={styles.contentSub} numberOfLines={1}>
+                  {eventDate.time}
+                  {event.location ? ` - ${event.location}` : ''}
+                </AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
+            </Pressable>
+          );
+        })}
 
-        {campaign ? (
-          <Pressable
-            onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: campaign.id } })}
-            style={({ pressed }) => [styles.contentRow, pressed && styles.contentRowPressed]}
-          >
-            <View style={[styles.contentIcon, styles.contentIconCampaign]}>
-              <Ionicons name="heart-outline" size={16} color="#0369A1" />
-            </View>
-            <View style={{ flex: 1, gap: 6 }}>
-              <AppText style={styles.contentTitle} numberOfLines={1}>{campaign.title}</AppText>
-              {raisedPct !== null ? (
-                <View style={{ gap: 3 }}>
-                  <View style={styles.campaignTrack}>
-                    <View style={[styles.campaignFill, { width: `${raisedPct}%` as any }]} />
+        {visibleCampaigns.map((campaign) => {
+          const raisedPct = getRaisedPct(campaign);
+          return (
+            <Pressable
+              key={campaign.id}
+              onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: campaign.id } })}
+              style={({ pressed }) => [styles.contentRow, pressed && styles.contentRowPressed]}
+            >
+              <View style={[styles.contentIcon, styles.contentIconCampaign]}>
+                <Ionicons name="heart-outline" size={16} color="#0369A1" />
+              </View>
+              <View style={{ flex: 1, gap: 6 }}>
+                <AppText style={styles.contentTitle} numberOfLines={1}>{campaign.title}</AppText>
+                {raisedPct !== null ? (
+                  <View style={{ gap: 3 }}>
+                    <View style={styles.campaignTrack}>
+                      <View style={[styles.campaignFill, { width: `${raisedPct}%` as any }]} />
+                    </View>
+                    <AppText variant="caption" style={styles.contentSub}>
+                      {formatCurrencyGBP(campaign.raised_cents) ?? '£0'} raised
+                      {campaign.goal_cents ? ` · ${raisedPct}% of ${formatCurrencyGBP(campaign.goal_cents)}` : ''}
+                    </AppText>
                   </View>
-                  <AppText variant="caption" style={styles.contentSub}>
-                    {formatCurrencyGBP(campaign.raised_cents) ?? '£0'} raised
-                    {campaign.goal_cents ? ` · ${raisedPct}% of ${formatCurrencyGBP(campaign.goal_cents)}` : ''}
-                  </AppText>
-                </View>
-              ) : (
-                <AppText variant="caption" style={styles.contentSub}>Active campaign</AppText>
-              )}
-            </View>
-            <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
-          </Pressable>
-        ) : null}
+                ) : (
+                  <AppText variant="caption" style={styles.contentSub}>Active campaign</AppText>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
+            </Pressable>
+          );
+        })}
 
         {notice ? (
           <Pressable
@@ -536,6 +559,14 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
           </Pressable>
         ) : null}
       </View>
+
+      <Pressable
+        onPress={navigateToMosque}
+        style={({ pressed }) => [styles.contentFooter, pressed && styles.contentRowPressed]}
+      >
+        <AppText style={styles.contentFooterText}>View all</AppText>
+        <Ionicons name="chevron-forward" size={14} color="#0369A1" />
+      </Pressable>
     </AppCard>
   );
 });
@@ -739,6 +770,122 @@ const NearbyLiveCard = React.memo(function NearbyLiveCard({ entries, onListen }:
   );
 });
 
+type MyMosquesStripProps = {
+  mosques: Mosque[];
+  primaryMosqueId: string | null;
+  liveMosqueIds: Set<string>;
+  router: ReturnType<typeof useRouter>;
+};
+
+const MyMosquesStrip = React.memo(function MyMosquesStrip({
+  mosques, primaryMosqueId, liveMosqueIds, router,
+}: MyMosquesStripProps) {
+  const orderedMosques = useMemo(() => {
+    return [...mosques].sort((a, b) => {
+      if (a.id === primaryMosqueId) return -1;
+      if (b.id === primaryMosqueId) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [mosques, primaryMosqueId]);
+
+  if (!orderedMosques.length) return null;
+
+  return (
+    <AppCard style={styles.cardContainer}>
+      <View style={styles.sectionHeader}>
+        <AppText variant="sectionTitle">My Mosques</AppText>
+        <Pressable onPress={() => router.push('/(user)/manage-mosques')} hitSlop={6}>
+          <AppText variant="body" color={tokens.color.text.accent} style={styles.manageLink}>
+            Manage
+          </AppText>
+        </Pressable>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.mosqueStripContent}
+      >
+        {orderedMosques.map((mosque) => {
+          const isPrimary = mosque.id === primaryMosqueId;
+          const isLive = liveMosqueIds.has(mosque.id);
+          return (
+            <Pressable
+              key={mosque.id}
+              onPress={() =>
+                router.push({
+                  pathname: '/(user)/mosque/[id]',
+                  params: {
+                    id: mosque.id,
+                    name: mosque.name,
+                    city: mosque.city ?? '',
+                    country: mosque.country ?? '',
+                  },
+                } as any)
+              }
+              style={({ pressed }) => [styles.mosqueStripChip, pressed && { opacity: 0.82 }]}
+            >
+              <View style={[styles.stripAvatar, isPrimary && styles.stripAvatarPrimary, isLive && styles.stripAvatarLive]}>
+                <AppText style={[styles.stripAvatarText, isLive && styles.stripAvatarTextLive]}>
+                  {initials(mosque.name)}
+                </AppText>
+                {isLive ? <View style={styles.stripLiveDot} /> : null}
+              </View>
+              <AppText style={styles.stripName} numberOfLines={1}>{mosque.name}</AppText>
+              {isLive ? (
+                <View style={styles.stripLivePill}>
+                  <AppText style={styles.stripLivePillText}>LIVE</AppText>
+                </View>
+              ) : isPrimary ? (
+                <AppText style={styles.stripMetaText} numberOfLines={1}>Selected</AppText>
+              ) : mosque.city ? (
+                <AppText style={styles.stripMetaText} numberOfLines={1}>{mosque.city}</AppText>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </AppCard>
+  );
+});
+
+// ─── CrossMosqueAlertBanner ──────────────────────────────────────────────────
+type CrossMosqueAlertBannerProps = {
+  alerts: CrossMosqueAlert[];
+  router: ReturnType<typeof useRouter>;
+};
+
+const CrossMosqueAlertBanner = React.memo(function CrossMosqueAlertBanner({
+  alerts, router,
+}: CrossMosqueAlertBannerProps) {
+  if (!alerts.length) return null;
+  return (
+    <View style={styles.crossAlertWrap}>
+      {alerts.map(({ announcement, mosque }) => (
+        <Pressable
+          key={announcement.id}
+          onPress={() =>
+            router.push({
+              pathname: '/(user)/mosque/[id]',
+              params: { id: mosque.id, focus: 'urgent' },
+            } as any)
+          }
+          style={({ pressed }) => [styles.crossAlertRow, pressed && styles.crossAlertRowPressed]}
+        >
+          <View style={styles.crossAlertLeftBar} />
+          <View style={styles.crossAlertIcon}>
+            <Ionicons name="alert-circle" size={14} color="#B91C1C" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.crossAlertMosque} numberOfLines={1}>{mosque.name}</Text>
+            <Text style={styles.crossAlertTitle} numberOfLines={1}>{announcement.title}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={14} color="#B91C1C" />
+        </Pressable>
+      ))}
+    </View>
+  );
+});
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -771,6 +918,7 @@ export default function HomeScreen() {
   const [showMosquePicker, setShowMosquePicker] = useState(false);
   const [contentRefreshKey, setContentRefreshKey] = useState(0);
   const [todayQuote, setTodayQuote] = useState<DailyQuote | null>(null);
+  const [crossMosqueAlerts, setCrossMosqueAlerts] = useState<CrossMosqueAlert[]>([]);
 
   const prayerRequestIdRef = useRef(0);
   const prayerLoadedMosqueRef = useRef<string | null>(null);
@@ -1107,6 +1255,44 @@ export default function HomeScreen() {
     return () => { cancelled = true; };
   }, [primaryMosque?.id, contentRefreshKey]);
 
+  // Load urgent announcements from ALL followed mosques (cross-mosque urgent alerts).
+  // Excludes the primary mosque — its urgents are shown inside the "What's On" card.
+  useEffect(() => {
+    const secondarySubIds = subs
+      .map((s) => s.mosque_id)
+      .filter((mosqueId) => mosqueId && mosqueId !== primaryMosque?.id);
+    if (!secondarySubIds.length) { setCrossMosqueAlerts([]); return; }
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('announcements')
+        .select('id,mosque_id,title,summary,created_at,is_urgent,is_pinned')
+        .in('mosque_id', secondarySubIds)
+        .eq('is_urgent', true)
+        .eq('status', 'published')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (cancelled) return;
+      if (error || !data) {
+        setCrossMosqueAlerts([]);
+        return;
+      }
+      const mosqueById = new Map(mosques.map((m) => [m.id, m]));
+      const alerts: CrossMosqueAlert[] = (data as RawAnnouncement[])
+        .reduce<CrossMosqueAlert[]>((acc, ann) => {
+          const mosque = mosqueById.get(ann.mosque_id);
+          if (mosque) acc.push({ announcement: ann, mosque });
+          return acc;
+        }, [])
+        .slice(0, 3);
+      setCrossMosqueAlerts(alerts);
+    })();
+
+    return () => { cancelled = true; };
+  }, [subs, mosques, primaryMosque?.id, contentRefreshKey]);
+
   // Silently activate location if permission was already granted in a prior session
   useEffect(() => {
     (async () => {
@@ -1153,6 +1339,7 @@ export default function HomeScreen() {
     });
     return next;
   }, [clockMs, liveStreams]);
+  const liveMosqueIds = useMemo(() => new Set(Object.keys(freshLiveStreams)), [freshLiveStreams]);
 
   const nearbyLiveEntries = useMemo((): NearbyLiveEntry[] => {
     if (!userLocation) return [];
@@ -1376,6 +1563,9 @@ export default function HomeScreen() {
         loading={prayerLoading}
       />
 
+      {/* ── Cross-mosque urgent alerts (from all followed mosques except primary) ── */}
+      <CrossMosqueAlertBanner alerts={crossMosqueAlerts} router={router} />
+
       {/* ── Daily spiritual reflection ── */}
       {todayQuote ? <QuoteOfTheDayCard quote={todayQuote} /> : null}
 
@@ -1395,6 +1585,12 @@ export default function HomeScreen() {
         />
       ) : null}
 
+      <MyMosquesStrip
+        mosques={followedMosques}
+        primaryMosqueId={primaryMosque?.id ?? null}
+        liveMosqueIds={liveMosqueIds}
+        router={router}
+      />
 
       {/* ── Nearby live broadcasts ── */}
       <NearbyLiveCard
@@ -1622,12 +1818,35 @@ const styles = StyleSheet.create({
   },
   contentIconUrgent: { backgroundColor: '#FEE2E2' },
   contentIconJumuah: { backgroundColor: '#DBEAFE' },
-  contentIconEvent: { backgroundColor: '#DCFCE7' },
   contentIconCampaign: { backgroundColor: '#FCE7F3' },
   contentIconPinned: { backgroundColor: '#FEF3C7' },
   contentIconAnnouncement: { backgroundColor: '#E0F2FE' },
   contentTitle: { color: '#0F172A', fontSize: 14, fontWeight: '800' },
   contentSub: { color: '#64748B', fontSize: 12, marginTop: 1 },
+  contentFooter: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 10,
+    paddingVertical: 4,
+    paddingLeft: 8,
+  },
+  contentFooterText: { color: '#0369A1', fontSize: 13, fontWeight: '800' },
+
+  // ── Event date chips in What's On ──
+  eventDateChip: {
+    width: 42,
+    minHeight: 40,
+    borderRadius: 12,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eventDateMonth: { color: '#047857', fontSize: 9, fontWeight: '900' },
+  eventDateDay: { color: '#065F46', fontSize: 16, fontWeight: '900', marginTop: -1 },
 
   // ── Jumu'ah slots in What's On ──
   jumuahSlotRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -1644,12 +1863,13 @@ const styles = StyleSheet.create({
   campaignFill: { height: '100%', borderRadius: 999, backgroundColor: '#10B981' },
 
   // ── Horizontal mosque strip ──
-  mosqueStripContent: { paddingHorizontal: 2, paddingBottom: 4, gap: 12 },
+  mosqueStripContent: { paddingTop: 12, paddingHorizontal: 2, paddingBottom: 4, gap: 12 },
   mosqueStripChip: { alignItems: 'center', width: 76, gap: 5 },
   stripAvatar: {
     width: 52, height: 52, borderRadius: 26,
     backgroundColor: '#E0F2FE', alignItems: 'center', justifyContent: 'center',
   },
+  stripAvatarPrimary: { borderWidth: 2, borderColor: '#38BDF8' },
   stripAvatarLive: { backgroundColor: '#FEE2E2', borderWidth: 2, borderColor: '#F53B57' },
   stripAvatarText: { fontWeight: '800', color: '#0369A1', fontSize: 14 },
   stripAvatarTextLive: { color: '#B91C1C' },
@@ -1659,6 +1879,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F53B57', borderWidth: 2, borderColor: '#FFFFFF',
   },
   stripName: { fontWeight: '700', fontSize: 12, color: '#0F172A', textAlign: 'center' },
+  stripMetaText: { color: '#64748B', fontWeight: '700', fontSize: 10, textAlign: 'center' },
   stripLivePill: {
     backgroundColor: '#F53B57', borderRadius: 999,
     paddingHorizontal: 7, paddingVertical: 2,
@@ -1826,6 +2047,53 @@ const styles = StyleSheet.create({
     width: '100%', height: 48, marginTop: 12,
   },
   discoverySubtitle: { color: '#64748B', fontSize: 13, marginTop: 6 },
+
+  // ── Cross-mosque urgent alerts ──
+  crossAlertWrap: { gap: 8 },
+  crossAlertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 0,
+    paddingRight: 14,
+    paddingVertical: 11,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+    overflow: 'hidden',
+  },
+  crossAlertRowPressed: { opacity: 0.85 },
+  crossAlertLeftBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: '#DC2626',
+  },
+  crossAlertIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
+  crossAlertMosque: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B91C1C',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  crossAlertTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#991B1B',
+    marginTop: 2,
+  },
 
   // ── Muezzin hero (UNTOUCHED) ──
   heroCard: { backgroundColor: '#0F172A', borderRadius: 16, padding: 16, marginTop: 12 },
