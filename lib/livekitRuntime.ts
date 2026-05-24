@@ -49,6 +49,8 @@ type Runtime = {
 const globalAny = globalThis as any;
 let globalsRegistered = false;
 let globalsRegisteredVia: 'react-native' | 'webrtc-fallback' | null = null;
+const WEBRTC_NATIVE_MODULE_MISSING_MESSAGE =
+  'Live broadcasting requires a development build. Expo Go does not include the WebRTC native module.';
 
 function safeKeys(value: unknown, limit = 40): string[] {
   if (!value || (typeof value !== 'object' && typeof value !== 'function')) return [];
@@ -141,6 +143,15 @@ function addStep(diagnostics: LiveKitRuntimeDiagnostics, step: string) {
   diagnostics.steps = [...diagnostics.steps, step];
   diagnostics.updatedAt = new Date().toISOString();
   diagnostics.globals = collectGlobalDiagnostics();
+}
+
+function throwMissingWebRTCNativeModule(diagnostics: LiveKitRuntimeDiagnostics): never {
+  diagnostics.error = WEBRTC_NATIVE_MODULE_MISSING_MESSAGE;
+  diagnostics.stack = null;
+  diagnostics.webRTCModulePresent = false;
+  diagnostics.webRTCModuleKeys = [];
+  addStep(diagnostics, 'webrtc-native-module-missing');
+  throw new Error(WEBRTC_NATIVE_MODULE_MISSING_MESSAGE);
 }
 
 function installBasePolyfills(diagnostics: LiveKitRuntimeDiagnostics) {
@@ -244,7 +255,7 @@ function installBasePolyfills(diagnostics: LiveKitRuntimeDiagnostics) {
 }
 
 function installDomEventFallbacks(diagnostics: LiveKitRuntimeDiagnostics) {
-  if (typeof globalAny.Event !== 'function') {
+  if (typeof globalAny.Event !== 'function' && NativeModules.WebRTCModule) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const webRTC = require('@livekit/react-native-webrtc');
@@ -366,6 +377,10 @@ export function loadLiveKitRuntime(): Runtime {
   diagnostics.usedWebRTCFallbackRegisterGlobals = globalsRegisteredVia === 'webrtc-fallback';
   installBasePolyfills(diagnostics);
 
+  if (!NativeModules.WebRTCModule) {
+    throwMissingWebRTCNativeModule(diagnostics);
+  }
+
   let reactNativeSdk: any = null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -389,7 +404,7 @@ export function loadLiveKitRuntime(): Runtime {
   if (!globalsRegistered) {
     // Fallback avoids the React component package path and registers only WebRTC globals.
     if (!NativeModules.WebRTCModule) {
-      throw new Error('WebRTC native module not found.');
+      throwMissingWebRTCNativeModule(diagnostics);
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const webRTC = require('@livekit/react-native-webrtc');
@@ -408,7 +423,7 @@ export function loadLiveKitRuntime(): Runtime {
   diagnostics.usedWebRTCFallbackRegisterGlobals = globalsRegisteredVia === 'webrtc-fallback';
 
   if (!NativeModules.WebRTCModule) {
-    throw new Error('WebRTC native module not found.');
+    throwMissingWebRTCNativeModule(diagnostics);
   }
 
   installBasePolyfills(diagnostics);

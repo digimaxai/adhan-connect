@@ -89,7 +89,7 @@ function nativeLoopbackBaseFor(value: string | null | undefined) {
 
   try {
     const parsed = new URL(normalized);
-    if (!['10.0.2.2', 'localhost', '0.0.0.0'].includes(parsed.hostname)) {
+    if (!['10.0.2.2', 'localhost', '0.0.0.0', '127.0.0.1', '::1'].includes(parsed.hostname)) {
       return null;
     }
 
@@ -97,6 +97,18 @@ function nativeLoopbackBaseFor(value: string | null | undefined) {
     return `${parsed.protocol}//127.0.0.1${parsed.port ? `:${parsed.port}` : ''}${pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return null;
+  }
+}
+
+function isNativeLoopbackOnlyBase(value: string | null | undefined) {
+  const normalized = normalizeHttpLikeUrl(value);
+  if (!normalized) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    return ['10.0.2.2', 'localhost', '0.0.0.0', '127.0.0.1', '::1'].includes(parsed.hostname);
+  } catch {
+    return false;
   }
 }
 
@@ -213,9 +225,14 @@ export function resolveApiUrls(path: string): string[] {
   }
 
   const envBase = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  const preferUsbReverseLoopback = Platform.OS !== 'web' && shouldPreferUsbReverseLoopback();
+  const envBaseIsLoopbackOnly = isNativeLoopbackOnlyBase(envBase);
+
+  if (envBase && preferUsbReverseLoopback && !envBaseIsLoopbackOnly) {
+    candidates.add(`${envBase.replace(/\/+$/, '')}${normalized}`);
+  }
 
   if (Platform.OS !== 'web') {
-    const preferUsbReverseLoopback = shouldPreferUsbReverseLoopback();
     for (const nativeDevBase of resolveNativeDevBaseUrls()) {
       if (preferUsbReverseLoopback) {
         const loopbackBase = nativeLoopbackBaseFor(nativeDevBase);
@@ -223,7 +240,9 @@ export function resolveApiUrls(path: string): string[] {
           addNativeCandidatesFromBase(candidates, loopbackBase, normalized);
         }
       }
-      addNativeCandidatesFromBase(candidates, nativeDevBase, normalized);
+      if (!(preferUsbReverseLoopback && isNativeLoopbackOnlyBase(nativeDevBase))) {
+        addNativeCandidatesFromBase(candidates, nativeDevBase, normalized);
+      }
     }
 
     if (preferUsbReverseLoopback) {
@@ -234,7 +253,7 @@ export function resolveApiUrls(path: string): string[] {
     }
   }
 
-  if (envBase) {
+  if (envBase && !(preferUsbReverseLoopback && envBaseIsLoopbackOnly)) {
     candidates.add(`${envBase.replace(/\/+$/, '')}${normalized}`);
   }
 
