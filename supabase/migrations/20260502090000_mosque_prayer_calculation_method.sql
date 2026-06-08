@@ -7,3 +7,5 @@ alter table public.mosques
 
 comment on column public.mosques.prayer_calculation_method is
   'Aladhan calculation method ID used as fallback when no manual prayer times are stored. Default 3 = Muslim World League. See https://aladhan.com/calculation-methods';
+
+grant select (prayer_calculation_method) on public.mosques to anon, authenticated;

@@ -1,4 +1,4 @@
--- Content management support for the local-admin Content Hub.
+-- Content management support for the local-admin content hub.
 -- Adds lifecycle/visibility columns, creates announcements when missing,
 -- and grants local-admin write access for client-side admin forms.
 

@@ -89,6 +89,19 @@ function greet() {
   return 'Good evening';
 }
 
+const DASHBOARD_REFRESH_MS = 30000;
+
+function formatRefreshTimestamp(timestamp: number | null) {
+  if (!timestamp) return 'Loading dashboard data...';
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 5) return 'Updated just now';
+  if (seconds < 60) return `Updated ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `Updated ${hours}h ago`;
+}
+
 // ─── Page wrapper ─────────────────────────────────────────────────────────────
 
 export default function AdminHomePage() {
@@ -114,58 +127,70 @@ function AdminLanding() {
   const [muezzinCount,    setMuezzinCount]    = useState(0);
   const [localAdminCount, setLocalAdminCount] = useState(0);
   const [liveStreams,     setLiveStreams]     = useState(0);
-  const [liveStatus,     setLiveStatus]      = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [refreshing,      setRefreshing]      = useState(false);
+  const [refreshError,    setRefreshError]    = useState<string | null>(null);
+  const [lastUpdatedAt,   setLastUpdatedAt]   = useState<number | null>(null);
   const [loading,        setLoading]         = useState(true);
 
   // ── Data fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const [mosquesRes, usersRes, muezzinsRes, adminsRes, streamsRes] = await Promise.all([
-        fetchAllMosqueRows<MosqueRow>(supabase, 'id, name, city, country, status, created_at', {
-          orderBy: 'created_at',
-          ascending: false,
-        }),
-        supabase.from('users').select('id', { count: 'exact', head: true }),
-        supabase.from('muezzins').select('id', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('mosque_admins').select('id', { count: 'exact', head: true }),
-        supabase.from('streams').select('id', { count: 'exact', head: true }).eq('is_live', true),
-      ]);
+    let inFlight = false;
 
-      if (cancelled) return;
-      if (!mosquesRes.error)  setMosques(mosquesRes.data ?? []);
-      if (!usersRes.error)    setUserCount(usersRes.count ?? 0);
-      if (!muezzinsRes.error) setMuezzinCount(muezzinsRes.count ?? 0);
-      if (!adminsRes.error)   setLocalAdminCount(adminsRes.count ?? 0);
-      if (!streamsRes.error)  setLiveStreams(streamsRes.count ?? 0);
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    const refreshDashboard = async (initial = false) => {
+      if (inFlight) return;
+      inFlight = true;
+      if (initial) setLoading(true);
+      else setRefreshing(true);
 
-  // ── Realtime subscription ────────────────────────────────────────────────
-  useEffect(() => {
-    const channel = supabase
-      .channel('admin-dashboard-mosques')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mosques' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const m = payload.new as MosqueRow;
-          setMosques((prev) => [m, ...prev]);
-        } else if (payload.eventType === 'UPDATE') {
-          const m = payload.new as MosqueRow;
-          setMosques((prev) => prev.map((r) => (r.id === m.id ? { ...r, ...m } : r)));
-        } else if (payload.eventType === 'DELETE') {
-          const deleted = payload.old as { id: string };
-          setMosques((prev) => prev.filter((r) => r.id !== deleted.id));
+      try {
+        const [mosquesRes, usersRes, muezzinsRes, adminsRes, streamsRes] = await Promise.all([
+          fetchAllMosqueRows<MosqueRow>(supabase, 'id, name, city, country, status, created_at', {
+            orderBy: 'created_at',
+            ascending: false,
+          }),
+          supabase.from('users').select('id', { count: 'exact', head: true }),
+          supabase.from('muezzins').select('id', { count: 'exact', head: true }).eq('is_active', true),
+          supabase.from('mosque_admins').select('id', { count: 'exact', head: true }),
+          supabase.from('streams').select('id', { count: 'exact', head: true }).eq('is_live', true),
+        ]);
+
+        if (cancelled) return;
+        if (!mosquesRes.error)  setMosques(mosquesRes.data ?? []);
+        if (!usersRes.error)    setUserCount(usersRes.count ?? 0);
+        if (!muezzinsRes.error) setMuezzinCount(muezzinsRes.count ?? 0);
+        if (!adminsRes.error)   setLocalAdminCount(adminsRes.count ?? 0);
+        if (!streamsRes.error)  setLiveStreams(streamsRes.count ?? 0);
+
+        const errorCount = [mosquesRes, usersRes, muezzinsRes, adminsRes, streamsRes].filter((res) => res.error).length;
+        setRefreshError(
+          errorCount === 0
+            ? null
+            : errorCount === 5
+              ? 'Dashboard refresh failed. Showing the latest loaded data.'
+              : 'Some dashboard metrics could not refresh. Showing the latest loaded data.'
+        );
+        setLastUpdatedAt(Date.now());
+      } catch {
+        if (!cancelled) {
+          setRefreshError('Dashboard refresh failed. Showing the latest loaded data.');
         }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') setLiveStatus('connected');
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setLiveStatus('error');
-      });
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
 
-    return () => { supabase.removeChannel(channel); };
+    void refreshDashboard(true);
+    const refreshId = window.setInterval(() => void refreshDashboard(false), DASHBOARD_REFRESH_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshId);
+    };
   }, []);
 
   // ── Derived data ─────────────────────────────────────────────────────────
@@ -227,6 +252,7 @@ function AdminLanding() {
   ];
 
   const twoCol = isComfortable || isCompact || isPhone;
+  const refreshState = loading || refreshing ? 'refreshing' : refreshError ? 'warning' : 'fresh';
 
   return (
     <AdminShell
@@ -261,21 +287,17 @@ function AdminLanding() {
         </div>
       ) : null}
 
-      {/* ── Live status indicator ─────────────────────────────────────────── */}
+      {/* ── Refresh status indicator ──────────────────────────────────────── */}
       <div style={styles.liveRow}>
-        <div style={liveBadgeStyle(liveStatus)}>
+        <div style={refreshBadgeStyle(refreshState)}>
           <span
-            className={liveStatus === 'connecting' ? 'adm-live-pulse' : ''}
-            style={liveDotStyle(liveStatus)}
+            className={refreshState === 'refreshing' ? 'adm-live-pulse' : ''}
+            style={refreshDotStyle(refreshState)}
           />
-          {liveStatus === 'connected' ? 'Live' : liveStatus === 'error' ? 'Offline' : 'Connecting…'}
+          {loading ? 'Loading' : refreshing ? 'Refreshing' : refreshError ? 'Refresh issue' : 'Auto-refresh'}
         </div>
         <span style={styles.liveNote}>
-          {liveStatus === 'connected'
-            ? 'Dashboard data is live-updating via Supabase Realtime.'
-            : liveStatus === 'error'
-            ? 'Realtime connection lost — data may be stale.'
-            : 'Establishing realtime connection…'}
+          {refreshError ?? formatRefreshTimestamp(lastUpdatedAt)}
         </span>
       </div>
 
@@ -453,12 +475,14 @@ const quickActions = [
   },
 ];
 
-// ─── Live status styles ───────────────────────────────────────────────────────
+// ─── Refresh status styles ────────────────────────────────────────────────────
 
-function liveBadgeStyle(status: 'connecting' | 'connected' | 'error'): React.CSSProperties {
-  const color  = status === 'connected' ? '#15803d' : status === 'error' ? '#dc2626' : '#64748b';
-  const bg     = status === 'connected' ? '#f0fdf4' : status === 'error' ? '#fef2f2' : '#f8fafc';
-  const border = status === 'connected' ? '#bbf7d0' : status === 'error' ? '#fecaca' : '#e2e8f0';
+type RefreshState = 'fresh' | 'refreshing' | 'warning';
+
+function refreshBadgeStyle(status: RefreshState): React.CSSProperties {
+  const color  = status === 'fresh' ? '#15803d' : status === 'warning' ? '#b45309' : '#0369a1';
+  const bg     = status === 'fresh' ? '#f0fdf4' : status === 'warning' ? '#fffbeb' : '#eff6ff';
+  const border = status === 'fresh' ? '#bbf7d0' : status === 'warning' ? '#fde68a' : '#bfdbfe';
   return {
     display: 'inline-flex',
     alignItems: 'center',
@@ -475,8 +499,8 @@ function liveBadgeStyle(status: 'connecting' | 'connected' | 'error'): React.CSS
   };
 }
 
-function liveDotStyle(status: 'connecting' | 'connected' | 'error'): React.CSSProperties {
-  const bg = status === 'connected' ? '#16a34a' : status === 'error' ? '#dc2626' : '#94a3b8';
+function refreshDotStyle(status: RefreshState): React.CSSProperties {
+  const bg = status === 'fresh' ? '#16a34a' : status === 'warning' ? '#f59e0b' : '#0ea5e9';
   return {
     width: 7,
     height: 7,

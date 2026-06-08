@@ -1,4 +1,4 @@
--- Daily spiritual quote set by local/main admins per mosque.
+-- Daily spiritual quotes set by local/main admins per mosque.
 -- Displayed on the listener home screen as "Today's Reflection".
 
 CREATE TABLE IF NOT EXISTS public.mosque_daily_quotes (

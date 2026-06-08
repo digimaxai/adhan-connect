@@ -668,6 +668,15 @@ async function buildSlotsForDate(
         ? entry.muezzin_user_id ?? entry.staff_user_id ?? null
         : override?.volunteerUserId ?? defaultMuezzinUserId
     ) as string | null;
+    const assignmentSource = override
+      ? 'cover'
+      : entry
+      ? entry.role_on_duty === 'default'
+        ? 'default'
+        : 'manual'
+      : assignedMuezzinUserId
+      ? 'default'
+      : null;
     const slotTimes = (prayerTimes as any)?.[lowerKey] ?? null;
     const adhanTime = slotTimes?.adhan ?? toDate(entry?.adhan_time);
     const iqamaTime = slotTimes?.iqama ?? toDate(entry?.iqama_time);
@@ -694,6 +703,7 @@ async function buildSlotsForDate(
       status: getSlotStatus(now, { adhanTime, liveWindowStart, liveWindowEnd }),
       assignedMuezzinUserId,
       assignedMuezzinName: assignedMuezzinUserId ? nameMap[assignedMuezzinUserId] ?? null : null,
+      assignmentSource,
       isAssignedToMe: assignedMuezzinUserId === userId,
       notes: entry?.notes ?? null,
     };

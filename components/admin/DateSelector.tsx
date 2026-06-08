@@ -68,7 +68,7 @@ export function DateSelector({ date, onChange }: Props) {
     <View style={styles.container}>
       <View style={styles.dateWrap}>
         <AppText variant="caption" style={styles.dateLabel}>
-          Current date
+          Selected date
         </AppText>
         <AppText variant="body" style={styles.dateText}>
           {formatted}

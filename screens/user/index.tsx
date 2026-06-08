@@ -72,6 +72,7 @@ type DailyQuote = {
 type CrossMosqueAlert = { announcement: RawAnnouncement; mosque: Mosque };
 
 const LIVE_REFRESH_MS = 15000;
+const HOME_REFRESH_TIMEOUT_MS = 7000;
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -101,6 +102,20 @@ function mergeMosqueRows(baseRows: Mosque[], extraRows: Mosque[]) {
     byId.set(mosque.id, existing ? { ...existing, ...mosque } : mosque);
   });
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 function formatLocalDate(date: Date) {
@@ -924,6 +939,7 @@ export default function HomeScreen() {
   const prayerLoadedMosqueRef = useRef<string | null>(null);
   const lastMosqueIdsRef = useRef('');
   const lastSubIdsRef = useRef('');
+  const refreshIdRef = useRef(0);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -1115,20 +1131,52 @@ export default function HomeScreen() {
   );
 
   const onRefresh = React.useCallback(async () => {
+    const refreshId = ++refreshIdRef.current;
+    const visibleMosqueId = primaryMosque?.id ?? staffPrimaryMosqueId ?? defaultMosqueId ?? subs[0]?.mosque_id ?? null;
     setRefreshing(true);
     try {
-      const storedDefaultId = await loadDefault();
-      const { subs: latestSubs } = await loadHomeData();
-      const latestSubIds = new Set(latestSubs.map((s) => s.mosque_id));
-      const validDefaultId = storedDefaultId && latestSubIds.has(storedDefaultId) ? storedDefaultId : null;
-      const preferredId =
-        staffPrimaryMosqueId ?? validDefaultId ?? latestSubs[0]?.mosque_id ?? null;
-      await Promise.all([loadPrayerTimes(preferredId), loadMuezzin()]);
-      setContentRefreshKey((key) => key + 1);
+      await withTimeout(
+        (async () => {
+          const visiblePrayerRefresh = visibleMosqueId
+            ? loadPrayerTimes(visibleMosqueId)
+            : Promise.resolve();
+
+          const [defaultResult, homeResult] = await Promise.allSettled([
+            loadDefault(),
+            loadHomeData(),
+            visiblePrayerRefresh,
+          ]);
+
+          const storedDefaultId = defaultResult.status === 'fulfilled' ? defaultResult.value : null;
+          const latestSubs = homeResult.status === 'fulfilled' ? homeResult.value.subs : subs;
+          const latestSubIds = new Set(latestSubs.map((s) => s.mosque_id));
+          const validDefaultId = storedDefaultId && latestSubIds.has(storedDefaultId) ? storedDefaultId : null;
+          const preferredId = staffPrimaryMosqueId ?? validDefaultId ?? latestSubs[0]?.mosque_id ?? visibleMosqueId;
+
+          await Promise.allSettled([
+            preferredId && preferredId !== visibleMosqueId ? loadPrayerTimes(preferredId) : Promise.resolve(),
+            loadMuezzin(),
+          ]);
+          setContentRefreshKey((key) => key + 1);
+        })(),
+        HOME_REFRESH_TIMEOUT_MS,
+        'Home refresh'
+      );
+    } catch (error: any) {
+      console.warn('[listener.home] refresh ended early', error?.message ?? error);
     } finally {
-      setRefreshing(false);
+      if (refreshId === refreshIdRef.current) setRefreshing(false);
     }
-  }, [loadDefault, loadHomeData, loadMuezzin, loadPrayerTimes, staffPrimaryMosqueId]);
+  }, [
+    defaultMosqueId,
+    loadDefault,
+    loadHomeData,
+    loadMuezzin,
+    loadPrayerTimes,
+    primaryMosque?.id,
+    staffPrimaryMosqueId,
+    subs,
+  ]);
 
   // ── Effects ────────────────────────────────────────────────────────────────
 

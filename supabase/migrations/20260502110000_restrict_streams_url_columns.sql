@@ -1,4 +1,4 @@
--- Restrict raw stream playback URLs from public/authenticated reads.
+-- Restrict raw stream playback URL columns from public/authenticated reads.
 -- The "streams listener select live" policy allowed any user to read all
 -- columns on live streams, including url/stream_url. Listeners must obtain
 -- a signed playback URL via /api/live-stream-access instead of reading the

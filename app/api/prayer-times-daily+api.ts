@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { DEFAULT_ALADHAN_METHOD, fetchAladhanTimes } from '../../lib/api/aladhan';
+import { fetchELMTimes } from '../../lib/api/londonPrayerTimes';
 
 type PrayerTimesRow = {
   date?: string | null;
@@ -23,6 +24,7 @@ type MosqueRow = {
   lng?: number | null;
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
+  prayer_source?: string | null;
 };
 
 const PRAYER_ADHAN_FIELDS = {
@@ -34,6 +36,19 @@ const PRAYER_ADHAN_FIELDS = {
 } as const;
 
 type PrayerKey = keyof typeof PRAYER_ADHAN_FIELDS;
+
+const PRAYER_IQAMA_FIELDS = {
+  fajr: 'fajr_iqama_time',
+  dhuhr: 'dhuhr_iqama_time',
+  asr: 'asr_iqama_time',
+  maghrib: 'maghrib_iqama_time',
+  isha: 'isha_iqama_time',
+} as const;
+
+type SourceTimingMaps = {
+  adhan: Partial<Record<PrayerKey, string | null>>;
+  iqama: Partial<Record<PrayerKey, string | null>>;
+};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -50,6 +65,71 @@ function buildIso(dateIso: string, timeValue?: string | null) {
   const normalized = /^\d{1,2}:\d{2}$/.test(timeValue) ? `${timeValue}:00` : timeValue;
   const parsed = new Date(`${dateIso}T${normalized}`);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+async function fetchAladhanTimingMap(
+  mosque: MosqueRow | null,
+  dateIso: string,
+  school: number
+): Promise<Partial<Record<PrayerKey, string>> | null> {
+  if (mosque?.lat == null || mosque.lng == null) return null;
+
+  const method = mosque.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
+  const timings = await fetchAladhanTimes(mosque.lat, mosque.lng, dateIso, method, school);
+  if (!timings) return null;
+
+  return {
+    fajr: timings.Fajr,
+    dhuhr: timings.Dhuhr,
+    asr: timings.Asr,
+    maghrib: timings.Maghrib,
+    isha: timings.Isha,
+  };
+}
+
+async function fetchSourceTimingMaps(mosque: MosqueRow | null, dateIso: string): Promise<SourceTimingMaps | null> {
+  const source = mosque?.prayer_source ?? 'aladhan';
+  const school = mosque?.prayer_school ?? 0;
+
+  if (source !== 'elm') {
+    const adhan = await fetchAladhanTimingMap(mosque, dateIso, school);
+    return adhan ? { adhan, iqama: {} } : null;
+  }
+
+  const elmTimings = await fetchELMTimes(dateIso);
+  const aladhanFallback = async () => fetchAladhanTimingMap(mosque, dateIso, school);
+
+  if (!elmTimings) {
+    const adhan = await aladhanFallback();
+    return adhan ? { adhan, iqama: {} } : null;
+  }
+
+  const adhan: SourceTimingMaps['adhan'] = {
+    fajr: elmTimings.fajr,
+    dhuhr: elmTimings.dhuhr,
+    asr: school === 1 ? elmTimings.asr_2 : elmTimings.asr,
+    maghrib: elmTimings.magrib,
+    isha: elmTimings.isha,
+  };
+
+  const missingAdhan = (Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[]).filter((prayer) => !adhan[prayer]);
+  if (missingAdhan.length) {
+    const fallback = await aladhanFallback();
+    missingAdhan.forEach((prayer) => {
+      adhan[prayer] = fallback?.[prayer] ?? adhan[prayer] ?? null;
+    });
+  }
+
+  return {
+    adhan,
+    iqama: {
+      fajr: elmTimings.fajr_jamat,
+      dhuhr: elmTimings.dhuhr_jamat,
+      asr: elmTimings.asr_jamat,
+      maghrib: elmTimings.magrib_jamat,
+      isha: elmTimings.isha_jamat,
+    },
+  };
 }
 
 export const GET: RequestHandler = async (request) => {
@@ -88,7 +168,7 @@ export const GET: RequestHandler = async (request) => {
 
   const mosqueFull = await supabaseAdmin
     .from('mosques')
-    .select('id, status, lat, lng, prayer_calculation_method, prayer_school')
+    .select('id, status, lat, lng, prayer_calculation_method, prayer_school, prayer_source')
     .eq('id', mosqueId)
     .maybeSingle<MosqueRow>();
   if (mosqueFull.error?.code === '42703') {
@@ -129,26 +209,16 @@ export const GET: RequestHandler = async (request) => {
       (prayer) => !primaryRow[PRAYER_ADHAN_FIELDS[prayer]]
     );
 
-    if (nullPrayers.length > 0 && nullPrayers.length < Object.keys(PRAYER_ADHAN_FIELDS).length) {
-      const lat = mosque.lat;
-      const lng = mosque.lng;
-      if (lat != null && lng != null) {
-        const method = mosque.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
-        const school = mosque.prayer_school ?? 0;
-        const timings = await fetchAladhanTimes(lat, lng, dateIso, method, school);
-        if (timings) {
-          const aladhanMap: Record<PrayerKey, string> = {
-            fajr: timings.Fajr,
-            dhuhr: timings.Dhuhr,
-            asr: timings.Asr,
-            maghrib: timings.Maghrib,
-            isha: timings.Isha,
-          };
-          nullPrayers.forEach((prayer) => {
+    if (nullPrayers.length > 0) {
+      const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso);
+      if (sourceTimings) {
+        nullPrayers.forEach((prayer) => {
+          const fallbackTime = sourceTimings.adhan[prayer] ?? null;
+          if (fallbackTime) {
             const field = PRAYER_ADHAN_FIELDS[prayer];
-            primaryRow[field] = buildIso(dateIso, aladhanMap[prayer]);
-          });
-        }
+            primaryRow[field] = buildIso(dateIso, fallbackTime);
+          }
+        });
       }
     }
 
@@ -219,6 +289,16 @@ export const GET: RequestHandler = async (request) => {
       if (prayer === 'isha') fallback.isha_adhan_time = rotaRow.adhan_time ?? null;
     });
     return json({ row: fallback, source: 'staff_rota' });
+  }
+
+  const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso);
+  if (sourceTimings) {
+    const calculated: PrayerTimesRow = { date: dateIso };
+    (Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[]).forEach((prayer) => {
+      calculated[PRAYER_ADHAN_FIELDS[prayer]] = buildIso(dateIso, sourceTimings.adhan[prayer] ?? null);
+      calculated[PRAYER_IQAMA_FIELDS[prayer]] = buildIso(dateIso, sourceTimings.iqama[prayer] ?? null);
+    });
+    return json({ row: calculated, source: 'auto_calculated' });
   }
 
   return json({ row: null });

@@ -3,6 +3,7 @@ export type PrayerName = 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha';
 export type RotaPrayerName = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
 
 export type LiveStatus = 'scheduled' | 'ready' | 'live' | 'completed';
+export type AssignmentSource = 'manual' | 'default' | 'cover';
 
 export interface StaffRotaEntry {
   id: string;
@@ -79,6 +80,7 @@ export interface MuezzinSlot {
   isAssignedToMe: boolean;
   assignedMuezzinUserId?: string | null;
   assignedMuezzinName?: string | null;
+  assignmentSource?: AssignmentSource | null;
   iqamaTime?: Date | null;
   notes?: string | null;
 }

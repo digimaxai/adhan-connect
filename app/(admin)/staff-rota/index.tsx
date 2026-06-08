@@ -20,7 +20,6 @@ import { loadMosqueMuezzinWorkspace } from '@/lib/api/admin/muezzinWorkspace';
 import { normalizePrayerTimes, NormalizedPrayerTimes } from '@/lib/api/prayerTimesUnified';
 import { PrayerName } from '@/lib/adhans';
 import { supabase } from '@/lib/supabase';
-import { persistentStorage } from '@/lib/persistentStorage';
 
 const prayers: { key: PrayerName; label: string }[] = [
   { key: 'fajr', label: 'Fajr' },
@@ -29,9 +28,6 @@ const prayers: { key: PrayerName; label: string }[] = [
   { key: 'maghrib', label: 'Maghrib' },
   { key: 'isha', label: 'Isha' },
 ];
-
-const rotaCache: Record<string, StaffRotaForDay> = {};
-const storageCache: Record<string, StaffRotaForDay> = {};
 
 export default function StaffRotaScreen() {
   const router = useRouter();
@@ -49,65 +45,12 @@ export default function StaffRotaScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [pickerPrayer, setPickerPrayer] = useState<PrayerName | null>(null);
   const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  const [defaultMuezzinUserId, setDefaultMuezzinUserId] = useState<string | null>(null);
 
   const dateIso = useMemo(() => formatLocalDate(selectedDate), [selectedDate]);
+  const todayIso = formatLocalDate(new Date());
+  const isEditingToday = dateIso === todayIso;
   const disableControls = !selectedMosque || loadingData || saving || !prayerTimes;
-
-  const cacheKey = selectedMosque ? `${selectedMosque.mosqueId}:${dateIso}` : null;
-  const lastDateKey = 'staff_rota:last_selected_date';
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const raw = await persistentStorage.getItem(lastDateKey);
-        if (cancelled || !raw) return;
-        const parsed = new Date(raw);
-        if (!isNaN(parsed.getTime())) {
-          setSelectedDate(parsed);
-        }
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const setCachedRota = useCallback(
-    (rotaVal: StaffRotaForDay | null) => {
-      if (!cacheKey || !rotaVal) return;
-      rotaCache[cacheKey] = rotaVal;
-      storageCache[cacheKey] = rotaVal;
-      persistentStorage.setItem(`staff_rota_cache:${cacheKey}`, JSON.stringify(rotaVal)).catch(() => {});
-    },
-    [cacheKey]
-  );
-
-  const getCachedRota = useCallback((): StaffRotaForDay | null => {
-    if (!cacheKey) return null;
-    if (rotaCache[cacheKey]) return rotaCache[cacheKey];
-    if (storageCache[cacheKey]) return storageCache[cacheKey];
-    return null;
-  }, [cacheKey]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!cacheKey) return;
-    persistentStorage
-      .getItem(`staff_rota_cache:${cacheKey}`)
-      .then((raw) => {
-        if (cancelled || !raw) return;
-        const parsed = JSON.parse(raw);
-        storageCache[cacheKey] = parsed;
-        setRota((prev) => prev ?? parsed);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [cacheKey]);
 
   const loadData = useCallback(async () => {
     if (!selectedMosque) {
@@ -116,10 +59,6 @@ export default function StaffRotaScreen() {
     setLoadingData(true);
     setError(null);
     setNotice(null);
-    const cached = getCachedRota();
-    if (cached) {
-      setRota(cached);
-    }
     try {
       const workspace = await loadStaffRotaWorkspace(selectedMosque.mosqueId, dateIso);
       const normalizedTimes = normalizePrayerTimes(
@@ -137,6 +76,7 @@ export default function StaffRotaScreen() {
               displayName: member.displayName,
               user_id: member.userId,
               name: member.displayName,
+              isDefault: member.isDefault ?? false,
             }));
         } catch (muezzinError) {
           console.warn('[StaffRotaScreen.loadData] mosque muezzin recovery failed', muezzinError);
@@ -144,21 +84,24 @@ export default function StaffRotaScreen() {
       }
       setPrayerTimes(normalizedTimes);
       setMuezzins(muezzinList);
+      const resolvedDefaultUserId =
+        workspace.defaultMuezzinUserId ??
+        muezzinList.find((member) => member.isDefault)?.userId ??
+        muezzinList.find((member) => member.isDefault)?.user_id ??
+        null;
+      setDefaultMuezzinUserId(resolvedDefaultUserId);
       const profileNameMap = await buildNameMap(muezzinList, rotaMap);
       setNameMap(profileNameMap);
-      const base = emptyRota(normalizedTimes);
+      const base = emptyRota(normalizedTimes, resolvedDefaultUserId);
       const merged = mergeRota(base, rotaMap);
       const hasServerRows = rotaMap && Object.keys(rotaMap).length > 0;
-      if (!hasServerRows && cached) {
-        setRota(cached);
-        setCachedRota(cached);
-        setNotice('Showing cached assignments because no server rows were returned.');
-      } else {
-        setRota(merged);
-        setCachedRota(merged);
-        if (!hasServerRows) {
-          setNotice('No assignments returned from the server for this date yet.');
-        }
+      setRota(merged);
+      if (!hasServerRows) {
+        setNotice(
+          resolvedDefaultUserId
+            ? 'No manual assignments returned for this date. Mosque default coverage is shown where it applies.'
+            : 'No manual assignments returned from the server for this date yet.'
+        );
       }
       if (!workspace.prayerTimesRow && !workspace.fallbackPrayerTimesRow) {
         setError('Please create prayer times for this date before assigning staff.');
@@ -170,11 +113,12 @@ export default function StaffRotaScreen() {
       console.warn('load staff rota', e?.message ?? e);
       setError('Unable to load staff rota.');
       setPrayerTimes(null);
-      setRota(emptyRota(null));
+      setDefaultMuezzinUserId(null);
+      setRota(emptyRota(null, null));
     } finally {
       setLoadingData(false);
     }
-  }, [selectedMosque, dateIso, getCachedRota, setCachedRota]);
+  }, [selectedMosque, dateIso]);
 
   useEffect(() => {
     loadData();
@@ -191,39 +135,41 @@ export default function StaffRotaScreen() {
 
   const handleSelectMuezzin = (prayer: PrayerName, userId: string) => {
     setRota((prev) => {
-      const base = prev ?? emptyRota(prayerTimes);
+      const base = prev ?? emptyRota(prayerTimes, defaultMuezzinUserId);
       const next = { ...base };
       next[prayer] = {
         muezzinUserId: userId,
         notes: base[prayer]?.notes ?? '',
         adhanTime: prayerTimes?.[prayer]?.adhan ?? base[prayer]?.adhanTime ?? null,
         iqamaTime: prayerTimes?.[prayer]?.iqama ?? base[prayer]?.iqamaTime ?? null,
+        assignmentSource: 'manual',
       };
-      setCachedRota(next);
       return next;
     });
   };
 
   const handleNotesChange = (prayer: PrayerName, text: string) => {
     setRota((prev) => {
-      const base = prev ?? emptyRota(prayerTimes);
+      const base = prev ?? emptyRota(prayerTimes, defaultMuezzinUserId);
       const next = { ...base };
       next[prayer] = {
         muezzinUserId: base[prayer]?.muezzinUserId ?? null,
         notes: text,
         adhanTime: prayerTimes?.[prayer]?.adhan ?? base[prayer]?.adhanTime ?? null,
         iqamaTime: prayerTimes?.[prayer]?.iqama ?? base[prayer]?.iqamaTime ?? null,
+        assignmentSource: base[prayer]?.assignmentSource === 'default' && text.trim()
+          ? 'manual'
+          : base[prayer]?.assignmentSource ?? null,
       };
-      setCachedRota(next);
       return next;
     });
   };
 
   const handleSave = async () => {
     if (!selectedMosque || !rota || !prayerTimes) return;
-    const hasAssignments = Object.values(rota).some((r) => r?.muezzinUserId);
-    if (!hasAssignments) {
-      setError('Select at least one muezzin before saving.');
+    const hasManualAssignments = Object.values(rota).some((r) => r?.muezzinUserId && r.assignmentSource !== 'default');
+    if (!hasManualAssignments) {
+      setError('Choose at least one manual muezzin assignment before saving. Default coverage is already active without saving.');
       return;
     }
     setSaving(true);
@@ -245,8 +191,7 @@ export default function StaffRotaScreen() {
             ? ` ${result.notificationCount} notification${result.notificationCount === 1 ? '' : 's'} sent.`
             : '';
         setNotice(`Saved staff rota for ${dateIso} (${selectedMosque.name}).${notifySuffix}`);
-        Alert.alert('Saved', 'Staff rota saved.');
-        setCachedRota(rota);
+        Alert.alert('Rota saved', `Assignments saved for ${formatLongDate(selectedDate)}.`);
         await loadData();
       }
     } catch (e: any) {
@@ -278,7 +223,8 @@ export default function StaffRotaScreen() {
 
   const noAdminMosque = !selectedMosque && !mosques.length;
   const hasPrayerTimes = !!prayerTimes;
-  const currentRota = rota ?? emptyRota(prayerTimes);
+  const currentRota = rota ?? emptyRota(prayerTimes, defaultMuezzinUserId);
+  const hasManualAssignments = Object.values(currentRota).some((r) => r?.muezzinUserId && r.assignmentSource !== 'default');
 
   return (
     <AdminScreenShell
@@ -302,11 +248,28 @@ export default function StaffRotaScreen() {
         </View>
         <AdminDateSelector
           date={selectedDate}
-          onChange={(d) => {
-            setSelectedDate(d);
-            persistentStorage.setItem(lastDateKey, d.toISOString()).catch(() => {});
-          }}
+          onChange={setSelectedDate}
         />
+        {!isEditingToday ? (
+          <View style={styles.dateWarning}>
+            <View style={styles.dateWarningCopy}>
+              <AppText variant="caption" style={styles.dateWarningTitle}>
+                {dateIso < todayIso ? 'Editing a past date' : 'Editing a future date'}
+              </AppText>
+              <AppText variant="body" style={styles.dateWarningMessage}>
+                Assignments saved here apply only to {formatLongDate(selectedDate)}.
+              </AppText>
+            </View>
+            <Pressable
+              onPress={() => setSelectedDate(new Date())}
+              style={({ pressed }) => [styles.todayButton, pressed && styles.pressed]}
+            >
+              <AppText variant="caption" style={styles.todayButtonText}>
+                Go to today
+              </AppText>
+            </Pressable>
+          </View>
+        ) : null}
       </AppCard>
 
       {noAdminMosque ? (
@@ -327,11 +290,12 @@ export default function StaffRotaScreen() {
       ) : (
         prayers.map((p) => {
           const row = currentRota[p.key];
+          const isDefaultCoverage = row?.assignmentSource === 'default' && !!row.muezzinUserId;
           const selectedName = row?.muezzinUserId
-            ? nameMap[row.muezzinUserId] ??
+            ? `${isDefaultCoverage ? 'Default: ' : ''}${nameMap[row.muezzinUserId] ??
               muezzins.find((m) => m.userId === row.muezzinUserId || m.user_id === row.muezzinUserId)?.displayName ??
               muezzins.find((m) => m.user_id === row.muezzinUserId)?.name ??
-              row.muezzinUserId
+              row.muezzinUserId}`
             : 'Select muezzin';
           return (
             <AppCard key={p.key} style={[styles.card, disableControls && styles.cardDisabled]}>
@@ -350,6 +314,11 @@ export default function StaffRotaScreen() {
                   {selectedName}
                 </AppText>
               </Pressable>
+              {isDefaultCoverage ? (
+                <AppText variant="caption" style={styles.defaultCoverageNote}>
+                  Covered by mosque default. Choose a muezzin here to create a manual rota assignment.
+                </AppText>
+              ) : null}
               <TextInput
                 style={styles.notes}
                 placeholder="Notes (optional)"
@@ -373,7 +342,7 @@ export default function StaffRotaScreen() {
       {notice ? <AdminBanner tone="info" title="Staff rota" message={notice} /> : null}
       {error ? <AdminBanner tone="danger" title="Unable to continue" message={error} /> : null}
       <View style={styles.actionRow}>
-        <AppButton title={saving ? 'Saving...' : 'Save Assignments'} onPress={handleSave} disabled={saving || disableControls || !rota} />
+        <AppButton title={saving ? 'Saving...' : 'Save Assignments'} onPress={handleSave} disabled={saving || disableControls || !rota || !hasManualAssignments} />
       </View>
 
       <Modal transparent visible={!!pickerPrayer} animationType="fade" onRequestClose={() => setPickerPrayer(null)}>
@@ -413,14 +382,15 @@ export default function StaffRotaScreen() {
   );
 }
 
-function emptyRota(times: NormalizedPrayerTimes | null): StaffRotaForDay {
+function emptyRota(times: NormalizedPrayerTimes | null, defaultMuezzinUserId: string | null): StaffRotaForDay {
   const base: StaffRotaForDay = {};
   prayers.forEach((p) => {
     base[p.key] = {
-      muezzinUserId: null,
+      muezzinUserId: defaultMuezzinUserId,
       notes: '',
       adhanTime: times?.[p.key]?.adhan ?? null,
       iqamaTime: times?.[p.key]?.iqama ?? null,
+      assignmentSource: defaultMuezzinUserId ? 'default' : null,
     };
   });
   return base;
@@ -435,6 +405,7 @@ function mergeRota(base: StaffRotaForDay, existing: StaffRotaForDay) {
       notes: value?.notes ?? merged[key]?.notes ?? '',
       adhanTime: value?.adhanTime ?? merged[key]?.adhanTime ?? null,
       iqamaTime: value?.iqamaTime ?? merged[key]?.iqamaTime ?? null,
+      assignmentSource: value?.assignmentSource ?? merged[key]?.assignmentSource ?? null,
     };
   });
   return merged;
@@ -452,6 +423,15 @@ function formatLocalDate(date: Date) {
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const day = date.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function formatLongDate(date: Date) {
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 async function buildNameMap(muezzins: MuezzinSummary[], rota: StaffRotaForDay | null) {
@@ -487,6 +467,30 @@ const styles = StyleSheet.create({
   feedbackText: { marginTop: 8 },
   utilityCard: { gap: tokens.spacing.sm, padding: tokens.spacing.sm, borderRadius: 16 },
   utilityHeader: { gap: 2 },
+  dateWarning: {
+    marginTop: tokens.spacing.xs,
+    padding: tokens.spacing.sm,
+    borderRadius: tokens.radius.md,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.sm,
+  },
+  dateWarningCopy: { flex: 1, gap: 3 },
+  dateWarningTitle: { color: '#92400E', fontWeight: tokens.typography.weight.extrabold },
+  dateWarningMessage: { color: '#78350F', lineHeight: 19, fontSize: 13 },
+  todayButton: {
+    paddingHorizontal: tokens.spacing.sm,
+    minHeight: 40,
+    borderRadius: tokens.radius.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    justifyContent: 'center',
+  },
+  todayButtonText: { color: '#92400E', fontWeight: tokens.typography.weight.extrabold },
   actionRow: { marginTop: tokens.spacing.xs },
   loader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center' },
   card: { gap: tokens.spacing.xs, padding: tokens.spacing.sm, borderRadius: 16 },
@@ -504,6 +508,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectText: { fontWeight: tokens.typography.weight.extrabold, color: '#0F172A', fontSize: 15 },
+  defaultCoverageNote: { color: '#64748B', lineHeight: 18, fontSize: 12 },
   notes: {
     borderWidth: 1,
     borderColor: '#E2E8F0',

@@ -118,8 +118,8 @@ export default function AdminDashboard() {
       requiresMosque: true,
     },
     {
-      title: 'Daily Quotes',
-      description: 'Set a spiritual reflection for followers to see each day.',
+      title: 'Reflection Planner',
+      description: 'Build a reusable library and schedule reflections in batches.',
       href: '/(admin)/quotes',
       icon: 'book-outline',
       iconBg: '#FFFBF2',

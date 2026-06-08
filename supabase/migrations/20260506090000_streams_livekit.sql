@@ -1,4 +1,4 @@
--- Add LiveKit room tracking to streams table.
+-- Add LiveKit room tracking to the streams table.
 -- livekit_room_name: deterministic room name (adhan-{mosqueId}-{prayer}-{date})
 -- set when a broadcast starts with the livekit provider; null for Icecast/RTMP streams.
 ALTER TABLE streams

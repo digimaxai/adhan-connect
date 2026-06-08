@@ -1,4 +1,4 @@
--- Ensure lat/lng coordinates exist on mosques.
+-- Ensure latitude/longitude coordinates exist on mosques.
 -- These are required for the Aladhan prayer-time auto-calculation fallback.
 -- Without coordinates, getDailyPrayerTimes cannot call the Aladhan API and
 -- newly onboarded mosques will show no prayer times until a schedule is uploaded.

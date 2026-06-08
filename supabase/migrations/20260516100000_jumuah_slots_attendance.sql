@@ -1,4 +1,4 @@
--- Structured Jumu'ah slots and soft attendance intent.
+-- Structured Jumu'ah slots and soft attendance intents.
 -- This keeps Friday capacity planning separate from daily prayer times.
 
 create table if not exists public.mosque_jumuah_slots (

@@ -176,7 +176,19 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({
       ? styles.statusPillReady
       : styles.statusPillNeutral;
   const assignmentSummary = resolvedSlot
-    ? resolvedSlot.isAssignedToMe
+    ? resolvedSlot.assignmentSource === 'default'
+      ? resolvedSlot.isAssignedToMe
+        ? 'Default coverage: you'
+        : resolvedSlot.assignedMuezzinName
+        ? `Default coverage: ${resolvedSlot.assignedMuezzinName}`
+        : 'Covered by mosque default'
+      : resolvedSlot.assignmentSource === 'cover'
+      ? resolvedSlot.isAssignedToMe
+        ? 'Approved cover: you'
+        : resolvedSlot.assignedMuezzinName
+        ? `Approved cover: ${resolvedSlot.assignedMuezzinName}`
+        : 'Covered by approved cover'
+      : resolvedSlot.isAssignedToMe
       ? 'Assigned to you'
       : resolvedSlot.assignedMuezzinName
       ? `Assigned to ${resolvedSlot.assignedMuezzinName}`
@@ -385,7 +397,13 @@ const TodaysRotaCard: React.FC<TodaysScheduleCardProps> = ({ schedule, loading =
                 <AppText style={styles.adahnTime}>{formatTime(slot.adhanTime)}</AppText>
               </View>
               <View style={styles.adahnRight}>
-                {slot.isAssignedToMe ? (
+                {slot.assignmentSource === 'default' ? (
+                  <View style={styles.defaultPill}>
+                    <AppText variant="caption" style={styles.defaultPillText}>
+                      {slot.isAssignedToMe ? 'Default: you' : `Default: ${slot.assignedMuezzinName ?? 'muezzin'}`}
+                    </AppText>
+                  </View>
+                ) : slot.isAssignedToMe ? (
                   <View style={styles.youPill}>
                     <Ionicons name="mic-outline" size={14} color="#0B7A30" style={{ marginRight: 4 }} />
                     <AppText variant="caption" style={styles.youPillText}>You</AppText>
@@ -718,6 +736,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#047857',
+  },
+  defaultPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    maxWidth: 132,
+  },
+  defaultPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0369A1',
   },
   assignedOtherText: {
     fontSize: 13,

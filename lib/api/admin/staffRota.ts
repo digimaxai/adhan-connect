@@ -30,6 +30,7 @@ export type StaffRotaForDay = Partial<
       notes: string | null;
       adhanTime: Date | null;
       iqamaTime: Date | null;
+      assignmentSource?: 'manual' | 'default' | null;
     }
   >
 >;
@@ -40,6 +41,7 @@ export type MuezzinSummary = {
   // Legacy shape kept for backward compatibility with older screens.
   user_id: string;
   name: string;
+  isDefault?: boolean;
 };
 
 export async function getMuezzinsForMosque(mosqueId: string): Promise<MuezzinSummary[]> {
@@ -170,6 +172,7 @@ export async function getStaffRotaForDate(mosqueId: string, date: Date): Promise
         notes: row.notes ?? null,
         adhanTime: safeDate(row.adhan_time),
         iqamaTime: safeDate(row.iqama_time),
+        assignmentSource: 'manual',
       };
     });
     return map;
@@ -195,7 +198,7 @@ export async function saveStaffRotaForDate(
   const normalizedTimes = await loadPrayerTimesSlotMap(mosqueId, date);
   const rows = PRAYERS.map((prayer) => {
     const assignment = assignments?.[prayer];
-    if (!assignment?.muezzinUserId) return null;
+    if (!assignment?.muezzinUserId || assignment.assignmentSource === 'default') return null;
     const slot = normalizedTimes?.[prayer];
     return {
       mosque_id: mosqueId,
@@ -212,6 +215,17 @@ export async function saveStaffRotaForDate(
       assigned_by: assignedByUserId || null,
     };
   }).filter(Boolean) as StaffRotaRow[];
+
+  if (!rows.length) {
+    return { success: false, error: 'Choose at least one manual muezzin assignment before saving.' };
+  }
+
+  const activeMuezzins = await getMuezzinsForMosque(mosqueId);
+  const activeMuezzinIds = new Set(activeMuezzins.map((muezzin) => muezzin.userId ?? muezzin.user_id).filter(Boolean));
+  const invalidRows = rows.filter((row) => !activeMuezzinIds.has(row.muezzin_user_id ?? row.staff_user_id ?? ''));
+  if (invalidRows.length) {
+    return { success: false, error: 'One or more selected muezzins are no longer active for this mosque. Refresh the rota and choose again.' };
+  }
 
   try {
     // Treat the full day as the source of truth so clearing an assignment removes the old row.

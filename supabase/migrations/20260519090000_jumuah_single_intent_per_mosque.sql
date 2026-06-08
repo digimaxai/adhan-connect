@@ -1,4 +1,4 @@
--- Ensure each listener has only one Jumu'ah plan per mosque per Friday.
+-- Ensure each listener has only one Jumu'ah intent per mosque per Friday.
 
 WITH ranked AS (
   SELECT

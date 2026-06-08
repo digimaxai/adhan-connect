@@ -100,6 +100,23 @@ function nativeLoopbackBaseFor(value: string | null | undefined) {
   }
 }
 
+function nativeUsbReverseBaseFor(value: string | null | undefined) {
+  if (typeof __DEV__ !== 'undefined' && !__DEV__) return null;
+
+  const normalized = normalizeHttpLikeUrl(value);
+  if (!normalized) return null;
+
+  try {
+    const parsed = new URL(normalized);
+    if (!parsed.port) return null;
+
+    const pathname = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+    return `${parsed.protocol}//127.0.0.1:${parsed.port}${pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 function isNativeLoopbackOnlyBase(value: string | null | undefined) {
   const normalized = normalizeHttpLikeUrl(value);
   if (!normalized) return false;
@@ -112,7 +129,7 @@ function isNativeLoopbackOnlyBase(value: string | null | undefined) {
   }
 }
 
-function shouldPreferUsbReverseLoopback() {
+function isAndroidEmulatorDevice() {
   if (Platform.OS !== 'android') return false;
 
   const platformConstants = (Platform as any).constants ?? {};
@@ -126,8 +143,29 @@ function shouldPreferUsbReverseLoopback() {
     .join(' ')
     .toLowerCase();
 
-  const isEmulator = /(generic|sdk_gphone|emulator|ranchu|goldfish)/.test(deviceSignature);
-  return !isEmulator;
+  return /(generic|sdk_gphone|emulator|ranchu|goldfish)/.test(deviceSignature);
+}
+
+function shouldPreferUsbReverseLoopback() {
+  return Platform.OS === 'android' && !isAndroidEmulatorDevice();
+}
+
+function nativeAndroidEmulatorBaseFor(value: string | null | undefined) {
+  if (typeof __DEV__ !== 'undefined' && !__DEV__) return null;
+  if (Platform.OS !== 'android' || !isAndroidEmulatorDevice()) return null;
+
+  const normalized = normalizeHttpLikeUrl(value);
+  if (!normalized) return null;
+
+  try {
+    const parsed = new URL(normalized);
+    if (!parsed.port) return null;
+
+    const pathname = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+    return `${parsed.protocol}//10.0.2.2:${parsed.port}${pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
 }
 
 function resolveNativeDevBaseUrls() {
@@ -228,6 +266,20 @@ export function resolveApiUrls(path: string): string[] {
   const preferUsbReverseLoopback = Platform.OS !== 'web' && shouldPreferUsbReverseLoopback();
   const envBaseIsLoopbackOnly = isNativeLoopbackOnlyBase(envBase);
 
+  if (Platform.OS !== 'web' && preferUsbReverseLoopback) {
+    const envUsbReverseBase = nativeUsbReverseBaseFor(envBase);
+    if (envUsbReverseBase) {
+      addNativeCandidatesFromBase(candidates, envUsbReverseBase, normalized);
+    }
+  }
+
+  if (Platform.OS !== 'web' && !preferUsbReverseLoopback) {
+    const envEmulatorBase = nativeAndroidEmulatorBaseFor(envBase);
+    if (envEmulatorBase) {
+      addNativeCandidatesFromBase(candidates, envEmulatorBase, normalized);
+    }
+  }
+
   if (envBase && preferUsbReverseLoopback && !envBaseIsLoopbackOnly) {
     candidates.add(`${envBase.replace(/\/+$/, '')}${normalized}`);
   }
@@ -235,9 +287,18 @@ export function resolveApiUrls(path: string): string[] {
   if (Platform.OS !== 'web') {
     for (const nativeDevBase of resolveNativeDevBaseUrls()) {
       if (preferUsbReverseLoopback) {
+        const usbReverseBase = nativeUsbReverseBaseFor(nativeDevBase);
+        if (usbReverseBase) {
+          addNativeCandidatesFromBase(candidates, usbReverseBase, normalized);
+        }
         const loopbackBase = nativeLoopbackBaseFor(nativeDevBase);
         if (loopbackBase) {
           addNativeCandidatesFromBase(candidates, loopbackBase, normalized);
+        }
+      } else {
+        const emulatorBase = nativeAndroidEmulatorBaseFor(nativeDevBase);
+        if (emulatorBase) {
+          addNativeCandidatesFromBase(candidates, emulatorBase, normalized);
         }
       }
       if (!(preferUsbReverseLoopback && isNativeLoopbackOnlyBase(nativeDevBase))) {

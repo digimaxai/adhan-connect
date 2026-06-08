@@ -1,4 +1,4 @@
--- Repair access for environments that already applied the initial quotes migration.
+-- Repair access for environments that already applied the initial daily quotes migration.
 
 ALTER TABLE public.mosque_daily_quotes ENABLE ROW LEVEL SECURITY;
 
