@@ -9,6 +9,7 @@ type AssignmentValue = {
   notes?: string | null;
   adhanTime?: string | null;
   iqamaTime?: string | null;
+  assignmentSource?: 'manual' | 'default' | null;
 };
 
 type SavePayload = {
@@ -95,7 +96,7 @@ function buildRows(
   return PRAYERS.map((prayerName) => {
     const assignment = assignments?.[prayerName];
     const muezzinUserId = normalizeUserId(assignment?.muezzinUserId);
-    if (!muezzinUserId) return null;
+    if (!muezzinUserId || assignment?.assignmentSource === 'default') return null;
 
     return {
       mosque_id: mosqueId,
@@ -111,6 +112,30 @@ function buildRows(
       assigned_by: assignedByUserId,
     } satisfies StaffRotaRow;
   }).filter(Boolean) as StaffRotaRow[];
+}
+
+async function loadActiveMuezzinUserIds(supabaseAdmin: any, mosqueId: string) {
+  let result = await supabaseAdmin
+    .from('muezzins')
+    .select('user_id, is_active')
+    .eq('mosque_id', mosqueId);
+
+  if (result.error?.code === '42703') {
+    result = await supabaseAdmin
+      .from('muezzins')
+      .select('user_id')
+      .eq('mosque_id', mosqueId);
+  }
+
+  if (result.error && result.error.code !== 'PGRST116') {
+    throw result.error;
+  }
+
+  return new Set(
+    ((result.data ?? []) as { user_id?: string | null; is_active?: boolean | null }[])
+      .filter((row) => row.user_id && row.is_active !== false)
+      .map((row) => row.user_id as string)
+  );
 }
 
 function formatNotificationDate(dateIso: string) {
@@ -331,6 +356,20 @@ export const POST: RequestHandler = async (request) => {
   const actorUserId = auth.context.userId;
   const { supabaseAdmin } = auth.context;
   const nextRows = buildRows(payload.mosqueId, payload.dateIso, payload.assignments, actorUserId);
+
+  if (!nextRows.length) {
+    return json({ error: 'Choose at least one manual muezzin assignment before saving.' }, 400);
+  }
+
+  const activeMuezzinUserIds = await loadActiveMuezzinUserIds(supabaseAdmin, payload.mosqueId);
+  const invalidRows = nextRows.filter((row) => {
+    const userId = row.muezzin_user_id ?? row.staff_user_id ?? null;
+    return !userId || !activeMuezzinUserIds.has(userId);
+  });
+
+  if (invalidRows.length) {
+    return json({ error: 'One or more selected muezzins are no longer active for this mosque. Refresh the rota and choose again.' }, 400);
+  }
 
   const previousResult = await loadPreviousRows(supabaseAdmin, payload.mosqueId, payload.dateIso);
   if (previousResult.error) {

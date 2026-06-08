@@ -19,6 +19,7 @@ type StaffRotaWorkspaceRow = {
   prayer_name?: string | null;
   muezzin_user_id?: string | null;
   staff_user_id?: string | null;
+  role_on_duty?: string | null;
   notes?: string | null;
   adhan_time?: string | null;
   iqama_time?: string | null;
@@ -89,7 +90,7 @@ function labelProfile(profile?: ProfileLookup | null) {
 async function loadStaffRotaRows(supabaseAdmin: any, mosqueId: string, dateIso: string) {
   const primary = await supabaseAdmin
     .from('staff_rota')
-    .select('prayer_name, muezzin_user_id, staff_user_id, notes, adhan_time, iqama_time')
+    .select('prayer_name, muezzin_user_id, staff_user_id, role_on_duty, notes, adhan_time, iqama_time')
     .eq('mosque_id', mosqueId)
     .eq('date', dateIso);
 
@@ -122,6 +123,21 @@ async function loadStaffRotaRows(supabaseAdmin: any, mosqueId: string, dateIso: 
     })),
     error: null,
   };
+}
+
+async function loadDefaultMuezzinUserId(supabaseAdmin: any, mosqueId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('mosques')
+    .select('default_muezzin_user_id')
+    .eq('id', mosqueId)
+    .maybeSingle();
+
+  if (error) {
+    if (['PGRST116', '42703'].includes(error.code)) return null;
+    throw error;
+  }
+
+  return (data as { default_muezzin_user_id?: string | null } | null)?.default_muezzin_user_id ?? null;
 }
 
 async function loadFallbackPrayerRow(supabaseAdmin: any, mosqueId: string, dateIso: string) {
@@ -168,7 +184,7 @@ export const GET: RequestHandler = async (request) => {
   }
 
   const { supabaseAdmin } = auth.context;
-  const [timesRes, rotaResult, muezzinRes] = await Promise.all([
+  const [timesRes, rotaResult, muezzinRes, defaultMuezzinUserId] = await Promise.all([
     supabaseAdmin
       .from('prayer_times')
       .select('date,fajr_adhan_time,fajr_iqama_time,dhuhr_adhan_time,dhuhr_iqama_time,asr_adhan_time,asr_iqama_time,maghrib_adhan_time,maghrib_iqama_time,isha_adhan_time,isha_iqama_time')
@@ -180,6 +196,7 @@ export const GET: RequestHandler = async (request) => {
       .from('muezzins')
       .select('user_id, is_active')
       .eq('mosque_id', mosqueId),
+    loadDefaultMuezzinUserId(supabaseAdmin, mosqueId),
   ]);
 
   if (timesRes.error && timesRes.error.code !== 'PGRST116') {
@@ -195,6 +212,9 @@ export const GET: RequestHandler = async (request) => {
   }
 
   const activeMuezzins = ((muezzinRes.data ?? []) as MuezzinMemberRow[]).filter((row) => row.is_active !== false);
+  const effectiveDefaultMuezzinUserId = activeMuezzins.some((row) => row.user_id === defaultMuezzinUserId)
+    ? defaultMuezzinUserId
+    : null;
   const rotaRows = rotaResult.rows;
   const fallbackPrayerTimesRow = timesRes.data ?? (await loadFallbackPrayerRow(supabaseAdmin, mosqueId, dateIso));
   const relatedUserIds = Array.from(
@@ -203,7 +223,8 @@ export const GET: RequestHandler = async (request) => {
       ...rotaRows
         .map((row) => row.muezzin_user_id ?? row.staff_user_id ?? null)
         .filter(Boolean),
-    ])
+      effectiveDefaultMuezzinUserId,
+    ].filter(Boolean))
   ) as string[];
   const profileMap = await fetchProfileMap(supabaseAdmin, relatedUserIds);
 
@@ -219,7 +240,9 @@ export const GET: RequestHandler = async (request) => {
         displayName,
         user_id: row.user_id,
         name: displayName,
+        isDefault: row.user_id === effectiveDefaultMuezzinUserId,
       };
     }),
+    defaultMuezzinUserId: effectiveDefaultMuezzinUserId,
   });
 };

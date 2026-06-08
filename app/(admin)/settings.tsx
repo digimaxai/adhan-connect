@@ -7,6 +7,7 @@ import { ScreenContainer } from '@/components/ui/screen-container';
 import { tokens } from '@/theme/tokens';
 import { useRoleFlags } from '@/lib/roles';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { clearDefaultMosqueId, getDefaultMosqueId, setDefaultMosqueId } from '@/lib/mosquePreferences';
 import {
@@ -37,9 +38,23 @@ export default function AdminSettingsScreen() {
   const [savingNotifRota, setSavingNotifRota] = useState(false);
   const [savingTimeFormat, setSavingTimeFormat] = useState(false);
 
+  // Prayer source config — loaded from the active mosque for London mosques only
+  const [prayerSource, setPrayerSource] = useState<'aladhan' | 'elm'>('aladhan');
+  const [prayerSchool, setPrayerSchool] = useState<0 | 1>(0);
+  const [savingPrayerConfig, setSavingPrayerConfig] = useState(false);
+
   const accountUserId = session?.user?.id ?? null;
   const email = (session?.user as any)?.email as string | null ?? null;
   const adminMosques = useMemo(() => mosques ?? [], [mosques]);
+
+  // The London mosque to show prayer-source settings for: prefer the default mosque
+  // if it's in London, otherwise the first London mosque in their list.
+  const londonMosque = useMemo(() => {
+    const isLondon = (city?: string | null) => city?.trim().toLowerCase().includes('london') ?? false;
+    const defaultMosque = adminMosques.find((m) => m.mosqueId === defaultId);
+    if (defaultMosque && isLondon(defaultMosque.city)) return defaultMosque;
+    return adminMosques.find((m) => isLondon(m.city)) ?? null;
+  }, [adminMosques, defaultId]);
 
   const loadAll = useCallback(async () => {
     try {
@@ -58,6 +73,21 @@ export default function AdminSettingsScreen() {
       setError('Could not load preferences.');
     }
   }, [accountUserId]);
+
+  // Load prayer config whenever the active London mosque changes
+  useEffect(() => {
+    if (!londonMosque) return;
+    supabase
+      .from('mosques')
+      .select('prayer_source, prayer_school')
+      .eq('id', londonMosque.mosqueId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        setPrayerSource(data.prayer_source === 'elm' ? 'elm' : 'aladhan');
+        setPrayerSchool(data.prayer_school === 1 ? 1 : 0);
+      });
+  }, [londonMosque]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -140,6 +170,35 @@ export default function AdminSettingsScreen() {
       setError('Could not save time format preference.');
     } finally {
       setSavingTimeFormat(false);
+    }
+  };
+
+  const handleSavePrayerConfig = async (nextSource: 'aladhan' | 'elm', nextSchool: 0 | 1) => {
+    if (!londonMosque || savingPrayerConfig) return;
+    const prevSource = prayerSource;
+    const prevSchool = prayerSchool;
+    setPrayerSource(nextSource);
+    setPrayerSchool(nextSchool);
+    setSavingPrayerConfig(true);
+    try {
+      const { error: rpcError } = await supabase.rpc('update_mosque_prayer_config', {
+        p_mosque_id: londonMosque.mosqueId,
+        p_prayer_source: nextSource,
+        p_prayer_school: nextSchool,
+      });
+      if (rpcError) {
+        setPrayerSource(prevSource);
+        setPrayerSchool(prevSchool);
+        setError('Could not save prayer times configuration.');
+      } else {
+        setError(null);
+      }
+    } catch {
+      setPrayerSource(prevSource);
+      setPrayerSchool(prevSchool);
+      setError('Could not save prayer times configuration.');
+    } finally {
+      setSavingPrayerConfig(false);
     }
   };
 
@@ -299,6 +358,80 @@ export default function AdminSettingsScreen() {
         </View>
       </View>
 
+      {/* ── Prayer times source — London mosques only ── */}
+      {londonMosque ? (
+        <View style={styles.section}>
+          <AppText style={styles.sectionLabel}>PRAYER TIMES SOURCE</AppText>
+          <View style={styles.groupCard}>
+            <View style={styles.prayerSourceRow}>
+              <View style={styles.toggleText}>
+                <AppText style={styles.toggleTitle}>Auto-calculate (Aladhan)</AppText>
+                <AppText style={styles.toggleDesc}>Astronomically calculated from coordinates and calculation method</AppText>
+              </View>
+              <Pressable
+                onPress={() => handleSavePrayerConfig('aladhan', prayerSchool)}
+                disabled={savingPrayerConfig || prayerSource === 'aladhan'}
+                style={({ pressed }) => [styles.radioBtn, prayerSource === 'aladhan' && styles.radioBtnActive, pressed && prayerSource !== 'aladhan' && styles.pressed]}
+              >
+                <Ionicons
+                  name={prayerSource === 'aladhan' ? 'radio-button-on' : 'radio-button-off'}
+                  size={22}
+                  color={prayerSource === 'aladhan' ? '#0EA5E9' : tokens.color.border.subtle}
+                />
+              </Pressable>
+            </View>
+            <View style={styles.hairline} />
+            <View style={styles.prayerSourceRow}>
+              <View style={styles.toggleText}>
+                <AppText style={styles.toggleTitle}>East London Mosque timetable</AppText>
+                <AppText style={styles.toggleDesc}>Official ELM published schedule with adhan and jamaat times</AppText>
+              </View>
+              <Pressable
+                onPress={() => handleSavePrayerConfig('elm', prayerSchool)}
+                disabled={savingPrayerConfig || prayerSource === 'elm'}
+                style={({ pressed }) => [styles.radioBtn, prayerSource === 'elm' && styles.radioBtnActive, pressed && prayerSource !== 'elm' && styles.pressed]}
+              >
+                <Ionicons
+                  name={prayerSource === 'elm' ? 'radio-button-on' : 'radio-button-off'}
+                  size={22}
+                  color={prayerSource === 'elm' ? '#0EA5E9' : tokens.color.border.subtle}
+                />
+              </Pressable>
+            </View>
+            <View style={styles.hairline} />
+            <View style={styles.prayerSourceRow}>
+              <View style={styles.toggleText}>
+                <AppText style={styles.toggleTitle}>Asr school</AppText>
+                <AppText style={styles.toggleDesc}>
+                  {prayerSchool === 1 ? 'Hanafi — shadow 2× (later Asr)' : 'Shafi — shadow 1× (earlier Asr)'}
+                </AppText>
+              </View>
+              <View style={styles.segmentedControl}>
+                {([['Shafi', 0], ['Hanafi', 1]] as const).map(([label, val]) => (
+                  <Pressable
+                    key={label}
+                    onPress={() => handleSavePrayerConfig(prayerSource, val)}
+                    disabled={savingPrayerConfig || prayerSchool === val}
+                    style={({ pressed }) => [
+                      styles.segment,
+                      prayerSchool === val && styles.segmentActive,
+                      pressed && prayerSchool !== val && styles.pressed,
+                    ]}
+                  >
+                    <AppText style={[styles.segmentText, prayerSchool === val && styles.segmentTextActive]}>
+                      {label}
+                    </AppText>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </View>
+          <AppText variant="caption" color={tokens.color.text.muted} style={styles.hint}>
+            Applies to {londonMosque.name}. Used when no manual schedule has been uploaded.
+          </AppText>
+        </View>
+      ) : null}
+
       {/* ── Default mosque ── */}
       <View style={styles.section}>
         <View style={styles.sectionRow}>
@@ -447,6 +580,9 @@ const styles = StyleSheet.create({
 
   // Toggle rows
   toggleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
+  prayerSourceRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
+  radioBtn: { padding: 2 },
+  radioBtnActive: {},
   toggleText: { flex: 1, gap: 2 },
   toggleTitle: { fontSize: 15, fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary },
   toggleDesc: { fontSize: tokens.typography.size.xs, color: tokens.color.text.secondary, lineHeight: 16 },

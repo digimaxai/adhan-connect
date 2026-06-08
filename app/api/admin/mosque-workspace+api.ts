@@ -13,6 +13,7 @@ type MosqueRow = {
   lng?: number | null;
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
+  prayer_source?: string | null;
   live_stream_enabled?: boolean | null;
   live_stream_provider?: string | null;
   live_stream_playback_url?: string | null;
@@ -100,12 +101,21 @@ export const GET: RequestHandler = async (request) => {
     return json({ error: 'Only main admin users can access the mosque workspace.' }, 403);
   }
 
-  const [mosqueRes, mosquesRes, adminsRes, muezzinRes, upstreamStateRes] = await Promise.all([
-    supabaseAdmin
+  let mosqueRes = await supabaseAdmin
+    .from('mosques')
+    .select('id, name, city, country, status, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, prayer_source, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
+    .eq('id', mosqueId)
+    .maybeSingle();
+
+  if (mosqueRes.error?.code === '42703') {
+    mosqueRes = await supabaseAdmin
       .from('mosques')
       .select('id, name, city, country, status, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
       .eq('id', mosqueId)
-      .maybeSingle(),
+      .maybeSingle();
+  }
+
+  const [mosquesRes, adminsRes, muezzinRes, upstreamStateRes] = await Promise.all([
     fetchAllMosqueRows<MosqueRow>(
       supabaseAdmin,
       'id, name, city, country, status, allow_multi_mosque_local_admins'

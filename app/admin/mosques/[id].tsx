@@ -44,6 +44,7 @@ type MosqueRow = {
   live_stream_listener_secret?: string | null;
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
+  prayer_source?: string | null;
   lat?: number | null;
   lng?: number | null;
   created_at?: string | null;
@@ -168,6 +169,7 @@ function MosqueProfileShell() {
     name: '', city: '', country: '', status: 'pending',
     lat: '', lng: '',
     allowMultiMosqueLocalAdmins: false,
+    prayerSource: 'aladhan' as 'aladhan' | 'elm',
     prayerCalculationMethod: DEFAULT_ALADHAN_METHOD,
     prayerSchool: 0,
     liveStreamEnabled: false,
@@ -251,6 +253,7 @@ function MosqueProfileShell() {
       lat: mosque.lat != null ? String(mosque.lat) : '',
       lng: mosque.lng != null ? String(mosque.lng) : '',
       allowMultiMosqueLocalAdmins: !!mosque.allow_multi_mosque_local_admins,
+      prayerSource: (mosque.prayer_source === 'elm' ? 'elm' : 'aladhan') as 'aladhan' | 'elm',
       prayerCalculationMethod: mosque.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD,
       prayerSchool: mosque.prayer_school ?? 0,
       liveStreamEnabled: !!mosque.live_stream_enabled,
@@ -284,6 +287,8 @@ function MosqueProfileShell() {
   const liveStreamStreamKeyConfigured = !!mosque?.live_stream_stream_key?.trim();
   const liveStreamStatusSecret = mosque?.live_stream_status_secret?.trim() || '';
   const liveStreamListenerSecret = mosque ? resolveLiveStreamListenerSecret(mosque) || '' : '';
+  const editCityIsLondon = editForm.city.trim().toLowerCase().includes('london');
+  const effectivePrayerSource = editCityIsLondon ? editForm.prayerSource : 'aladhan';
   const editProviderProfile = useMemo(() => getLiveStreamProviderProfile(editForm.liveStreamProvider), [editForm.liveStreamProvider]);
   const liveStreamCallbackUrl = useMemo(() => {
     if (typeof window !== 'undefined') {
@@ -474,6 +479,7 @@ function MosqueProfileShell() {
       city: editForm.city.trim() || null, country: editForm.country.trim() || null,
       lat: latVal, lng: lngVal,
       allow_multi_mosque_local_admins: editForm.allowMultiMosqueLocalAdmins,
+      prayer_source: effectivePrayerSource,
       prayer_calculation_method: editForm.prayerCalculationMethod,
       prayer_school: editForm.prayerSchool,
       live_stream_enabled: editForm.liveStreamEnabled,
@@ -895,40 +901,74 @@ function MosqueProfileShell() {
                   <option value="inactive">Inactive</option>
                 </Select>
               </div>
-              <div>
-                <label style={styles.label} htmlFor="edit-prayer-method">Prayer time calculation method</label>
-                <Select
-                  id="edit-prayer-method"
-                  value={String(editForm.prayerCalculationMethod)}
-                  onChange={(e) => setEditForm((p) => ({ ...p, prayerCalculationMethod: Number(e.target.value) }))}
-                  aria-label="Aladhan calculation method for auto-generated prayer times"
-                >
-                  <optgroup label="Sunni Jurisprudence">
-                    {ALADHAN_METHODS.filter((m) => m.tradition !== 'shia').map((m) => (
-                      <option key={m.id} value={String(m.id)}>
-                        {m.label} — {m.region}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Shia Jurisprudence (Twelver/Jafari)">
-                    {ALADHAN_METHODS.filter((m) => m.tradition === 'shia').map((m) => (
-                      <option key={m.id} value={String(m.id)}>
-                        {m.label} — {m.region}
-                      </option>
-                    ))}
-                  </optgroup>
-                </Select>
-                <div style={styles.helperText}>
-                  Used to auto-generate prayer times when no schedule has been uploaded. Select the calculation method your mosque follows. Consult your mosque leadership if unsure.
+              {editCityIsLondon && (
+                <div>
+                  <label style={styles.label}>Prayer times source</label>
+                  <div style={styles.toggleRow}>
+                    <Button
+                      variant={editForm.prayerSource === 'aladhan' ? 'primary' : 'ghost'}
+                      type="button"
+                      aria-pressed={editForm.prayerSource === 'aladhan'}
+                      onClick={() => setEditForm((p) => ({ ...p, prayerSource: 'aladhan' }))}
+                    >
+                      Auto-calculate (Aladhan)
+                    </Button>
+                    <Button
+                      variant={editForm.prayerSource === 'elm' ? 'primary' : 'ghost'}
+                      type="button"
+                      aria-pressed={editForm.prayerSource === 'elm'}
+                      onClick={() => setEditForm((p) => ({ ...p, prayerSource: 'elm' }))}
+                    >
+                      East London Mosque timetable
+                    </Button>
+                  </div>
+                  <div style={styles.helperText}>
+                    {editForm.prayerSource === 'elm'
+                      ? 'Uses the official East London Mosque published timetable. Includes both adhan and congregation (jamaat) times. Manual schedules still take precedence when uploaded.'
+                      : 'Uses the Aladhan API to calculate prayer times from coordinates and the selected calculation method below.'}
+                  </div>
                 </div>
-              </div>
+              )}
+              {effectivePrayerSource === 'aladhan' && (
+                <div>
+                  <label style={styles.label} htmlFor="edit-prayer-method">Prayer time calculation method</label>
+                  <Select
+                    id="edit-prayer-method"
+                    value={String(editForm.prayerCalculationMethod)}
+                    onChange={(e) => setEditForm((p) => ({ ...p, prayerCalculationMethod: Number(e.target.value) }))}
+                    aria-label="Aladhan calculation method for auto-generated prayer times"
+                  >
+                    <optgroup label="Sunni Jurisprudence">
+                      {ALADHAN_METHODS.filter((m) => m.tradition !== 'shia').map((m) => (
+                        <option key={m.id} value={String(m.id)}>
+                          {m.label} — {m.region}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Shia Jurisprudence (Twelver/Jafari)">
+                      {ALADHAN_METHODS.filter((m) => m.tradition === 'shia').map((m) => (
+                        <option key={m.id} value={String(m.id)}>
+                          {m.label} — {m.region}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </Select>
+                  <div style={styles.helperText}>
+                    Used to auto-generate prayer times when no schedule has been uploaded. Select the calculation method your mosque follows. Consult your mosque leadership if unsure.
+                  </div>
+                </div>
+              )}
               <div>
                 <label style={styles.label}>Asr calculation school</label>
                 <div style={styles.toggleRow}>
                   <Button variant={editForm.prayerSchool === 0 ? 'primary' : 'ghost'} type="button" aria-pressed={editForm.prayerSchool === 0} onClick={() => setEditForm((p) => ({ ...p, prayerSchool: 0 }))}>Shafi (standard)</Button>
                   <Button variant={editForm.prayerSchool === 1 ? 'primary' : 'ghost'} type="button" aria-pressed={editForm.prayerSchool === 1} onClick={() => setEditForm((p) => ({ ...p, prayerSchool: 1 }))}>Hanafi</Button>
                 </div>
-                <div style={styles.helperText}>Shafi: shadow length = 1× object (default). Hanafi: shadow length = 2× object — common in South Asian / UK mosques. Affects Asr time only.</div>
+                <div style={styles.helperText}>
+                  {effectivePrayerSource === 'elm'
+                    ? 'ELM provides both Asr times. Shafi: 1× shadow length (earlier). Hanafi: 2× shadow length (later, ~74 min difference in summer). Affects Asr only.'
+                    : 'Shafi: shadow length = 1× object (default). Hanafi: shadow length = 2× object — common in South Asian / UK mosques. Affects Asr time only.'}
+                </div>
               </div>
               <div>
                 <label style={styles.label}>Cross-mosque admin access</label>

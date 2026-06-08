@@ -12,11 +12,13 @@ type StaffRotaWorkspacePayload = {
     prayer_name?: string | null;
     muezzin_user_id?: string | null;
     staff_user_id?: string | null;
+    role_on_duty?: string | null;
     notes?: string | null;
     adhan_time?: string | null;
     iqama_time?: string | null;
   }[];
   muezzins: MuezzinSummary[];
+  defaultMuezzinUserId?: string | null;
 };
 
 function safeDate(value?: string | null) {
@@ -35,6 +37,7 @@ function mapRotaRows(rows: StaffRotaWorkspacePayload['rotaRows']): StaffRotaForD
       notes: row.notes ?? null,
       adhanTime: safeDate(row.adhan_time ?? null),
       iqamaTime: safeDate(row.iqama_time ?? null),
+      assignmentSource: row.role_on_duty === 'default' ? 'default' : 'manual',
     };
   });
   return map;
@@ -85,7 +88,9 @@ async function loadStaffRotaWorkspaceFallback(mosqueId: string, dateIso: string)
         displayName: member.displayName,
         user_id: member.userId,
         name: member.displayName,
+        isDefault: member.isDefault ?? false,
       })),
+    defaultMuezzinUserId: members.find((member) => member.isActive && member.isDefault)?.userId ?? null,
   };
 }
 
@@ -132,6 +137,7 @@ export async function loadStaffRotaWorkspace(mosqueId: string, dateIso: string) 
 
     const rotaRows = typed.rotaRows ?? [];
     const muezzins = typed.muezzins ?? [];
+    const defaultMuezzinUserId = typed.defaultMuezzinUserId ?? null;
 
     const prayerTimesRow = (typed.prayerTimesRow ?? null) as PrayerTimesRow | null;
     let fallbackPrayerTimesRow = (typed.fallbackPrayerTimesRow ?? null) as PrayerTimesRow | null;
@@ -153,6 +159,7 @@ export async function loadStaffRotaWorkspace(mosqueId: string, dateIso: string) 
       fallbackPrayerTimesRow,
       rota: mapRotaRows(rotaRows),
       muezzins: muezzins as MuezzinSummary[],
+      defaultMuezzinUserId,
     };
   } catch (error) {
     console.warn('[loadStaffRotaWorkspace] server fallback', error);

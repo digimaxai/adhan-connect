@@ -2,11 +2,13 @@ import { supabase } from '../supabase';
 import { PrayerName } from '../adhans';
 import { fetchServerApi, resolveApiUrls, supportsServerApi } from './apiBaseUrl';
 import { DEFAULT_ALADHAN_METHOD, fetchAladhanTimes } from './aladhan';
+import { fetchELMTimes } from './londonPrayerTimes';
 
 export type PrayerTimeSlot = { adhan: Date | null; iqama: Date | null };
 export type NormalizedPrayerTimes = Record<PrayerName, PrayerTimeSlot>;
 
 const PRAYER_NAMES: PrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+const PRAYER_TIMES_SERVER_TIMEOUT_MS = 2500;
 
 type PrayerTimesRow = {
   date?: string | null;
@@ -41,6 +43,12 @@ type MosquePrayerGeoRow = {
   lng: number | null;
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
+  prayer_source?: string | null;
+};
+
+type SourceTimingMaps = {
+  adhan: Partial<Record<PrayerName, string | null>>;
+  iqama: Partial<Record<PrayerName, string | null>>;
 };
 
 const safeDate = (value?: string | Date | null): Date | null => {
@@ -107,7 +115,7 @@ async function loadDailyPrayerTimesViaServer(
       url.searchParams.set('mosqueId', mosqueId);
       url.searchParams.set('date', dateIso);
 
-      const response = await fetchServerApi(url.toString());
+      const response = await fetchServerApi(url.toString(), undefined, PRAYER_TIMES_SERVER_TIMEOUT_MS);
       const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
@@ -128,7 +136,7 @@ async function loadDailyPrayerTimesViaServer(
 async function loadMosquePrayerGeo(mosqueId: string): Promise<MosquePrayerGeoRow | null> {
   const { data: geoFull, error: geoFullErr } = await supabase
     .from('mosques')
-    .select('lat, lng, prayer_calculation_method, prayer_school')
+    .select('lat, lng, prayer_calculation_method, prayer_school, prayer_source')
     .eq('id', mosqueId)
     .maybeSingle<MosquePrayerGeoRow>();
 
@@ -150,30 +158,84 @@ async function loadMosquePrayerGeo(mosqueId: string): Promise<MosquePrayerGeoRow
   return null;
 }
 
-async function fillPartialPrayerTimesFromAladhan(
+async function fetchAladhanTimingMap(
+  geoRow: MosquePrayerGeoRow | null,
+  dateIso: string,
+  school: number
+): Promise<Partial<Record<PrayerName, string>> | null> {
+  if (geoRow?.lat == null || geoRow.lng == null) return null;
+
+  const method = geoRow.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
+  const timings = await fetchAladhanTimes(geoRow.lat, geoRow.lng, dateIso, method, school);
+  if (!timings) return null;
+
+  return {
+    fajr: timings.Fajr,
+    dhuhr: timings.Dhuhr,
+    asr: timings.Asr,
+    maghrib: timings.Maghrib,
+    isha: timings.Isha,
+  };
+}
+
+async function fetchSourceTimingMaps(geoRow: MosquePrayerGeoRow | null, dateIso: string): Promise<SourceTimingMaps | null> {
+  const source = geoRow?.prayer_source ?? 'aladhan';
+  const school = geoRow?.prayer_school ?? 0;
+
+  if (source !== 'elm') {
+    const adhan = await fetchAladhanTimingMap(geoRow, dateIso, school);
+    return adhan ? { adhan, iqama: {} } : null;
+  }
+
+  const elmTimings = await fetchELMTimes(dateIso);
+  const aladhanFallback = async () => fetchAladhanTimingMap(geoRow, dateIso, school);
+
+  if (!elmTimings) {
+    const adhan = await aladhanFallback();
+    return adhan ? { adhan, iqama: {} } : null;
+  }
+
+  const adhan: SourceTimingMaps['adhan'] = {
+    fajr: elmTimings.fajr,
+    dhuhr: elmTimings.dhuhr,
+    asr: school === 1 ? elmTimings.asr_2 : elmTimings.asr,
+    maghrib: elmTimings.magrib,
+    isha: elmTimings.isha,
+  };
+
+  const missingAdhan = PRAYER_NAMES.filter((prayer) => !adhan[prayer]);
+  if (missingAdhan.length) {
+    const fallback = await aladhanFallback();
+    missingAdhan.forEach((prayer) => {
+      adhan[prayer] = fallback?.[prayer] ?? adhan[prayer] ?? null;
+    });
+  }
+
+  return {
+    adhan,
+    iqama: {
+      fajr: elmTimings.fajr_jamat,
+      dhuhr: elmTimings.dhuhr_jamat,
+      asr: elmTimings.asr_jamat,
+      maghrib: elmTimings.magrib_jamat,
+      isha: elmTimings.isha_jamat,
+    },
+  };
+}
+
+async function fillPartialPrayerTimesFromSource(
   mosqueId: string,
   dateIso: string,
   normalized: NormalizedPrayerTimes
 ): Promise<NormalizedPrayerTimes> {
   const nullPrayers = PRAYER_NAMES.filter((p) => normalized[p].adhan === null);
-  if (nullPrayers.length === 0 || nullPrayers.length === PRAYER_NAMES.length) return normalized;
+  if (nullPrayers.length === 0) return normalized;
 
   try {
     const geoRow = await loadMosquePrayerGeo(mosqueId);
-    if (geoRow?.lat == null || geoRow.lng == null) return normalized;
+    const sourceTimings = await fetchSourceTimingMaps(geoRow, dateIso);
+    if (!sourceTimings) return normalized;
 
-    const method = geoRow.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
-    const school = geoRow.prayer_school ?? 0;
-    const timings = await fetchAladhanTimes(geoRow.lat, geoRow.lng, dateIso, method, school);
-    if (!timings) return normalized;
-
-    const aladhanMap: Partial<Record<PrayerName, string>> = {
-      fajr: timings.Fajr,
-      dhuhr: timings.Dhuhr,
-      asr: timings.Asr,
-      maghrib: timings.Maghrib,
-      isha: timings.Isha,
-    };
     const filled: NormalizedPrayerTimes = {
       fajr: { ...normalized.fajr },
       dhuhr: { ...normalized.dhuhr },
@@ -181,15 +243,14 @@ async function fillPartialPrayerTimesFromAladhan(
       maghrib: { ...normalized.maghrib },
       isha: { ...normalized.isha },
     };
-
     nullPrayers.forEach((p) => {
-      if (aladhanMap[p]) {
-        filled[p] = { adhan: safeDateWithBase(aladhanMap[p]!, dateIso), iqama: filled[p].iqama };
+      if (sourceTimings.adhan[p]) {
+        filled[p] = { adhan: safeDateWithBase(sourceTimings.adhan[p], dateIso), iqama: filled[p].iqama };
       }
     });
     return filled;
   } catch (fillErr: any) {
-    console.warn('[getDailyPrayerTimes] partial override Aladhan fill threw', fillErr?.message ?? fillErr);
+    console.warn('[getDailyPrayerTimes] partial fill threw', fillErr?.message ?? fillErr);
     return normalized;
   }
 }
@@ -224,7 +285,7 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   if (serverResult?.row) {
     const serverNormalized = normalizePrayerTimesRowWithBase(serverResult.row, dateIso);
     return serverResult.source === 'prayer_times' || !serverResult.source
-      ? fillPartialPrayerTimesFromAladhan(mosqueId, dateIso, serverNormalized)
+      ? fillPartialPrayerTimesFromSource(mosqueId, dateIso, serverNormalized)
       : serverNormalized;
   }
 
@@ -240,7 +301,7 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
       .maybeSingle<PrayerTimesRow>();
 
     if (!primaryErr && primary) {
-      normalized = await fillPartialPrayerTimesFromAladhan(
+      normalized = await fillPartialPrayerTimesFromSource(
         mosqueId,
         dateIso,
         normalizePrayerTimesRowWithBase(primary, dateIso)
@@ -327,51 +388,23 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
     console.warn('[getDailyPrayerTimes] staff_rota fallback threw', err?.message ?? err);
   }
 
-  // Aladhan calculated times — last resort when no stored data exists.
-  // Only fires when the mosque has coordinates; returns astronomically correct
-  // times based on the mosque's chosen calculation method and Asr school.
+  // Last resort: auto-calculate from the mosque's configured source (ELM or Aladhan).
+  // ELM also populates iqama from jamaat times; Aladhan provides adhan only.
   try {
-    let mosqueGeo: MosquePrayerGeoRow | null = null;
+    const mosqueGeo = await loadMosquePrayerGeo(mosqueId);
+    const sourceTimings = await fetchSourceTimingMaps(mosqueGeo, dateIso);
+    if (!sourceTimings) return null;
 
-    const { data: geoFull, error: geoFullErr } = await supabase
-      .from('mosques')
-      .select('lat, lng, prayer_calculation_method, prayer_school')
-      .eq('id', mosqueId)
-      .maybeSingle<MosquePrayerGeoRow>();
-
-    if (!geoFullErr) {
-      mosqueGeo = geoFull;
-    } else {
-      // prayer_calculation_method / prayer_school columns may not be deployed yet — retry with just coordinates.
-      console.warn('[getDailyPrayerTimes] mosqueGeo full fetch error (column may be missing):', geoFullErr.message);
-      const { data: geoBasic, error: geoBasicErr } = await supabase
-        .from('mosques')
-        .select('lat, lng')
-        .eq('id', mosqueId)
-        .maybeSingle<{ lat: number | null; lng: number | null }>();
-      if (!geoBasicErr) {
-        mosqueGeo = geoBasic ? { lat: geoBasic.lat, lng: geoBasic.lng } : null;
-      } else {
-        console.warn('[getDailyPrayerTimes] mosqueGeo basic fetch error:', geoBasicErr.message);
-      }
-    }
-
-    if (mosqueGeo?.lat != null && mosqueGeo?.lng != null) {
-      const method = mosqueGeo.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
-      const school = mosqueGeo.prayer_school ?? 0;
-      const timings = await fetchAladhanTimes(mosqueGeo.lat, mosqueGeo.lng, dateIso, method, school);
-      if (timings) {
-        const calculated = emptyNormalized();
-        calculated.fajr    = { adhan: safeDateWithBase(timings.Fajr,    dateIso), iqama: null };
-        calculated.dhuhr   = { adhan: safeDateWithBase(timings.Dhuhr,   dateIso), iqama: null };
-        calculated.asr     = { adhan: safeDateWithBase(timings.Asr,     dateIso), iqama: null };
-        calculated.maghrib = { adhan: safeDateWithBase(timings.Maghrib, dateIso), iqama: null };
-        calculated.isha    = { adhan: safeDateWithBase(timings.Isha,    dateIso), iqama: null };
-        return calculated;
-      }
-    }
+    const calculated = emptyNormalized();
+    PRAYER_NAMES.forEach((prayer) => {
+      calculated[prayer] = {
+        adhan: safeDateWithBase(sourceTimings.adhan[prayer], dateIso),
+        iqama: safeDateWithBase(sourceTimings.iqama[prayer], dateIso),
+      };
+    });
+    return calculated;
   } catch (err: any) {
-    console.warn('[getDailyPrayerTimes] Aladhan fallback threw', err?.message ?? err);
+    console.warn('[getDailyPrayerTimes] auto-calculate fallback threw', err?.message ?? err);
   }
 
   return null;
