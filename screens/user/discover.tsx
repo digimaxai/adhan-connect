@@ -23,7 +23,7 @@ type UserLocation = {
   longitude: number;
 };
 
-const MAX_FOLLOW = 10;
+const MAX_FOLLOW = 3;
 const MOSQUE_SELECT = 'id,name,city,country,lat,lng';
 
 const toRadians = (degrees: number) => degrees * (Math.PI / 180);
