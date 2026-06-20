@@ -26,10 +26,17 @@ const STATUS_OPTIONS: { key: Status; label: string; description: string; color: 
   { key: 'draft',     label: 'Draft',     description: 'Hidden until published',      color: '#475569', bg: '#F1F5F9' },
 ];
 
+function returnToContentHub(router: ReturnType<typeof useRouter>) {
+  router.replace({
+    pathname: '/(admin)/events',
+    params: { tab: 'notices', refresh: String(Date.now()) },
+  } as any);
+}
+
 export default function AdminAnnouncementForm() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { selectedMosque } = useAdminMosque();
+  const { selectedMosque, loading: mosqueLoading } = useAdminMosque();
   const isNew = !id || id === 'new';
 
   const [title, setTitle] = useState('');
@@ -45,15 +52,23 @@ export default function AdminAnnouncementForm() {
 
   const load = useCallback(async () => {
     if (isNew || !id) return;
+    if (!selectedMosque) {
+      if (!mosqueLoading) setError('No mosque selected.');
+      setLoading(mosqueLoading);
+      return;
+    }
     setLoading(true);
     try {
       const { data, error: e } = await supabase
         .from('announcements')
-        .select('id,title,summary,status,is_urgent,is_pinned')
+        .select('id,mosque_id,title,summary,status,is_urgent,is_pinned')
         .eq('id', id)
+        .eq('mosque_id', selectedMosque.mosqueId)
         .maybeSingle();
       if (e) throw e;
-      if (data) {
+      if (!data) {
+        setError('Notice not found for the selected mosque.');
+      } else {
         setTitle(data.title ?? '');
         setBody(data.summary ?? '');
         setStatus((data.status as Status) ?? 'published');
@@ -65,13 +80,13 @@ export default function AdminAnnouncementForm() {
     } finally {
       setLoading(false);
     }
-  }, [id, isNew]);
+  }, [id, isNew, mosqueLoading, selectedMosque]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
-    if (!selectedMosque && isNew) { setError('No mosque selected.'); return; }
+    if (!selectedMosque) { setError('No mosque selected.'); return; }
     setSaving(true);
     setError(null);
     try {
@@ -87,10 +102,17 @@ export default function AdminAnnouncementForm() {
         const { error: e } = await supabase.from('announcements').insert(payload);
         if (e) throw e;
       } else {
-        const { error: e } = await supabase.from('announcements').update(payload).eq('id', id!);
+        const { data, error: e } = await supabase
+          .from('announcements')
+          .update(payload)
+          .eq('id', id!)
+          .eq('mosque_id', selectedMosque.mosqueId)
+          .select('id')
+          .maybeSingle();
         if (e) throw e;
+        if (!data) throw new Error('No matching notice found for the selected mosque.');
       }
-      router.back();
+      returnToContentHub(router);
     } catch (err: any) {
       setError(err?.message ?? 'Save failed.');
     } finally {
@@ -99,6 +121,10 @@ export default function AdminAnnouncementForm() {
   };
 
   const handleDelete = () => {
+    if (!selectedMosque) {
+      setError('No mosque selected.');
+      return;
+    }
     Alert.alert(
       'Delete Notice',
       'This will permanently remove the announcement from the mosque page.',
@@ -110,9 +136,16 @@ export default function AdminAnnouncementForm() {
           onPress: async () => {
             setDeleting(true);
             try {
-              const { error: e } = await supabase.from('announcements').delete().eq('id', id!);
+              const { data, error: e } = await supabase
+                .from('announcements')
+                .delete()
+                .eq('id', id!)
+                .eq('mosque_id', selectedMosque.mosqueId)
+                .select('id')
+                .maybeSingle();
               if (e) throw e;
-              router.back();
+              if (!data) throw new Error('No matching notice found for the selected mosque.');
+              returnToContentHub(router);
             } catch (err: any) {
               setError(err?.message ?? 'Delete failed.');
               setDeleting(false);

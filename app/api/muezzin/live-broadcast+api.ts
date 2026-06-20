@@ -4,11 +4,13 @@ import {
   normalizeLiveStreamProvider,
   normalizePlaybackUrl,
   summarizeMosqueLiveBroadcastConfig,
+  type MosqueLiveBroadcastConfig,
   type MosqueLiveStreamConfigRow,
 } from '../../../lib/liveStreamProviders';
 import { attachMosqueLiveHealthChecks } from '../../../lib/server/liveStreamHealth';
 import {
   attachMosqueLiveUpstreamState,
+  type MosqueLiveStreamUpstreamStateRow,
   fetchMosqueLiveStreamUpstreamState,
 } from '../../../lib/server/liveStreamUpstreamState';
 import { resolveMuezzinMosquesForUser } from '../../../lib/server/muezzinAccess';
@@ -56,12 +58,35 @@ type CoverAssignmentRow = {
   status?: string | null;
 };
 
+const HEALTH_CHECK_BUDGET_MS = 4500;
+const AUTH_CHECK_BUDGET_MS = 6000;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
     },
+  });
+}
+
+function describeError(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (!error || typeof error !== 'object') return String(error ?? 'Unknown error');
+  const record = error as { code?: unknown; message?: unknown; details?: unknown };
+  return [record.code, record.message, record.details]
+    .filter((value) => typeof value === 'string' && value.trim().length > 0)
+    .join(' | ');
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms.`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
   });
 }
 
@@ -115,15 +140,96 @@ async function requireMuezzinContext(
     },
   });
 
-  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
-  if (authError || !authData.user) {
+  let authData: { user?: { id: string } | null } | null = null;
+  let authError: unknown = null;
+  try {
+    const result = await withTimeout(
+      supabaseAdmin.auth.getUser(accessToken),
+      AUTH_CHECK_BUDGET_MS,
+      'Supabase session verification'
+    );
+    authData = result.data;
+    authError = result.error;
+  } catch (error) {
+    console.warn('[live-broadcast] auth verification failed', {
+      message: describeError(error),
+    });
+    return { response: json({ error: 'Unable to verify your session. Check the local server connection and try again.' }, 503) };
+  }
+
+  const verifiedUserId = authData?.user?.id ?? null;
+  if (authError || !verifiedUserId) {
     return { response: json({ error: 'Session is invalid or has expired.' }, 401) };
   }
 
   return {
     supabaseAdmin,
-    userId: authData.user.id,
+    userId: verifiedUserId,
   };
+}
+
+async function hasTargetedMuezzinAccess(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  userId: string,
+  mosqueId: string
+) {
+  const [{ data: muezzinRow, error: muezzinError }, { data: mosqueRow, error: mosqueError }] = await Promise.all([
+    supabaseAdmin
+      .from('muezzins')
+      .select('mosque_id')
+      .eq('user_id', userId)
+      .eq('mosque_id', mosqueId)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle<{ mosque_id?: string | null }>(),
+    supabaseAdmin
+      .from('mosques')
+      .select('default_muezzin_user_id')
+      .eq('id', mosqueId)
+      .maybeSingle<{ default_muezzin_user_id?: string | null }>(),
+  ]);
+
+  if (muezzinError && muezzinError.code !== 'PGRST116') throw muezzinError;
+  if (mosqueError && mosqueError.code !== 'PGRST116') throw mosqueError;
+
+  if (muezzinRow?.mosque_id || mosqueRow?.default_muezzin_user_id === userId) {
+    return true;
+  }
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  let result: any = await supabaseAdmin
+    .from('staff_rota')
+    .select('id')
+    .eq('mosque_id', mosqueId)
+    .or(`muezzin_user_id.eq.${userId},staff_user_id.eq.${userId}`)
+    .gte('date', todayIso)
+    .limit(1)
+    .maybeSingle<{ id?: string | null }>();
+
+  if (result.error?.code === '42703') {
+    result = await supabaseAdmin
+      .from('staff_rota')
+      .select('id')
+      .eq('mosque_id', mosqueId)
+      .eq('muezzin_user_id', userId)
+      .gte('date', todayIso)
+      .limit(1)
+      .maybeSingle<{ id?: string | null }>();
+  }
+
+  if (result.error?.code === '42703') {
+    result = await supabaseAdmin
+      .from('staff_rota')
+      .select('id')
+      .eq('mosque_id', mosqueId)
+      .eq('muezzin_user_id', userId)
+      .gte('duty_date', todayIso)
+      .limit(1)
+      .maybeSingle<{ id?: string | null }>();
+  }
+
+  if (result.error && result.error.code !== 'PGRST116') throw result.error;
+  return !!result.data?.id;
 }
 
 async function ensureMuezzinMosqueAccess(
@@ -131,10 +237,11 @@ async function ensureMuezzinMosqueAccess(
   userId: string,
   mosqueId: string
 ) : Promise<BroadcastAccess> {
-  const mosques = await resolveMuezzinMosquesForUser(supabaseAdmin, userId);
-  const hasMuezzinAccess = mosques.some((mosque) => mosque.mosqueId === mosqueId);
-
-  const [{ data: userRow, error: userError }, { data: adminRow, error: adminError }] = await Promise.all([
+  const [
+    { data: userRow, error: userError },
+    { data: adminRow, error: adminError },
+    targetedMuezzinAccess,
+  ] = await Promise.all([
     supabaseAdmin.from('users').select('role').eq('id', userId).maybeSingle<{ role?: string | null }>(),
     supabaseAdmin
       .from('mosque_admins')
@@ -143,12 +250,17 @@ async function ensureMuezzinMosqueAccess(
       .eq('mosque_id', mosqueId)
       .limit(1)
       .maybeSingle<{ mosque_id?: string | null }>(),
+    hasTargetedMuezzinAccess(supabaseAdmin, userId, mosqueId),
   ]);
 
   if (userError && userError.code !== 'PGRST116') throw userError;
   if (adminError && adminError.code !== 'PGRST116') throw adminError;
 
   const hasAdminOverride = userRow?.role === 'main_admin' || !!adminRow?.mosque_id;
+  const hasMuezzinAccess = targetedMuezzinAccess || (!hasAdminOverride
+    ? (await resolveMuezzinMosquesForUser(supabaseAdmin, userId)).some((mosque) => mosque.mosqueId === mosqueId)
+    : false);
+
   if (!hasMuezzinAccess && !hasAdminOverride) {
     throw new Error('You do not have muezzin access to this mosque.');
   }
@@ -467,13 +579,28 @@ async function assertBroadcastWindow(
 
 type AdhanWritePayload = Record<string, string | null>;
 
-function describeError(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (!error || typeof error !== 'object') return String(error ?? 'Unknown error');
-  const record = error as { code?: unknown; message?: unknown; details?: unknown };
-  return [record.code, record.message, record.details]
-    .filter((value) => typeof value === 'string' && value.trim().length > 0)
-    .join(' | ');
+async function attachLiveBroadcastDiagnostics(
+  config: MosqueLiveBroadcastConfig,
+  upstreamState: MosqueLiveStreamUpstreamStateRow | null,
+  options: { includeHealthChecks: boolean }
+) {
+  let nextConfig = config;
+
+  if (options.includeHealthChecks) {
+    try {
+      nextConfig = await withTimeout(
+        attachMosqueLiveHealthChecks(config),
+        HEALTH_CHECK_BUDGET_MS,
+        'Live broadcast endpoint checks'
+      );
+    } catch (error) {
+      console.warn('[live-broadcast] endpoint checks skipped', {
+        message: describeError(error),
+      });
+    }
+  }
+
+  return attachMosqueLiveUpstreamState(nextConfig, upstreamState);
 }
 
 function dedupePayloadVariants<T extends AdhanWritePayload>(variants: T[]) {
@@ -810,9 +937,10 @@ export const GET: RequestHandler = async (request) => {
       fetchMosqueLiveStreamConfig(auth.supabaseAdmin, mosqueId),
       fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId),
     ]);
-    const config = attachMosqueLiveUpstreamState(
-      await attachMosqueLiveHealthChecks(summarizeMosqueLiveBroadcastConfig(mosqueConfig)),
-      upstreamState
+    const config = await attachLiveBroadcastDiagnostics(
+      summarizeMosqueLiveBroadcastConfig(mosqueConfig),
+      upstreamState,
+      { includeHealthChecks: true }
     );
     return json({ stream, config });
   } catch (error: any) {
@@ -869,7 +997,7 @@ export const POST: RequestHandler = async (request) => {
       const stream = await startOrCreateStream(auth.supabaseAdmin, mosqueId, prayer, startedAt, playbackUrl, livekitRoomName);
       await startOrCreateAdhan(auth.supabaseAdmin, mosqueId, prayer, scheduledAt, body.adhanId ?? null, startedAt, stream?.id ?? null);
       const upstreamState = await fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId);
-      const config = attachMosqueLiveUpstreamState(await attachMosqueLiveHealthChecks(summary), upstreamState);
+      const config = await attachLiveBroadcastDiagnostics(summary, upstreamState, { includeHealthChecks: false });
       return json({ stream, config });
     }
 
@@ -886,9 +1014,10 @@ export const POST: RequestHandler = async (request) => {
     if (activeStream?.livekit_room_name) {
       await deleteLiveKitRoom(activeStream.livekit_room_name);
     }
-    const config = attachMosqueLiveUpstreamState(
-      await attachMosqueLiveHealthChecks(summarizeMosqueLiveBroadcastConfig(mosqueConfig)),
-      upstreamState
+    const config = await attachLiveBroadcastDiagnostics(
+      summarizeMosqueLiveBroadcastConfig(mosqueConfig),
+      upstreamState,
+      { includeHealthChecks: false }
     );
     return json({ stream, config });
   } catch (error: any) {

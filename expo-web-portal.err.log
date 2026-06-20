@@ -32,9 +32,6 @@ Your project may not work correctly until you install the expected versions of t
   run (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5539:39)
   retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5899:31)
   renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5849:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
 "shadow*" style props are deprecated. Use "boxShadow".
 [expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
 λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
@@ -55,38 +52,12 @@ Error: Premature close
   warnOnce (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
   createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMProps\index.js:805:13)
   createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElement\index.js:23:32)
-  instance (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
-  Object.actionStateCount [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:8977:18)
-  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4723:17)
-  renderElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5560:37)
-  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5918:52)
-  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5857:39)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
-  console.warn (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\expo\node_modules\@expo\cli\src\start\server\serverLogLikeMetro.ts:161:21)
-  warnOnce (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
-  createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMProps\index.js:805:13)
-  createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElement\index.js:23:32)
-  instance (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
-  Object.actionStateCount [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:8977:18)
-  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4723:17)
-  renderElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5560:37)
-  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5918:52)
-  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5857:39)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
-  console.warn (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\expo\node_modules\@expo\cli\src\start\server\serverLogLikeMetro.ts:161:21)
-  warnOnce (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
-  createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMProps\index.js:805:13)
-  createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElement\index.js:23:32)
-  instance (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
-  Object.actionStateCount [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:8977:18)
-  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4723:17)
-  renderElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5560:37)
-  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5918:52)
-  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5857:39)
+  Component (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
+  Object.callComponentInDEV [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:8970:18)
+  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4699:19)
+  run (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5539:39)
+  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5899:31)
+  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5849:11)
 Error: Premature close
     at onclose (node:internal/streams/end-of-stream:162:30)
     at processTicksAndRejections (node:internal/process/task_queues:85:11)
@@ -96,76 +67,9 @@ Error: Premature close
 Error: Premature close
     at onclose (node:internal/streams/end-of-stream:162:30)
     at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
-  console.warn (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\expo\node_modules\@expo\cli\src\start\server\serverLogLikeMetro.ts:161:21)
-  warnOnce (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
-  createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMProps\index.js:805:13)
-  createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElement\index.js:23:32)
-  instance (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
-  Object.actionStateCount [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:8977:18)
-  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4723:17)
-  renderElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5560:37)
-  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5918:52)
-  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5857:39)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
     at runNextTicks (node:internal/process/task_queues:69:3)
-    at listOnTimeout (node:internal/timers:549:9)
-    at processTimers (node:internal/timers:523:7)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+    at processImmediate (node:internal/timers:453:9)
+    at process.callbackTrampoline (node:internal/async_hooks:130:17)
 Error: Premature close
     at onclose (node:internal/streams/end-of-stream:162:30)
     at processTicksAndRejections (node:internal/process/task_queues:85:11)
@@ -179,18 +83,42 @@ Error: Premature close
   warnOnce (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
   createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMProps\index.js:805:13)
   createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElement\index.js:23:32)
-  View (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
-  Object.foundWillReceivePropsName [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:9033:6)
-  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4812:15)
-  renderElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5626:15)
-  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:6040:59)
-  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5987:12)
+  Component (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
+  Object.callComponentInDEV [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:8970:18)
+  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4699:19)
+  run (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5539:39)
+  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5899:31)
+  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5849:11)
 Error: Premature close
     at onclose (node:internal/streams/end-of-stream:162:30)
     at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
+  console.warn (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\expo\node_modules\@expo\cli\src\start\server\serverLogLikeMetro.ts:161:21)
+  warnOnce (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\warnOnce\index.js:24:13)
+  createDOMProps (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\modules\createDOMProps\index.js:805:13)
+  createElement (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\createElement\index.js:23:32)
+  Component (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-native-web\dist\exports\View\index.js:111:23)
+  Object.callComponentInDEV [as react-stack-bottom-frame] (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:8970:18)
+  renderWithHooks (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:4699:19)
+  run (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5539:39)
+  retryNode (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5899:31)
+  renderNodeDestructive (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\react-dom\cjs\react-dom-server-legacy.node.development.js:5849:11)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:162:30)
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
 "shadow*" style props are deprecated. Use "boxShadow".
 [expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
 "shadow*" style props are deprecated. Use "boxShadow".
@@ -198,53 +126,6 @@ Error: Premature close
 Error: Premature close
     at onclose (node:internal/streams/end-of-stream:162:30)
     at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
 "shadow*" style props are deprecated. Use "boxShadow".
 [expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
 Error: Premature close
@@ -253,50 +134,24 @@ Error: Premature close
     at runNextTicks (node:internal/process/task_queues:69:3)
     at processImmediate (node:internal/timers:453:9)
     at process.callbackTrampoline (node:internal/async_hooks:130:17)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processTimers (node:internal/timers:520:9)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processImmediate (node:internal/timers:453:9)
-    at process.callbackTrampoline (node:internal/async_hooks:130:17)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processTimers (node:internal/timers:520:9)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-    at runNextTicks (node:internal/process/task_queues:69:3)
-    at processTimers (node:internal/timers:520:9)
-"shadow*" style props are deprecated. Use "boxShadow".
-[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
-Error: Premature close
-    at onclose (node:internal/streams/end-of-stream:162:30)
-    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\expo\node_modules\@expo\cli\build\src\utils\errors.js:130
+    throw error;
+    ^
+
+Error: write EPIPE
+    at ChildProcess.target._send (node:internal/child_process:877:20)
+    at ChildProcess.target.send (node:internal/child_process:751:19)
+    at ChildProcessWorker.initialize (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\jest-worker\build\workers\ChildProcessWorker.js:169:17)
+    at ChildProcessWorker._onExit (C:\Users\hmakh\Documents\Project\adhan-connect\node_modules\jest-worker\build\workers\ChildProcessWorker.js:334:12)
+    at ChildProcess.emit (node:events:519:28)
+    at Process.ChildProcess._handle.onexit (node:internal/child_process:293:12)
+    at Process.callbackTrampoline (node:internal/async_hooks:130:17)
+Emitted 'error' event on ChildProcess instance at:
+    at node:internal/child_process:881:39
+    at processTicksAndRejections (node:internal/process/task_queues:85:11) {
+  errno: -4047,
+  code: 'EPIPE',
+  syscall: 'write'
+}
+
+Node.js v22.20.0

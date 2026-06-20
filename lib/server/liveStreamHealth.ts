@@ -4,6 +4,7 @@ import {
   getLiveStreamProviderProfile,
   type MosqueLiveBroadcastConfig,
 } from '../liveStreamProviders';
+import { isLiveKitConfigured } from './livekitRoom';
 
 const PROBE_TIMEOUT_MS = 3000;
 
@@ -103,8 +104,26 @@ function buildHealthCheck(
 }
 
 async function probePlaybackHealth(config: MosqueLiveBroadcastConfig): Promise<EndpointHealthCheck> {
+  const profile = getLiveStreamProviderProfile(config.provider);
+
+  if (!profile.requiresPlaybackUrl) {
+    return buildHealthCheck(
+      'playback',
+      'not_required',
+      config.provider === 'livekit'
+        ? 'LiveKit listeners join through room tokens; no static playback URL is required.'
+        : `${profile.label} does not require a playback URL.`,
+      null
+    );
+  }
+
   if (!config.playback_url) {
-    return buildHealthCheck('playback', 'not_configured', 'Follower playback URL is not configured.', null);
+    return buildHealthCheck(
+      'playback',
+      'not_configured',
+      'Follower playback URL is not configured.',
+      null
+    );
   }
 
   const result = await probeHttpUrl(config.playback_url, 'playback');
@@ -156,6 +175,8 @@ function summarizePreflight(
   playbackHealth: EndpointHealthCheck,
   ingestHealth: EndpointHealthCheck
 ): { status: EncoderPreflightStatus; summary: string } {
+  const profile = getLiveStreamProviderProfile(config.provider);
+
   if (!config.is_ready_for_broadcast) {
     return {
       status: 'not_configured',
@@ -163,7 +184,21 @@ function summarizePreflight(
     };
   }
 
-  if (playbackHealth.status === 'failing' || playbackHealth.status === 'not_configured') {
+  if (config.provider === 'livekit' && !isLiveKitConfigured()) {
+    return {
+      status: 'attention',
+      summary: 'LiveKit is not configured on the server. Contact support before going live.',
+    };
+  }
+
+  if (config.provider === 'livekit') {
+    return {
+      status: 'ready',
+      summary: 'LiveKit is configured. In-app microphone publishing and listener room tokens are ready.',
+    };
+  }
+
+  if (profile.requiresPlaybackUrl && (playbackHealth.status === 'failing' || playbackHealth.status === 'not_configured')) {
     return {
       status: 'attention',
       summary: 'Follower playback endpoint did not pass the preflight check.',

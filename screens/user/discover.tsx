@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Location from 'expo-location';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 
@@ -65,8 +65,11 @@ const escapePostgrestSearchTerm = (term: string) => term.replace(/[,%]/g, ' ').t
 
 export default function DiscoverMosques() {
   const router = useRouter();
+  const segments = useSegments();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const isMuezzinContext = segments[0] === '(muezzin)';
+  const manageMosquesPath = isMuezzinContext ? '/(muezzin)/manage-mosques' : '/(user)/manage-mosques';
 
   const [query, setQuery] = useState('');
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
@@ -223,7 +226,7 @@ export default function DiscoverMosques() {
     const isFollowed = followingIds.has(id);
     if (!isFollowed && followedCount >= MAX_FOLLOW) {
       Alert.alert('Maximum Reached', 'You can follow up to 10 mosques. Unfollow a mosque to follow a new one.', [
-        { text: 'Manage My Mosques', onPress: () => router.push('/manage-mosques') },
+        { text: 'Manage My Mosques', onPress: () => router.push(manageMosquesPath as any) },
         { text: 'Cancel', style: 'cancel' },
       ]);
       return;
@@ -284,7 +287,7 @@ export default function DiscoverMosques() {
         <View style={[styles.followStrip, atLimit && styles.followStripMax]}>
           <Text style={styles.followStripText}>{`⭐ Following ${followedCount} / ${MAX_FOLLOW} mosques`}</Text>
           {atLimit && <Text style={styles.followStripNote}>You have reached the maximum of 10 followed mosques.</Text>}
-          <Pressable onPress={() => router.push('/manage-mosques')} hitSlop={8} style={{ marginTop: 6, alignSelf: 'flex-start' }}>
+          <Pressable onPress={() => router.push(manageMosquesPath as any)} hitSlop={8} style={{ marginTop: 6, alignSelf: 'flex-start' }}>
             <Text style={styles.manageLink}>Manage my mosques</Text>
           </Pressable>
         </View>

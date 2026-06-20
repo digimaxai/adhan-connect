@@ -287,7 +287,8 @@ export default function MuezzinLiveScreen() {
 
   const providerName = engine.config?.provider_label ?? engine.config?.provider ?? 'External';
   const usesExternalEncoder = !!engine.config?.supports_external_encoder;
-  const playbackUrl = engine.config?.playback_url ?? engine.stream?.stream_url ?? engine.stream?.url ?? null;
+  const requiresPlaybackUrl = engine.config?.requires_playback_url ?? !isLiveKitProvider;
+  const playbackUrl = requiresPlaybackUrl ? engine.config?.playback_url ?? engine.stream?.stream_url ?? engine.stream?.url ?? null : null;
   const ingestUrl = engine.config?.ingest_url ?? null;
   const usernameValue = engine.config?.username ?? null;
   const streamKeyValue = showStreamKey ? engine.config?.stream_key ?? null : engine.config?.masked_stream_key ?? null;
@@ -301,7 +302,14 @@ export default function MuezzinLiveScreen() {
   const credentialLabel = engine.config?.credential_label ?? 'Stream key';
   const usernameLabel = engine.config?.username_label ?? 'Username';
   const providerSummary = engine.config?.provider_summary ?? 'Mosque live streaming details';
-  const readinessMessage = usesExternalEncoder
+  const playbackReadinessLabel = requiresPlaybackUrl
+    ? engine.config?.playback_url_configured
+      ? 'Configured'
+      : 'Missing'
+    : 'Not required';
+  const readinessMessage = isLiveKitProvider
+    ? 'LiveKit is configured. Use the microphone check before going live.'
+    : usesExternalEncoder
     ? engine.config?.is_ready_for_external_encoder
       ? 'Mosque playback and encoder settings are in place.'
       : engine.config?.requires_ingest_url || engine.config?.requires_username || engine.config?.requires_stream_key
@@ -527,7 +535,7 @@ export default function MuezzinLiveScreen() {
           </View>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Follower playback</Text>
-            <Text style={styles.metaValue}>{engine.config?.playback_url_configured ? 'Configured' : 'Missing'}</Text>
+            <Text style={styles.metaValue}>{playbackReadinessLabel}</Text>
           </View>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Encoder credentials</Text>
@@ -748,7 +756,7 @@ export default function MuezzinLiveScreen() {
             {engine.config?.encoder_preflight_summary ?? 'Endpoint checks run automatically while this screen is open.'}
           </Text>
           <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>Playback endpoint</Text>
+            <Text style={styles.metaLabel}>{requiresPlaybackUrl ? 'Playback endpoint' : 'Listener transport'}</Text>
             <Text style={styles.metaValue}>{playbackHealthLabel}</Text>
           </View>
           {engine.config?.playback_health?.message ? (
