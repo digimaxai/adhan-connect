@@ -4,6 +4,9 @@ import { fetchSessionAccess } from './sessionAccess';
 
 type PrimaryMosque = { mosqueId: string; mosqueName?: string | null; stream?: any | null };
 
+const STREAM_SAFE_SELECT =
+  'id, mosque_id, is_live, status, started_at, ended_at, current_prayer, last_health_check, livekit_room_name';
+
 const primaryMosqueCache = new Map<string, PrimaryMosque>();
 
 function cachePrimaryMosque(userId: string, mosque: PrimaryMosque | null) {
@@ -246,7 +249,7 @@ export async function startBroadcast(supabase: SupabaseClient, args: StartArgs) 
       } as any,
       { onConflict: 'mosque_id' }
     )
-    .select()
+    .select(STREAM_SAFE_SELECT)
     .maybeSingle();
   if (streamErr) throw streamErr;
 
@@ -285,7 +288,7 @@ export async function endBroadcast(supabase: SupabaseClient, args: EndArgs) {
     .from('streams')
     .update({ is_live: false, status: 'active', last_health_check: now, ended_at: now })
     .eq('mosque_id', args.mosqueId)
-    .select()
+    .select(STREAM_SAFE_SELECT)
     .maybeSingle();
   if (streamErr) throw streamErr;
 

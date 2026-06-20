@@ -5,6 +5,10 @@ import { useRouter } from 'expo-router';
 import { useMuezzinSchedule } from '../../lib/hooks/useMuezzinSchedule';
 import { useRoleFlags } from '../../lib/roles';
 import type { MuezzinSchedule, MuezzinSlot } from '../../lib/types/muezzin';
+import {
+  fetchMuezzinLiveBroadcastState,
+  type MosqueLiveBroadcastConfig,
+} from '../../lib/api/muezzin/liveBroadcast';
 import { AppButton } from '../../components/ui/app-button';
 import { AppCard } from '../../components/ui/app-card';
 import { ScreenContainer } from '../../components/ui/screen-container';
@@ -14,10 +18,25 @@ const PAGE_PADDING = 14;
 const WINDOW_START_MS = 3 * 60 * 1000;
 const WINDOW_END_MS = 2 * 60 * 1000;
 
+type BroadcastTestStatus = 'idle' | 'checking' | 'passed' | 'attention' | 'failed';
+
+type BroadcastTestResult = {
+  status: BroadcastTestStatus;
+  title: string;
+  message: string | null;
+};
+
+const initialBroadcastTestResult: BroadcastTestResult = {
+  status: 'idle',
+  title: 'Not checked',
+  message: null,
+};
+
 export default function MuezzinToolsScreen() {
   const router = useRouter();
   const { schedule, loading, refresh } = useMuezzinSchedule();
   const roles = useRoleFlags();
+  const [broadcastTest, setBroadcastTest] = useState<BroadcastTestResult>(initialBroadcastTestResult);
   const primaryMuezzinMosque = roles.muezzinMosques[0] ?? null;
   const hasSchedulePayload = !!schedule?.mosqueId || !!schedule?.mosqueName || !!schedule?.slots.length;
 
@@ -78,6 +97,47 @@ export default function MuezzinToolsScreen() {
     });
   };
 
+  const handleStartTest = () => {
+    if (broadcastTest.status === 'checking') return;
+
+    if (!primaryMosqueId) {
+      setBroadcastTest({
+        status: 'failed',
+        title: 'No mosque selected',
+        message: 'Assign a mosque before running broadcast connectivity checks.',
+      });
+      return;
+    }
+
+    setBroadcastTest({
+      status: 'checking',
+      title: 'Checking connection',
+      message: 'Testing broadcast configuration and endpoint reachability...',
+    });
+
+    void (async () => {
+      try {
+        const payload = await fetchMuezzinLiveBroadcastState(primaryMosqueId, 5000);
+        setBroadcastTest(buildBroadcastTestResult(payload.config ?? null));
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : '';
+        const isTimeout = raw.toLowerCase().includes('timed out') || raw.toLowerCase().includes('abort');
+        setBroadcastTest({
+          status: 'failed',
+          title: 'Connection check failed',
+          message: isTimeout
+            ? 'Could not reach the broadcast server. Make sure you are connected to the internet and try again.'
+            : raw || 'Unable to run the broadcast connectivity check.',
+        });
+      }
+    })();
+  };
+
+  const assignedSlotsToday = useMemo(
+    () => resolvedSchedule.slots.filter((slot) => slot.isAssignedToMe).length,
+    [resolvedSchedule.slots]
+  );
+
   return (
     <ScreenContainer
       style={styles.container}
@@ -85,7 +145,7 @@ export default function MuezzinToolsScreen() {
         refreshControl={<RefreshControl refreshing={!!loading} onRefresh={refresh} />}
       >
         <AppText variant="title" style={styles.title}>Muezzin Home</AppText>
-        <AppText variant="caption" style={styles.subtitle}>Review your next adhan and start live when the time comes.</AppText>
+        <AppText variant="caption" style={styles.subtitle}>Your next slot, broadcast readiness, and today&apos;s rota in one place.</AppText>
 
         <NextAdhanCard
           slot={nextPrayerSlot}
@@ -96,11 +156,20 @@ export default function MuezzinToolsScreen() {
           onPressStatusStrip={handleOpenLiveBroadcast}
         />
 
-        <TodaysPrayerTimesCard schedule={resolvedSchedule} loading={isInitialScheduleLoad} />
+        <BroadcastReadinessCard
+          mosqueName={resolvedSchedule.mosqueName}
+          mosqueId={primaryMosqueId}
+          assignedSlot={safeNextAssignedSlot}
+          assignedSlotsToday={assignedSlotsToday}
+          loading={isInitialScheduleLoad}
+          onOpenControls={handleManageLivePress}
+          onRunTest={handleStartTest}
+          testResult={broadcastTest}
+        />
 
-        <TodaysRotaCard schedule={resolvedSchedule} loading={isInitialScheduleLoad} />
+        <TodaysScheduleCard schedule={resolvedSchedule} loading={isInitialScheduleLoad} />
 
-        <AppButton title="Manage Live Broadcast" onPress={handleManageLivePress} style={styles.primaryButton} />
+        <AppButton title="Open Broadcast Controls" onPress={handleManageLivePress} style={styles.primaryButton} />
     </ScreenContainer>
   );
 }
@@ -307,14 +376,14 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({
           <AppText variant="caption" style={styles.heroFooterText}>Checking your rota and prayer times now.</AppText>
         </View>
       ) : !resolvedSlot ? (
-        <AppButton title="Start test live adhan" onPress={handleStartTest} style={styles.primaryButton} />
+        <AppButton title="Run Test Broadcast" onPress={handleStartTest} style={styles.primaryButton} />
       ) : canManageLive ? (
-        <AppButton title="Manage Live Broadcast" onPress={handleManage} style={styles.primaryButton} />
+        <AppButton title="Open Broadcast Controls" onPress={handleManage} style={styles.primaryButton} />
       ) : (
         <View style={styles.heroFooterNote}>
           <AppText variant="caption" style={styles.heroFooterText}>
             {resolvedSlot?.isAssignedToMe
-              ? 'You can manage this slot when the broadcast window opens.'
+              ? 'Broadcast controls open when this slot reaches its live window.'
               : 'You can monitor this slot and open test mode if needed.'}
           </AppText>
         </View>
@@ -323,40 +392,266 @@ const NextAdhanCard: React.FC<NextAdhanCardProps> = ({
   );
 };
 
+interface BroadcastReadinessCardProps {
+  mosqueName: string | null;
+  mosqueId: string | null;
+  assignedSlot: MuezzinSlot | null;
+  assignedSlotsToday: number;
+  loading: boolean;
+  onOpenControls: () => void;
+  onRunTest: () => void;
+  testResult: BroadcastTestResult;
+}
+
+const BroadcastReadinessCard: React.FC<BroadcastReadinessCardProps> = ({
+  mosqueName,
+  mosqueId,
+  assignedSlot,
+  assignedSlotsToday,
+  loading,
+  onOpenControls,
+  onRunTest,
+  testResult,
+}) => {
+  const slotLabel = assignedSlot
+    ? `${assignedSlot.prayerName} at ${formatTime(assignedSlot.adhanTime)}`
+    : loading
+    ? 'Checking rota'
+    : 'No assigned slot';
+  const mosqueLabel = mosqueName ?? (loading ? 'Checking assigned mosque' : 'No assigned mosque');
+  const coverageLabel = loading
+    ? 'Loading today'
+    : assignedSlotsToday > 0
+    ? `${assignedSlotsToday} slot${assignedSlotsToday === 1 ? '' : 's'} assigned to you today`
+    : 'No assigned cover today';
+  const statusChip = getReadinessStatusChip(mosqueId, loading, testResult.status);
+  const testFeedback = getBroadcastTestFeedback(testResult);
+
+  return (
+    <AppCard style={styles.readinessCard}>
+      <View style={styles.readinessHeader}>
+        <View>
+          <AppText variant="sectionTitle" style={styles.readinessTitle}>Broadcast readiness</AppText>
+          <AppText variant="caption" style={styles.readinessSubtitle}>Check the essentials before opening the mic.</AppText>
+        </View>
+        <View style={[styles.readinessStatusChip, statusChip.style]}>
+          <AppText variant="caption" style={styles.readinessStatusText}>{statusChip.label}</AppText>
+        </View>
+      </View>
+
+      <View style={styles.readinessRows}>
+        <ReadinessRow icon="business-outline" label="Mosque" value={mosqueLabel} />
+        <ReadinessRow icon="radio-outline" label="Next live slot" value={slotLabel} />
+        <ReadinessRow icon="calendar-outline" label="Coverage" value={coverageLabel} />
+      </View>
+
+      <View style={styles.readinessActionRow}>
+        <AppButton title="Open Controls" onPress={onOpenControls} style={styles.readinessAction} />
+        <AppButton
+          title={testResult.status === 'checking' ? 'Testing...' : 'Run Test'}
+          variant="secondary"
+          onPress={onRunTest}
+          disabled={testResult.status === 'checking' || !mosqueId}
+          style={styles.readinessAction}
+        />
+      </View>
+
+      {testFeedback ? (
+        <View style={[styles.testFeedback, testFeedback.style]}>
+          <Ionicons name={testFeedback.icon} size={18} color={testFeedback.iconColor} />
+          <View style={styles.testFeedbackText}>
+            <AppText variant="body" style={styles.testFeedbackTitle}>{testResult.title}</AppText>
+            {!!testResult.message && (
+              <AppText variant="caption" style={styles.testFeedbackMessage} numberOfLines={3}>
+                {testResult.message}
+              </AppText>
+            )}
+          </View>
+        </View>
+      ) : null}
+    </AppCard>
+  );
+};
+
+function buildBroadcastTestResult(config: MosqueLiveBroadcastConfig | null): BroadcastTestResult {
+  if (!config) {
+    return {
+      status: 'failed',
+      title: 'No broadcast configuration',
+      message: 'The backend responded, but no broadcast readiness details were returned.',
+    };
+  }
+
+  const summary = config.encoder_preflight_summary?.trim();
+  const firstIssue = config.issues.find((issue) => issue.trim().length > 0);
+  const providerLabel = config.provider_label ?? 'Broadcast';
+  const isLiveKitProvider = config.provider === 'livekit';
+
+  if (!config.streaming_enabled || !config.is_ready_for_broadcast) {
+    return {
+      status: 'failed',
+      title: 'Setup incomplete',
+      message: firstIssue ?? summary ?? 'Finish the mosque live stream configuration before going live.',
+    };
+  }
+
+  switch (config.encoder_preflight_status) {
+    case 'ready':
+      return {
+        status: 'passed',
+        title: isLiveKitProvider ? 'LiveKit readiness passed' : 'Backend check passed',
+        message: summary ?? `${providerLabel} connectivity checks passed.`,
+      };
+    case 'manual_check_required':
+      return {
+        status: 'attention',
+        title: 'Manual check needed',
+        message: summary ?? `${providerLabel} is configured, but this provider still needs manual verification.`,
+      };
+    case 'attention':
+      return {
+        status: 'attention',
+        title: isLiveKitProvider ? 'LiveKit needs attention' : 'Connection needs attention',
+        message: summary ?? firstIssue ?? 'One or more broadcast endpoint checks needs attention.',
+      };
+    case 'not_configured':
+    default:
+      return {
+        status: 'failed',
+        title: 'Setup incomplete',
+        message: summary ?? firstIssue ?? 'Required broadcast settings are missing.',
+      };
+  }
+}
+
+function getReadinessStatusChip(mosqueId: string | null, loading: boolean, status: BroadcastTestStatus) {
+  if (loading || status === 'checking') {
+    return { label: 'Checking', style: styles.readinessStatusChecking };
+  }
+  if (!mosqueId) {
+    return { label: 'Needs setup', style: styles.readinessStatusWarn };
+  }
+  if (status === 'passed') {
+    return { label: 'Passed', style: styles.readinessStatusReady };
+  }
+  if (status === 'attention') {
+    return { label: 'Review', style: styles.readinessStatusWarn };
+  }
+  if (status === 'failed') {
+    return { label: 'Failed', style: styles.readinessStatusDanger };
+  }
+  return { label: 'Not checked', style: styles.readinessStatusIdle };
+}
+
+function getBroadcastTestFeedback(result: BroadcastTestResult) {
+  switch (result.status) {
+    case 'checking':
+      return {
+        icon: 'sync-outline' as const,
+        iconColor: '#0369A1',
+        style: styles.testFeedbackChecking,
+      };
+    case 'passed':
+      return {
+        icon: 'checkmark-circle-outline' as const,
+        iconColor: '#047857',
+        style: styles.testFeedbackPassed,
+      };
+    case 'attention':
+      return {
+        icon: 'alert-circle-outline' as const,
+        iconColor: '#B45309',
+        style: styles.testFeedbackAttention,
+      };
+    case 'failed':
+      return {
+        icon: 'close-circle-outline' as const,
+        iconColor: '#DC2626',
+        style: styles.testFeedbackFailed,
+      };
+    default:
+      return null;
+  }
+}
+
+function ReadinessRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.readinessRow}>
+      <View style={styles.readinessIcon}>
+        <Ionicons name={icon} size={16} color="#0369A1" />
+      </View>
+      <View style={styles.readinessText}>
+        <AppText variant="caption" style={styles.readinessLabel}>{label}</AppText>
+        <AppText variant="body" style={styles.readinessValue} numberOfLines={2}>{value}</AppText>
+      </View>
+    </View>
+  );
+}
+
 interface TodaysScheduleCardProps {
   schedule: MuezzinSchedule;
   loading?: boolean;
 }
 
-const TodaysPrayerTimesCard: React.FC<TodaysScheduleCardProps> = ({ schedule, loading = false }) => {
+const TodaysScheduleCard: React.FC<TodaysScheduleCardProps> = ({ schedule, loading = false }) => {
   const subtitleText = schedule.mosqueName ?? (loading ? 'Loading assigned mosque...' : null);
   if (!schedule.slots.length && !loading) {
     return (
       <AppCard style={styles.card}>
-        <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Prayer Times</AppText>
+        <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Schedule</AppText>
         {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
-        <AppText variant="caption" style={styles.cardEmptyText}>Prayer times are unavailable right now. Pull to refresh.</AppText>
+        <AppText variant="caption" style={styles.cardEmptyText}>Prayer times and rota assignments are unavailable right now. Pull to refresh.</AppText>
       </AppCard>
     );
   }
 
   return (
     <AppCard style={styles.card}>
-      <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Prayer Times</AppText>
-      {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
+      <View style={styles.scheduleHeader}>
+        <View style={styles.scheduleHeaderCopy}>
+          <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Schedule</AppText>
+          {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
+        </View>
+        <View style={styles.scheduleHeaderPill}>
+          <AppText variant="caption" style={styles.scheduleHeaderPillText}>Adhan + rota</AppText>
+        </View>
+      </View>
 
-      <View style={{ marginTop: 12 }}>
+      <View style={styles.scheduleColumns}>
+        <View style={styles.schedulePrayerColumn}>
+          <AppText variant="caption" style={styles.scheduleColumnLabel}>Prayer</AppText>
+        </View>
+        <View style={styles.scheduleTimeColumn}>
+          <AppText variant="caption" style={styles.scheduleColumnLabel}>Adhan</AppText>
+        </View>
+        <View style={styles.scheduleCoverageColumn}>
+          <AppText variant="caption" style={styles.scheduleColumnLabel}>Rota</AppText>
+        </View>
+      </View>
+
+      <View style={styles.scheduleRows}>
         {loading && !schedule.slots.length ? (
-          <AppText variant="caption" style={styles.cardEmptyText}>Loading today&apos;s prayer times...</AppText>
+          <AppText variant="caption" style={styles.cardEmptyText}>Loading today&apos;s schedule...</AppText>
         ) : schedule.slots.map((slot, index) => {
           const isLast = index === schedule.slots.length - 1;
           return (
-            <View key={`${slot.id}-times`} style={[styles.adahnRow, !isLast && styles.adahnRowDivider]}>
-              <View style={styles.adahnLeft}>
+            <View key={slot.id} style={[styles.scheduleRow, !isLast && styles.adahnRowDivider]}>
+              <View style={styles.schedulePrayerColumn}>
                 <AppText style={styles.adahnName}>{slot.prayerName}</AppText>
               </View>
-              <View style={styles.adahnRightOnly}>
+              <View style={styles.scheduleTimeColumn}>
                 <AppText style={styles.adahnTime}>{formatTime(slot.adhanTime)}</AppText>
+              </View>
+              <View style={styles.scheduleCoverageColumn}>
+                <AssignmentBadge slot={slot} />
               </View>
             </View>
           );
@@ -366,61 +661,32 @@ const TodaysPrayerTimesCard: React.FC<TodaysScheduleCardProps> = ({ schedule, lo
   );
 };
 
-const TodaysRotaCard: React.FC<TodaysScheduleCardProps> = ({ schedule, loading = false }) => {
-  const subtitleText = schedule.mosqueName ?? (loading ? 'Loading assigned mosque...' : null);
-  if (!schedule.slots.length && !loading) {
+function AssignmentBadge({ slot }: { slot: MuezzinSlot }) {
+  if (slot.assignmentSource === 'default') {
     return (
-      <AppCard style={styles.card}>
-        <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Rota</AppText>
-        {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
-        <AppText variant="caption" style={styles.cardEmptyText}>Rota assignments are unavailable right now. Pull to refresh.</AppText>
-      </AppCard>
+      <View style={styles.defaultPill}>
+        <AppText variant="caption" style={styles.defaultPillText} numberOfLines={1}>
+          {slot.isAssignedToMe ? 'Default: you' : `Default: ${slot.assignedMuezzinName ?? 'muezzin'}`}
+        </AppText>
+      </View>
     );
   }
 
-  return (
-    <AppCard style={styles.card}>
-      <AppText variant="sectionTitle" style={styles.cardTitle}>Today&apos;s Rota</AppText>
-      {!!subtitleText && <AppText variant="caption" style={styles.cardSubtitle}>{subtitleText}</AppText>}
-
-      <View style={{ marginTop: 12 }}>
-        {loading && !schedule.slots.length ? (
-          <AppText variant="caption" style={styles.cardEmptyText}>Loading today&apos;s rota...</AppText>
-        ) : schedule.slots.map((slot, index) => {
-          const isLast = index === schedule.slots.length - 1;
-          return (
-            <View key={slot.id} style={[styles.adahnRow, !isLast && styles.adahnRowDivider]}>
-              <View style={styles.adahnLeft}>
-                <AppText style={styles.adahnName}>{slot.prayerName}</AppText>
-              </View>
-              <View style={styles.adahnMiddle}>
-                <AppText style={styles.adahnTime}>{formatTime(slot.adhanTime)}</AppText>
-              </View>
-              <View style={styles.adahnRight}>
-                {slot.assignmentSource === 'default' ? (
-                  <View style={styles.defaultPill}>
-                    <AppText variant="caption" style={styles.defaultPillText}>
-                      {slot.isAssignedToMe ? 'Default: you' : `Default: ${slot.assignedMuezzinName ?? 'muezzin'}`}
-                    </AppText>
-                  </View>
-                ) : slot.isAssignedToMe ? (
-                  <View style={styles.youPill}>
-                    <Ionicons name="mic-outline" size={14} color="#0B7A30" style={{ marginRight: 4 }} />
-                    <AppText variant="caption" style={styles.youPillText}>You</AppText>
-                  </View>
-                ) : slot.assignedMuezzinName ? (
-                  <AppText variant="caption" style={styles.assignedOtherText}>{slot.assignedMuezzinName}</AppText>
-                ) : (
-                  <AppText variant="caption" style={styles.unassignedText}>Unassigned</AppText>
-                )}
-              </View>
-            </View>
-          );
-        })}
+  if (slot.isAssignedToMe) {
+    return (
+      <View style={styles.youPill}>
+        <Ionicons name="mic-outline" size={14} color="#0B7A30" style={{ marginRight: 4 }} />
+        <AppText variant="caption" style={styles.youPillText}>You</AppText>
       </View>
-    </AppCard>
-  );
-};
+    );
+  }
+
+  if (slot.assignedMuezzinName) {
+    return <AppText variant="caption" style={styles.assignedOtherText} numberOfLines={1}>{slot.assignedMuezzinName}</AppText>;
+  }
+
+  return <AppText variant="caption" style={styles.unassignedText}>Unassigned</AppText>;
+}
 
 function formatTime(date: Date | null): string {
   if (!date) return '--:--';
@@ -567,7 +833,7 @@ const styles = StyleSheet.create({
   },
   heroEyebrow: {
     fontSize: 11,
-    letterSpacing: 0.5,
+    letterSpacing: 0,
     textTransform: 'uppercase',
     color: '#6FB9FF',
   },
@@ -669,6 +935,138 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.68)',
     lineHeight: 18,
   },
+  readinessCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#DDE7F2',
+  },
+  readinessHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  readinessTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  readinessSubtitle: {
+    marginTop: 3,
+    color: '#64748B',
+    lineHeight: 18,
+  },
+  readinessStatusChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  readinessStatusIdle: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
+  },
+  readinessStatusChecking: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  readinessStatusReady: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#BBF7D0',
+  },
+  readinessStatusWarn: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  readinessStatusDanger: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  readinessStatusText: {
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  readinessRows: {
+    marginTop: 12,
+    gap: 8,
+  },
+  readinessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  readinessIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E0F2FE',
+  },
+  readinessText: {
+    flex: 1,
+  },
+  readinessLabel: {
+    color: '#64748B',
+    fontSize: 12,
+  },
+  readinessValue: {
+    color: '#0F172A',
+    fontWeight: '800',
+    lineHeight: 20,
+  },
+  readinessActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  readinessAction: {
+    flex: 1,
+    minHeight: 44,
+  },
+  testFeedback: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  testFeedbackChecking: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  testFeedbackPassed: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#BBF7D0',
+  },
+  testFeedbackAttention: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  testFeedbackFailed: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  testFeedbackText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  testFeedbackTitle: {
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  testFeedbackMessage: {
+    marginTop: 2,
+    color: '#475569',
+    lineHeight: 18,
+  },
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 20,
@@ -699,21 +1097,74 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: '#64748B',
   },
-  adahnRow: {
+  scheduleHeader: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  scheduleHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  scheduleHeaderPill: {
+    flexShrink: 0,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  scheduleHeaderPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0369A1',
+  },
+  scheduleColumns: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E6E8EB',
+  },
+  scheduleColumnLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  scheduleRows: {
+    marginTop: 1,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 48,
     paddingVertical: 8,
-    minHeight: 44,
   },
   adahnRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E6E8EB',
   },
-  adahnLeft: { flex: 1 },
-  adahnMiddle: { width: 70, alignItems: 'flex-end' },
-  adahnRight: { flexShrink: 0, marginLeft: 8 },
-  adahnRightOnly: { minWidth: 72, alignItems: 'flex-end' },
+  schedulePrayerColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  scheduleTimeColumn: {
+    width: 80,
+    flexShrink: 0,
+    alignItems: 'flex-end',
+  },
+  scheduleCoverageColumn: {
+    width: 112,
+    flexShrink: 0,
+    alignItems: 'flex-end',
+    minWidth: 0,
+  },
   adahnName: {
     fontSize: 16,
     fontWeight: '600',
@@ -744,7 +1195,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#BFDBFE',
-    maxWidth: 132,
+    maxWidth: '100%',
   },
   defaultPillText: {
     fontSize: 12,
@@ -754,10 +1205,13 @@ const styles = StyleSheet.create({
   assignedOtherText: {
     fontSize: 13,
     color: '#111827',
+    maxWidth: '100%',
+    textAlign: 'right',
   },
   unassignedText: {
     fontSize: 13,
     color: '#9CA3AF',
+    textAlign: 'right',
   },
   primaryButton: {
     width: '100%',

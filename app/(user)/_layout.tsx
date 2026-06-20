@@ -74,6 +74,8 @@ export default function UserTabs() {
       <Tabs.Screen name="now" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="live-player" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="event/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="campaign/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="jumuah/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="manage-mosques" options={{ href: null, headerShown: false }} />
     </Tabs>

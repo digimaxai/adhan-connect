@@ -290,6 +290,9 @@ function MosqueProfileShell() {
   const editCityIsLondon = editForm.city.trim().toLowerCase().includes('london');
   const effectivePrayerSource = editCityIsLondon ? editForm.prayerSource : 'aladhan';
   const editProviderProfile = useMemo(() => getLiveStreamProviderProfile(editForm.liveStreamProvider), [editForm.liveStreamProvider]);
+  const editProviderUsesExternalEncoder = editProviderProfile.supportsExternalEncoder;
+  const editProviderUsesStreamCredential = editProviderProfile.supportsExternalEncoder || editProviderProfile.requiresStreamKey;
+  const editProviderUsesSecrets = editProviderProfile.supportsExternalEncoder || editProviderProfile.requiresListenerSecret;
   const liveStreamCallbackUrl = useMemo(() => {
     if (typeof window !== 'undefined') {
       const resolved = supportsServerApi() ? resolveApiUrl('/api/integrations/live-stream-provider-status') : null;
@@ -438,17 +441,23 @@ function MosqueProfileShell() {
     if (!nextName) { setEditError('Name is required.'); return; }
     const lsp = normalizeLiveStreamProvider(editForm.liveStreamProvider);
     const lspProfile = getLiveStreamProviderProfile(lsp);
+    const needsProviderCallbackSecret = lspProfile.supportsExternalEncoder;
+    const needsListenerAccessSecret = lspProfile.requiresListenerSecret;
     const liveStreamUsername = editForm.liveStreamUsername.trim();
     const liveStreamStreamKey = editForm.liveStreamStreamKey.trim();
-    const liveStreamStatusSecret = editForm.liveStreamStatusSecret.trim() || (editForm.liveStreamEnabled ? generateLiveStreamSecret('ls') : '');
-    const liveStreamListenerSecret = editForm.liveStreamListenerSecret.trim() || (editForm.liveStreamEnabled ? generateLiveStreamSecret('ll') : '');
+    const liveStreamStatusSecret =
+      editForm.liveStreamStatusSecret.trim() ||
+      (editForm.liveStreamEnabled && needsProviderCallbackSecret ? generateLiveStreamSecret('ls') : '');
+    const liveStreamListenerSecret =
+      editForm.liveStreamListenerSecret.trim() ||
+      (editForm.liveStreamEnabled && needsListenerAccessSecret ? generateLiveStreamSecret('ll') : '');
 
     let liveStreamPlaybackUrl: string | null;
     let liveStreamIngestUrl: string | null;
     let liveStreamMountPath: string | null = null;
     try {
-      liveStreamPlaybackUrl = normalizePlaybackUrl(editForm.liveStreamPlaybackUrl);
-      liveStreamIngestUrl = normalizeIngestUrl(lsp, editForm.liveStreamIngestUrl);
+      liveStreamPlaybackUrl = lspProfile.requiresPlaybackUrl ? normalizePlaybackUrl(editForm.liveStreamPlaybackUrl) : null;
+      liveStreamIngestUrl = lspProfile.supportsExternalEncoder ? normalizeIngestUrl(lsp, editForm.liveStreamIngestUrl) : null;
       liveStreamMountPath = lsp === 'icecast'
         ? normalizeIcecastMountPath(editForm.liveStreamMountPath) || (liveStreamPlaybackUrl ? resolveLiveStreamMountPath({ id: mosqueId, live_stream_provider: lsp, live_stream_playback_url: liveStreamPlaybackUrl }) : null)
         : null;
@@ -457,7 +466,7 @@ function MosqueProfileShell() {
       return;
     }
 
-    if (editForm.liveStreamEnabled && !liveStreamPlaybackUrl) { setEditError('A playback URL is required when live streaming is active.'); return; }
+    if (editForm.liveStreamEnabled && lspProfile.requiresPlaybackUrl && !liveStreamPlaybackUrl) { setEditError('A playback URL is required when live streaming is active.'); return; }
     if (lspProfile.requiresIngestUrl && !liveStreamIngestUrl) { setEditError(`${lspProfile.label} requires an ingest URL.`); return; }
     if (lspProfile.requiresUsername && !liveStreamUsername) { setEditError(`${lspProfile.usernameLabel ?? 'Username'} is required for ${lspProfile.label}.`); return; }
     if (lspProfile.requiresStreamKey && !liveStreamStreamKey) { setEditError(`${lspProfile.credentialLabel} is required for ${lspProfile.label}.`); return; }
@@ -484,13 +493,13 @@ function MosqueProfileShell() {
       prayer_school: editForm.prayerSchool,
       live_stream_enabled: editForm.liveStreamEnabled,
       live_stream_provider: lsp,
-      live_stream_playback_url: liveStreamPlaybackUrl,
-      live_stream_ingest_url: liveStreamIngestUrl,
+      live_stream_playback_url: lspProfile.requiresPlaybackUrl ? liveStreamPlaybackUrl : null,
+      live_stream_ingest_url: lspProfile.supportsExternalEncoder ? liveStreamIngestUrl : null,
       live_stream_mount_path: liveStreamMountPath,
-      live_stream_username: liveStreamUsername || null,
-      live_stream_stream_key: liveStreamStreamKey || null,
-      live_stream_status_secret: liveStreamStatusSecret || null,
-      live_stream_listener_secret: liveStreamListenerSecret || null,
+      live_stream_username: lspProfile.supportsExternalEncoder ? liveStreamUsername || null : null,
+      live_stream_stream_key: lspProfile.supportsExternalEncoder ? liveStreamStreamKey || null : null,
+      live_stream_status_secret: needsProviderCallbackSecret ? liveStreamStatusSecret || null : null,
+      live_stream_listener_secret: needsListenerAccessSecret ? liveStreamListenerSecret || null : null,
     };
 
     setEditError(null);
@@ -997,17 +1006,21 @@ function MosqueProfileShell() {
                   <option value="livekit">LiveKit (In-App Mic)</option>
                   <option value="external">External</option>
                   <option value="rtmp">RTMP / HLS</option>
-                  <option value="icecast">Icecast</option>
+                  {editForm.liveStreamProvider === 'icecast' ? <option value="icecast" disabled>Icecast (legacy)</option> : null}
                   <option value="test">Test</option>
                 </Select>
                 <div style={styles.helperText}>{editProviderProfile.summary}</div>
               </div>
               {/* Playback URL */}
-              <div>
+              {editProviderProfile.requiresPlaybackUrl ? (
+                <>
+                <div>
                 <label style={styles.label} htmlFor="ls-playback">Playback URL</label>
                 <TextInput id="ls-playback" value={editForm.liveStreamPlaybackUrl} onChange={(e) => setEditForm((p) => ({ ...p, liveStreamPlaybackUrl: e.target.value }))} placeholder="https://…" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
               </div>
               {/* Mount path — Icecast only */}
+                </>
+              ) : null}
               {editForm.liveStreamProvider === 'icecast' ? (
                 <div>
                   <label style={styles.label} htmlFor="ls-mount">Mount path</label>
@@ -1016,12 +1029,16 @@ function MosqueProfileShell() {
                 </div>
               ) : null}
               {/* Ingest URL */}
-              <div>
+              {editProviderUsesExternalEncoder ? (
+                <>
+                <div>
                 <label style={styles.label} htmlFor="ls-ingest">Ingest URL</label>
                 <TextInput id="ls-ingest" value={editForm.liveStreamIngestUrl} onChange={(e) => setEditForm((p) => ({ ...p, liveStreamIngestUrl: e.target.value }))} placeholder={editProviderProfile.ingestProtocolHint === 'rtmp(s)' ? 'rtmp://…' : 'https://…'} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
                 <div style={styles.helperText}>{editProviderProfile.requiresIngestUrl ? `Required for ${editProviderProfile.label}.` : 'Optional unless your provider gave you a dedicated encoder endpoint.'}</div>
               </div>
               {/* Username — provider-specific */}
+                </>
+              ) : null}
               {editProviderProfile.usernameLabel ? (
                 <div>
                   <label style={styles.label} htmlFor="ls-username">{editProviderProfile.usernameLabel}</label>
@@ -1029,12 +1046,15 @@ function MosqueProfileShell() {
                 </div>
               ) : null}
               {/* Stream key / password */}
-              <div>
+              {editProviderUsesStreamCredential ? (
+                <div>
                 <label style={styles.label} htmlFor="ls-key">{editProviderProfile.credentialLabel}</label>
                 <TextInput id="ls-key" type="password" value={editForm.liveStreamStreamKey} onChange={(e) => setEditForm((p) => ({ ...p, liveStreamStreamKey: e.target.value }))} placeholder={editProviderProfile.requiresStreamKey ? 'Required' : 'Optional'} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
                 <div style={styles.helperText}>{editProviderProfile.encoderInstructions}</div>
               </div>
+              ) : null}
               {/* Secrets */}
+              {editProviderUsesSecrets ? (
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#64748b', marginBottom: 10 }}>Security</div>
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
@@ -1060,6 +1080,9 @@ function MosqueProfileShell() {
                   </div>
                 </div>
               </div>
+              ) : (
+                <div style={styles.helperText}>{editProviderProfile.encoderInstructions}</div>
+              )}
             </>
           ) : null}
 

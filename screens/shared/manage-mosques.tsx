@@ -1,4 +1,4 @@
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useSegments } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -27,8 +27,11 @@ type MosqueRow = {
 
 export default function ManageMosques() {
   const router = useRouter();
+  const segments = useSegments();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const isMuezzinContext = segments[0] === '(muezzin)';
+  const discoverPath = isMuezzinContext ? '/(muezzin)/discover' : '/(user)/discover';
 
   const [items, setItems] = useState<FollowedMosque[]>([]);
   // True only on the very first load so we don't flash a spinner on re-focus.
@@ -233,7 +236,7 @@ export default function ManageMosques() {
       <View style={styles.summary}>
         <Text style={styles.summaryText}>{`Following ${count} mosque${count === 1 ? '' : 's'}`}</Text>
         {loading && !hasLoadedOnce.current ? null : (
-          <Pressable onPress={() => router.push('/(user)/discover')} hitSlop={8}>
+          <Pressable onPress={() => router.push(discoverPath as any)} hitSlop={8}>
             <Text style={styles.summaryLink}>+ Follow more</Text>
           </Pressable>
         )}
@@ -253,7 +256,7 @@ export default function ManageMosques() {
           <Text style={styles.emptyTitle}>You are not following any mosques yet.</Text>
           <Text style={styles.emptySubtitle}>Discover mosques to get live adhans.</Text>
           <Pressable
-            onPress={() => router.push('/(user)/discover')}
+            onPress={() => router.push(discoverPath as any)}
             style={({ pressed }) => [styles.discoverBtn, { opacity: pressed ? 0.9 : 1 }]}
           >
             <Text style={styles.discoverText}>Discover Mosques</Text>

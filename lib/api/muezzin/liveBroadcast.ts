@@ -19,6 +19,7 @@ export type MosqueLiveBroadcastConfig = {
   provider?: string | null;
   provider_label?: string | null;
   provider_summary?: string | null;
+  requires_playback_url?: boolean;
   playback_url_configured: boolean;
   playback_url?: string | null;
   ingest_url_configured: boolean;
@@ -93,8 +94,8 @@ async function getAccessToken() {
   return sessionData.session.access_token;
 }
 
-async function requestLiveBroadcast(input: string | URL, init: RequestInit): Promise<LiveBroadcastPayload> {
-  const response = await fetchServerApi(input, init, 10000);
+async function requestLiveBroadcast(input: string | URL, init: RequestInit, timeoutMs = 10000): Promise<LiveBroadcastPayload> {
+  const response = await fetchServerApi(input, init, timeoutMs);
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -112,7 +113,10 @@ async function requestLiveBroadcast(input: string | URL, init: RequestInit): Pro
   return payload;
 }
 
-export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<LiveBroadcastPayload> {
+export async function fetchMuezzinLiveBroadcastState(
+  mosqueId: string,
+  timeoutMs = 10000
+): Promise<LiveBroadcastPayload> {
   const endpoints = resolveApiUrls('/api/muezzin/live-broadcast');
   if (!endpoints.length) {
     throw new Error('Could not resolve the live broadcast endpoint.');
@@ -127,11 +131,11 @@ export async function fetchMuezzinLiveBroadcastState(mosqueId: string): Promise<
       const url = new URL(endpoint);
       url.searchParams.set('mosqueId', mosqueId);
       console.log('[muezzin.liveBroadcast] requesting state', url.toString());
-      const payload = await requestLiveBroadcast(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const payload = await requestLiveBroadcast(
+        url,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+        timeoutMs
+      );
       return payload;
     } catch (error: any) {
       lastError = error instanceof Error ? error : new Error(error?.message ?? String(error));

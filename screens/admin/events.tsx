@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -50,6 +50,16 @@ const TABS: { key: Tab; label: string; icon: React.ComponentProps<typeof Ionicon
   { key: 'campaigns', label: 'Campaigns', icon: 'heart-outline' },
   { key: 'notices',   label: 'Notices',   icon: 'megaphone-outline' },
 ];
+
+function normalizeTab(value: unknown): Tab | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === 'events' || raw === 'campaigns' || raw === 'notices' ? raw : null;
+}
+
+function normalizeParam(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === 'string' ? raw : null;
+}
 
 function statusChip(status: string | null): { bg: string; color: string; label: string } {
   switch (status) {
@@ -254,9 +264,12 @@ function NoticesList({ notices, router }: { notices: NoticeItem[]; router: Retur
 
 export default function ContentHubScreen() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ tab?: string; refresh?: string }>();
+  const routeTab = normalizeTab(routeParams.tab);
+  const routeRefresh = normalizeParam(routeParams.refresh);
   const { loading: roleLoading } = useRoleFlags();
   const { selectedMosque, loading: mosqueLoading } = useAdminMosque();
-  const [tab, setTab] = useState<Tab>('events');
+  const [tab, setTab] = useState<Tab>(() => routeTab ?? 'events');
   const [events, setEvents] = useState<EventItem[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
   const [notices, setNotices] = useState<NoticeItem[]>([]);
@@ -264,6 +277,8 @@ export default function ContentHubScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadedTabs = useRef(new Set<Tab>());
+  const handledRouteTab = useRef<Tab | null>(routeTab);
+  const handledRefresh = useRef<string | null>(null);
 
   const loadTab = useCallback(async (t: Tab, force = false) => {
     if (!selectedMosque) return;
@@ -316,6 +331,31 @@ export default function ContentHubScreen() {
   useEffect(() => {
     loadTab(tab);
   }, [tab, loadTab]);
+
+  useEffect(() => {
+    if (!routeTab || routeRefresh || handledRouteTab.current === routeTab) return;
+    handledRouteTab.current = routeTab;
+    setTab(routeTab);
+  }, [routeRefresh, routeTab]);
+
+  useEffect(() => {
+    if (!selectedMosque || !routeRefresh || handledRefresh.current === routeRefresh) return;
+    handledRefresh.current = routeRefresh;
+    const targetTab = routeTab ?? tab;
+    if (routeTab && routeTab !== tab) {
+      setTab(routeTab);
+    }
+    loadedTabs.current.delete(targetTab);
+    void loadTab(targetTab, true);
+  }, [loadTab, routeRefresh, routeTab, selectedMosque, tab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!selectedMosque) return;
+      loadedTabs.current.delete(tab);
+      void loadTab(tab, true);
+    }, [loadTab, selectedMosque, tab])
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

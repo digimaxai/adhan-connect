@@ -19,6 +19,7 @@ export type MosqueLiveBroadcastConfig = {
   provider: LiveStreamProvider;
   provider_label: string;
   provider_summary: string;
+  requires_playback_url: boolean;
   playback_url_configured: boolean;
   playback_url: string | null;
   ingest_url_configured: boolean;
@@ -288,23 +289,25 @@ export function summarizeMosqueLiveBroadcastConfig(config: MosqueLiveStreamConfi
   const issues: string[] = [];
   const streamingEnabled = !!config.live_stream_enabled;
   const mountPath = resolveLiveStreamMountPath(config);
-  const playbackUrl = (() => {
+  const parsedPlaybackUrl = (() => {
     try {
       return normalizePlaybackUrl(config.live_stream_playback_url);
     } catch {
       return null;
     }
   })();
-  const ingestUrl = (() => {
+  const playbackUrl = profile.requiresPlaybackUrl ? parsedPlaybackUrl : null;
+  const parsedIngestUrl = (() => {
     try {
       return normalizeIngestUrl(profile.provider, config.live_stream_ingest_url);
     } catch {
       return null;
     }
   })();
-  const username = config.live_stream_username?.trim() || null;
-  const streamKey = config.live_stream_stream_key?.trim() || null;
-  const listenerSecret = resolveLiveStreamListenerSecret(config);
+  const ingestUrl = profile.supportsExternalEncoder ? parsedIngestUrl : null;
+  const username = profile.supportsExternalEncoder ? config.live_stream_username?.trim() || null : null;
+  const streamKey = profile.supportsExternalEncoder ? config.live_stream_stream_key?.trim() || null : null;
+  const listenerSecret = profile.requiresListenerSecret ? resolveLiveStreamListenerSecret(config) : null;
   const streamKeyConfigured = !!streamKey;
   const usernameConfigured = !!username;
   const listenerAccessReady =
@@ -348,6 +351,7 @@ export function summarizeMosqueLiveBroadcastConfig(config: MosqueLiveStreamConfi
     provider: profile.provider,
     provider_label: profile.label,
     provider_summary: profile.summary,
+    requires_playback_url: profile.requiresPlaybackUrl,
     playback_url_configured: !!playbackUrl,
     playback_url: playbackUrl,
     ingest_url_configured: !!ingestUrl,

@@ -3,7 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, Animated, Easing, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,10 +52,14 @@ function parseRouteLocation(lat?: string, lng?: string): UserLocation | null {
 
 export default function NowScreen() {
   const router = useRouter();
+  const segments = useSegments();
   const params = useLocalSearchParams<{ mosqueId?: string; lat?: string; lng?: string }>();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const requestedMosqueId = typeof params.mosqueId === 'string' ? params.mosqueId : null;
+  const isMuezzinContext = segments[0] === '(muezzin)';
+  const homePath = isMuezzinContext ? '/(muezzin)/muezzin-home' : '/listener-home';
+  const homeLabel = isMuezzinContext ? 'Go to Muezzin Home' : 'Go to Home';
 
   const [streams, setStreams] = useState<StreamRow[]>([]);
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
@@ -494,10 +498,10 @@ export default function NowScreen() {
           <Text style={styles.emptyTitle}>{justEnded ? 'Adhan has ended' : 'Nothing live right now'}</Text>
           <Text style={styles.emptySubtitle}>{emptyMessage}</Text>
           <Pressable
-            onPress={() => router.push('/listener-home')}
+            onPress={() => router.push(homePath as any)}
             style={({ pressed }) => [styles.homeButton, { opacity: pressed ? 0.75 : 1 }]}
           >
-            <Text style={styles.homeButtonText}>Go to Home</Text>
+            <Text style={styles.homeButtonText}>{homeLabel}</Text>
           </Pressable>
         </View>
       </SafeAreaView>

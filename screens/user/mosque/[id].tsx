@@ -2,7 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, LayoutChangeEvent, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 import { labelForPrayer, PrayerName } from '../../lib/adhans';
@@ -378,6 +378,22 @@ export default function MosquePage() {
     }
   };
 
+  const shareMosque = useCallback(async () => {
+    const targetMosqueId = resolvedId || (id && isUuid(id) ? id : mosque?.id);
+    const mosqueName = mosque?.name ?? fallbackMosqueName;
+    const mosqueLocation = [mosque?.city, mosque?.country].filter(Boolean).join(', ');
+    const locationLine = mosqueLocation ? `\n${mosqueLocation}` : '';
+    const linkLine = targetMosqueId ? `\n/mosque/${targetMosqueId}` : '';
+    try {
+      await Share.share({
+        title: mosqueName,
+        message: `${mosqueName}${locationLine}${linkLine}`,
+      });
+    } catch {
+      // Sharing can be cancelled or unavailable on some platforms.
+    }
+  }, [fallbackMosqueName, id, mosque?.city, mosque?.country, mosque?.id, mosque?.name, resolvedId]);
+
   const displayTimes = useMemo(() => {
     const t = prayers || {};
     const iq = iqamaTimes || {};
@@ -497,11 +513,8 @@ export default function MosquePage() {
           </Pressable>
           <Text style={styles.title} numberOfLines={1}>{mosque?.name ?? 'Mosque'}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Pressable hitSlop={10}>
+            <Pressable onPress={shareMosque} hitSlop={10}>
               <Ionicons name="share-outline" size={18} color="#0F172A" />
-            </Pressable>
-            <Pressable onPress={toggleFollow} hitSlop={10}>
-              <Ionicons name="star" size={20} color={following ? '#FBBF24' : '#CBD5E1'} />
             </Pressable>
           </View>
         </View>
@@ -530,6 +543,9 @@ export default function MosquePage() {
             </Text>
           </Pressable>
         </View>
+        {!following && subCount >= FOLLOW_LIMIT && (
+          <Text style={styles.limitNote}>{`You are following ${FOLLOW_LIMIT} mosques (maximum).`}</Text>
+        )}
 
         {/* ── Live broadcast ── */}
         {liveInfo.isLive && (
@@ -588,7 +604,37 @@ export default function MosquePage() {
           </View>
         )}
 
-        {/* ── Events ── */}
+        {/* Prayer Times */}
+        <View style={[styles.card, styles.shadow]}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Prayer Times</Text>
+          </View>
+          <View style={styles.divider} />
+          {hasIqamaTimes && (
+            <View style={styles.prayerTableHeader}>
+              <Text style={[styles.prayerColLabel, { flex: 1 }]}>Prayer</Text>
+              <Text style={styles.prayerColLabel}>Adhan</Text>
+              <Text style={styles.prayerColLabel}>Iqamah</Text>
+            </View>
+          )}
+          <View style={styles.timesTable}>
+            {displayTimes.map((row) => {
+              const isNext = row.key === nextPrayerName;
+              return (
+                <View key={row.key} style={[styles.timeRow, isNext && styles.timeRowNext]}>
+                  <Text style={[styles.timeName, isNext && styles.timeNameNext]}>{row.name}</Text>
+                  <Text style={[styles.timeValue, isNext && styles.timeValueNext]}>{row.adhan}</Text>
+                  {hasIqamaTimes && (
+                    <Text style={[styles.timeIqama, isNext && styles.timeValueNext]}>
+                      {row.iqama ?? '-'}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
         {visibleEventsForSection.length > 0 && (
           <View onLayout={rememberSection('events')} style={[styles.card, styles.shadow]}>
             <View style={styles.cardHeaderRow}>
@@ -603,7 +649,7 @@ export default function MosquePage() {
               return (
                 <Pressable
                   key={ev.id}
-                  onPress={() => router.push({ pathname: '/event/[id]', params: { id: ev.id } })}
+                  onPress={() => router.push({ pathname: '/(user)/event/[id]', params: { id: ev.id } } as any)}
                   style={({ pressed }) => [styles.eventRow, { opacity: pressed ? 0.88 : 1 }]}
                 >
                   {chip && (
@@ -632,46 +678,45 @@ export default function MosquePage() {
         )}
 
         {/* ── Campaigns & Donations ── */}
-        <View onLayout={rememberSection('campaigns')} style={[styles.card, styles.shadow]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Campaigns & Donations</Text>
-          </View>
-          <View style={styles.divider} />
-          {visibleCampaignsForSection.length === 0 && (
-            <Text style={styles.empty}>No active campaigns. Check back soon.</Text>
-          )}
-          {(showAllCampaigns ? visibleCampaignsForSection : visibleCampaignsForSection.slice(0, 3)).map((c) => {
-            const raised = (c.raised_cents ?? 0) / 100;
-            const goalRaw = c.goal_cents ?? 0;
-            const goal = goalRaw > 0 ? goalRaw / 100 : 1;
-            const pct = Math.min(100, Math.round((raised / goal) * 100));
-            return (
-              <View key={c.id} style={styles.campaignRow}>
-                <Text style={styles.campaignTitle} numberOfLines={1}>{c.title ?? 'Campaign'}</Text>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${pct}%` }]} />
+        {visibleCampaignsForSection.length > 0 && (
+          <View onLayout={rememberSection('campaigns')} style={[styles.card, styles.shadow]}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Campaigns & Donations</Text>
+            </View>
+            <View style={styles.divider} />
+            {(showAllCampaigns ? visibleCampaignsForSection : visibleCampaignsForSection.slice(0, 3)).map((c) => {
+              const raised = (c.raised_cents ?? 0) / 100;
+              const goalRaw = c.goal_cents ?? 0;
+              const goal = goalRaw > 0 ? goalRaw / 100 : 1;
+              const pct = Math.min(100, Math.round((raised / goal) * 100));
+              return (
+                <View key={c.id} style={styles.campaignRow}>
+                  <Text style={styles.campaignTitle} numberOfLines={1}>{c.title ?? 'Campaign'}</Text>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${pct}%` }]} />
+                  </View>
+                  <Text style={styles.campaignMeta}>
+                    {`${formatCurrency(c.raised_cents)} raised of ${formatCurrency(c.goal_cents)} goal`}
+                  </Text>
+                  <Pressable
+                    onPress={() => router.push({ pathname: '/(user)/campaign/[id]', params: { id: c.id } } as any)}
+                    style={({ pressed }) => [styles.donateBtn, { opacity: pressed ? 0.9 : 1 }]}
+                  >
+                    <Text style={styles.donateBtnText}>Donate</Text>
+                  </Pressable>
                 </View>
-                <Text style={styles.campaignMeta}>
-                  {`${formatCurrency(c.raised_cents)} raised of ${formatCurrency(c.goal_cents)} goal`}
-                </Text>
-                <Pressable
-                  onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: c.id } })}
-                  style={({ pressed }) => [styles.donateBtn, { opacity: pressed ? 0.9 : 1 }]}
-                >
-                  <Text style={styles.donateBtnText}>Donate</Text>
-                </Pressable>
-              </View>
-            );
-          })}
-          {!showAllCampaigns && visibleCampaignsForSection.length > 3 && (
-            <Pressable
-              onPress={() => setShowAllCampaigns(true)}
-              style={({ pressed }) => [styles.viewAllBtn, { opacity: pressed ? 0.9 : 1 }]}
-            >
-              <Text style={styles.viewAllText}>Show all {visibleCampaignsForSection.length} campaigns</Text>
-            </Pressable>
-          )}
-        </View>
+              );
+            })}
+            {!showAllCampaigns && visibleCampaignsForSection.length > 3 && (
+              <Pressable
+                onPress={() => setShowAllCampaigns(true)}
+                style={({ pressed }) => [styles.viewAllBtn, { opacity: pressed ? 0.9 : 1 }]}
+              >
+                <Text style={styles.viewAllText}>Show all {visibleCampaignsForSection.length} campaigns</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {/* ── Announcements (non-urgent) ── */}
         {nonUrgentAnnouncements.length > 0 && (
@@ -703,38 +748,7 @@ export default function MosquePage() {
           </View>
         )}
 
-        {/* ── Prayer Times + Iqamah ── */}
-        <View style={[styles.card, styles.shadow]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Prayer Times</Text>
-          </View>
-          <View style={styles.divider} />
-          {hasIqamaTimes && (
-            <View style={styles.prayerTableHeader}>
-              <Text style={[styles.prayerColLabel, { flex: 1 }]}>Prayer</Text>
-              <Text style={styles.prayerColLabel}>Adhan</Text>
-              <Text style={styles.prayerColLabel}>Iqamah</Text>
-            </View>
-          )}
-          <View style={styles.timesTable}>
-            {displayTimes.map((row) => {
-              const isNext = row.key === nextPrayerName;
-              return (
-                <View key={row.key} style={[styles.timeRow, isNext && styles.timeRowNext]}>
-                  <Text style={[styles.timeName, isNext && styles.timeNameNext]}>{row.name}</Text>
-                  <Text style={[styles.timeValue, isNext && styles.timeValueNext]}>{row.adhan}</Text>
-                  {hasIqamaTimes && (
-                    <Text style={[styles.timeIqama, isNext && styles.timeValueNext]}>
-                      {row.iqama ?? '-'}
-                    </Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* ── Jumu'ah (always shown when slots exist) ── */}
+        {/* Jumu'ah */}
         {showJumuahSection && (
           <View onLayout={rememberSection('jumuah')} style={[styles.card, styles.shadow]}>
             <View style={styles.cardHeaderRow}>
@@ -825,24 +839,6 @@ export default function MosquePage() {
               );
             })()}
           </View>
-        )}
-
-        {/* ── Follow / Unfollow ── */}
-        <Pressable
-          onPress={toggleFollow}
-          disabled={actionLoading}
-          style={({ pressed }) => [
-            styles.followBtn,
-            following && styles.followBtnUnfollow,
-            { opacity: pressed || actionLoading ? 0.85 : 1 },
-          ]}
-        >
-          <Text style={[styles.followText, following && styles.followTextUnfollow]}>
-            {following ? 'Unfollow Mosque' : 'Follow Mosque'}
-          </Text>
-        </Pressable>
-        {!following && subCount >= FOLLOW_LIMIT && (
-          <Text style={styles.limitNote}>{`You are following ${FOLLOW_LIMIT} mosques (maximum).`}</Text>
         )}
 
         {loading && (

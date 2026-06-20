@@ -501,7 +501,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
           return (
             <Pressable
               key={event.id}
-              onPress={() => router.push({ pathname: '/event/[id]', params: { id: event.id } })}
+              onPress={() => router.push({ pathname: '/(user)/event/[id]', params: { id: event.id } } as any)}
               style={({ pressed }) => [styles.contentRow, pressed && styles.contentRowPressed]}
             >
               <View style={styles.eventDateChip}>
@@ -525,7 +525,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
           return (
             <Pressable
               key={campaign.id}
-              onPress={() => router.push({ pathname: '/campaign/[id]', params: { id: campaign.id } })}
+              onPress={() => router.push({ pathname: '/(user)/campaign/[id]', params: { id: campaign.id } } as any)}
               style={({ pressed }) => [styles.contentRow, pressed && styles.contentRowPressed]}
             >
               <View style={[styles.contentIcon, styles.contentIconCampaign]}>
@@ -579,7 +579,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
         onPress={navigateToMosque}
         style={({ pressed }) => [styles.contentFooter, pressed && styles.contentRowPressed]}
       >
-        <AppText style={styles.contentFooterText}>View all</AppText>
+        <AppText style={styles.contentFooterText}>Open mosque page</AppText>
         <Ionicons name="chevron-forward" size={14} color="#0369A1" />
       </Pressable>
     </AppCard>
@@ -1537,7 +1537,7 @@ export default function HomeScreen() {
               return;
             }
             router.push({
-              pathname: '/mosque/[id]',
+              pathname: '/(user)/mosque/[id]',
               params: {
                 id: primaryMosque.id,
                 name: primaryMosque.name,
@@ -1614,13 +1614,6 @@ export default function HomeScreen() {
       {/* ── Cross-mosque urgent alerts (from all followed mosques except primary) ── */}
       <CrossMosqueAlertBanner alerts={crossMosqueAlerts} router={router} />
 
-      {/* ── Daily spiritual reflection ── */}
-      {todayQuote ? <QuoteOfTheDayCard quote={todayQuote} /> : null}
-
-      {/* ── Geo prayer times when travelling ── */}
-      {isTravelling && geoPrayerTimes && <GeoPrayerCard times={geoPrayerTimes} />}
-
-      {/* ── What's On at primary mosque ── */}
       {primaryMosque ? (
         <PrimaryMosqueContent
           mosqueId={primaryMosque.id}
@@ -1633,6 +1626,13 @@ export default function HomeScreen() {
         />
       ) : null}
 
+      {/* ── Daily spiritual reflection ── */}
+      {todayQuote ? <QuoteOfTheDayCard quote={todayQuote} /> : null}
+
+      {/* ── Geo prayer times when travelling ── */}
+      {isTravelling && geoPrayerTimes && <GeoPrayerCard times={geoPrayerTimes} />}
+
+      {/* My mosques */}
       <MyMosquesStrip
         mosques={followedMosques}
         primaryMosqueId={primaryMosque?.id ?? null}

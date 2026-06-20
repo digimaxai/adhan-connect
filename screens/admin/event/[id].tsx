@@ -28,10 +28,17 @@ const STATUS_OPTIONS: { key: Status; label: string; color: string; bg: string }[
   { key: 'cancelled', label: 'Cancelled', color: '#DC2626', bg: '#FEF2F2' },
 ];
 
+function returnToContentHub(router: ReturnType<typeof useRouter>) {
+  router.replace({
+    pathname: '/(admin)/events',
+    params: { tab: 'events', refresh: String(Date.now()) },
+  } as any);
+}
+
 export default function AdminEventForm() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { selectedMosque } = useAdminMosque();
+  const { selectedMosque, loading: mosqueLoading } = useAdminMosque();
   const isNew = !id || id === 'new';
 
   const [title, setTitle] = useState('');
@@ -53,15 +60,23 @@ export default function AdminEventForm() {
 
   const load = useCallback(async () => {
     if (isNew || !id) return;
+    if (!selectedMosque) {
+      if (!mosqueLoading) setError('No mosque selected.');
+      setLoading(mosqueLoading);
+      return;
+    }
     setLoading(true);
     try {
       const { data, error: e } = await supabase
         .from('events')
-        .select('id,title,description,location,capacity,start_at,status,is_public')
+        .select('id,mosque_id,title,description,location,capacity,start_at,status,is_public')
         .eq('id', id)
+        .eq('mosque_id', selectedMosque.mosqueId)
         .maybeSingle();
       if (e) throw e;
-      if (data) {
+      if (!data) {
+        setError('Event not found for the selected mosque.');
+      } else {
         setTitle(data.title ?? '');
         setDescription(data.description ?? '');
         setLocation(data.location ?? '');
@@ -75,13 +90,13 @@ export default function AdminEventForm() {
     } finally {
       setLoading(false);
     }
-  }, [id, isNew]);
+  }, [id, isNew, mosqueLoading, selectedMosque]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
-    if (!selectedMosque && isNew) { setError('No mosque selected.'); return; }
+    if (!selectedMosque) { setError('No mosque selected.'); return; }
     if (!dateTime) { setError('Date and time are required.'); return; }
     const capacityValue = capacity.trim() ? parseInt(capacity.trim(), 10) : null;
     if (capacityValue != null && (!Number.isFinite(capacityValue) || capacityValue <= 0)) {
@@ -105,10 +120,17 @@ export default function AdminEventForm() {
         const { error: e } = await supabase.from('events').insert(payload);
         if (e) throw e;
       } else {
-        const { error: e } = await supabase.from('events').update(payload).eq('id', id!);
+        const { data, error: e } = await supabase
+          .from('events')
+          .update(payload)
+          .eq('id', id!)
+          .eq('mosque_id', selectedMosque.mosqueId)
+          .select('id')
+          .maybeSingle();
         if (e) throw e;
+        if (!data) throw new Error('No matching event found for the selected mosque.');
       }
-      router.back();
+      returnToContentHub(router);
     } catch (err: any) {
       setError(err?.message ?? 'Save failed.');
     } finally {
@@ -117,6 +139,10 @@ export default function AdminEventForm() {
   };
 
   const handleDelete = () => {
+    if (!selectedMosque) {
+      setError('No mosque selected.');
+      return;
+    }
     Alert.alert(
       'Delete Event',
       'This will permanently delete the event and remove it from the mosque page.',
@@ -128,9 +154,16 @@ export default function AdminEventForm() {
           onPress: async () => {
             setDeleting(true);
             try {
-              const { error: e } = await supabase.from('events').delete().eq('id', id!);
+              const { data, error: e } = await supabase
+                .from('events')
+                .delete()
+                .eq('id', id!)
+                .eq('mosque_id', selectedMosque.mosqueId)
+                .select('id')
+                .maybeSingle();
               if (e) throw e;
-              router.back();
+              if (!data) throw new Error('No matching event found for the selected mosque.');
+              returnToContentHub(router);
             } catch (err: any) {
               setError(err?.message ?? 'Delete failed.');
               setDeleting(false);
@@ -195,7 +228,7 @@ export default function AdminEventForm() {
                 style={styles.input}
                 value={title}
                 onChangeText={setTitle}
-                placeholder="e.g. Eid Prayer &amp; Celebration"
+                placeholder="e.g. Eid Prayer & Celebration"
                 placeholderTextColor={tokens.color.text.muted}
                 maxLength={120}
                 returnKeyType="next"
@@ -223,7 +256,7 @@ export default function AdminEventForm() {
 
           {/* Date & Time */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>DATE &amp; TIME</AppText>
+            <AppText variant="caption" style={styles.sectionLabel}>DATE & TIME</AppText>
             <View style={styles.fieldCard}>
               <Pressable
                 onPress={() => openPicker('date')}

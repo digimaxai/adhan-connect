@@ -27,6 +27,13 @@ const STATUS_OPTIONS: { key: Status; label: string; description: string; color: 
   { key: 'ended',  label: 'Ended',   description: 'Campaign closed',       color: '#475569', bg: '#F1F5F9' },
 ];
 
+function returnToContentHub(router: ReturnType<typeof useRouter>) {
+  router.replace({
+    pathname: '/(admin)/events',
+    params: { tab: 'campaigns', refresh: String(Date.now()) },
+  } as any);
+}
+
 function fmtDate(d: Date | null) {
   if (!d) return 'Not set';
   return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
@@ -40,7 +47,7 @@ function fmtCents(cents: number | null) {
 export default function AdminCampaignForm() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { selectedMosque } = useAdminMosque();
+  const { selectedMosque, loading: mosqueLoading } = useAdminMosque();
   const isNew = !id || id === 'new';
 
   const [title, setTitle] = useState('');
@@ -58,15 +65,23 @@ export default function AdminCampaignForm() {
 
   const load = useCallback(async () => {
     if (isNew || !id) return;
+    if (!selectedMosque) {
+      if (!mosqueLoading) setError('No mosque selected.');
+      setLoading(mosqueLoading);
+      return;
+    }
     setLoading(true);
     try {
       const { data, error: e } = await supabase
         .from('campaigns')
-        .select('id,title,description,goal_cents,raised_cents,end_at,status')
+        .select('id,mosque_id,title,description,goal_cents,raised_cents,end_at,status')
         .eq('id', id)
+        .eq('mosque_id', selectedMosque.mosqueId)
         .maybeSingle();
       if (e) throw e;
-      if (data) {
+      if (!data) {
+        setError('Campaign not found for the selected mosque.');
+      } else {
         setTitle(data.title ?? '');
         setDescription(data.description ?? '');
         setGoalInput(fmtCents(data.goal_cents));
@@ -79,13 +94,13 @@ export default function AdminCampaignForm() {
     } finally {
       setLoading(false);
     }
-  }, [id, isNew]);
+  }, [id, isNew, mosqueLoading, selectedMosque]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
-    if (!selectedMosque && isNew) { setError('No mosque selected.'); return; }
+    if (!selectedMosque) { setError('No mosque selected.'); return; }
     const goalCents = goalInput.trim()
       ? Math.round(parseFloat(goalInput.replace(/[^0-9.]/g, '')) * 100)
       : null;
@@ -108,10 +123,17 @@ export default function AdminCampaignForm() {
         const { error: e } = await supabase.from('campaigns').insert(payload);
         if (e) throw e;
       } else {
-        const { error: e } = await supabase.from('campaigns').update(payload).eq('id', id!);
+        const { data, error: e } = await supabase
+          .from('campaigns')
+          .update(payload)
+          .eq('id', id!)
+          .eq('mosque_id', selectedMosque.mosqueId)
+          .select('id')
+          .maybeSingle();
         if (e) throw e;
+        if (!data) throw new Error('No matching campaign found for the selected mosque.');
       }
-      router.back();
+      returnToContentHub(router);
     } catch (err: any) {
       setError(err?.message ?? 'Save failed.');
     } finally {
@@ -120,6 +142,10 @@ export default function AdminCampaignForm() {
   };
 
   const handleDelete = () => {
+    if (!selectedMosque) {
+      setError('No mosque selected.');
+      return;
+    }
     Alert.alert(
       'Delete Campaign',
       'This will permanently remove the campaign from the mosque page.',
@@ -131,9 +157,16 @@ export default function AdminCampaignForm() {
           onPress: async () => {
             setDeleting(true);
             try {
-              const { error: e } = await supabase.from('campaigns').delete().eq('id', id!);
+              const { data, error: e } = await supabase
+                .from('campaigns')
+                .delete()
+                .eq('id', id!)
+                .eq('mosque_id', selectedMosque.mosqueId)
+                .select('id')
+                .maybeSingle();
               if (e) throw e;
-              router.back();
+              if (!data) throw new Error('No matching campaign found for the selected mosque.');
+              returnToContentHub(router);
             } catch (err: any) {
               setError(err?.message ?? 'Delete failed.');
               setDeleting(false);
