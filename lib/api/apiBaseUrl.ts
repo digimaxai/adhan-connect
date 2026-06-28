@@ -281,7 +281,15 @@ export function resolveApiUrls(path: string): string[] {
   }
 
   if (envBase && preferUsbReverseLoopback && !envBaseIsLoopbackOnly) {
-    candidates.add(`${envBase.replace(/\/+$/, '')}${normalized}`);
+    candidates.add(`${trimTrailingSlashes(envBase)}${normalized}`);
+  }
+
+  if (envBase && !(preferUsbReverseLoopback && envBaseIsLoopbackOnly)) {
+    candidates.add(`${trimTrailingSlashes(envBase)}${normalized}`);
+  }
+
+  if (envBase && candidates.size > 0) {
+    return Array.from(candidates);
   }
 
   if (Platform.OS !== 'web') {
@@ -312,10 +320,6 @@ export function resolveApiUrls(path: string): string[] {
         addNativeCandidatesFromBase(candidates, envLoopbackBase, normalized);
       }
     }
-  }
-
-  if (envBase && !(preferUsbReverseLoopback && envBaseIsLoopbackOnly)) {
-    candidates.add(`${envBase.replace(/\/+$/, '')}${normalized}`);
   }
 
   return Array.from(candidates);

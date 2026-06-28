@@ -17,8 +17,8 @@ type UseAdminMosqueOptions = {
 };
 
 export function useAdminMosque(options?: UseAdminMosqueOptions) {
-  const { session } = useAuth();
-  const userId = session?.user?.id ?? 'anonymous';
+  const { session, loading: authLoading } = useAuth();
+  const userId = session?.user?.id ?? null;
   const preferredMosqueId = options?.preferredMosqueId ?? null;
   const autoSelectFirst = options?.autoSelectFirst ?? true;
   const [state, setState] = useState<State>({
@@ -30,6 +30,14 @@ export function useAdminMosque(options?: UseAdminMosqueOptions) {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!userId) {
+      setState({ mosques: [], selectedMosque: null, loading: authLoading, error: null });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
       const { mosques, error } = await getAdminMosquesForCurrentUser();
@@ -56,18 +64,14 @@ export function useAdminMosque(options?: UseAdminMosqueOptions) {
     return () => {
       cancelled = true;
     };
-  }, [autoSelectFirst, preferredMosqueId, userId]);
-
-  useEffect(() => {
-    if (__DEV__) {
-      console.log('[useAdminMosque] mosques state', state.mosques, 'selected', state.selectedMosque, 'error', state.error);
-    }
-  }, [state.mosques, state.selectedMosque, state.error]);
+  }, [authLoading, autoSelectFirst, preferredMosqueId, userId]);
 
   const setSelectedMosque = (mosqueId: string) => {
     setState((prev) => {
       const found = prev.mosques.find((m) => m.mosqueId === mosqueId) ?? prev.selectedMosque;
-      lastSelectedMosqueIdByUser.set(userId, found?.mosqueId ?? null);
+      if (userId) {
+        lastSelectedMosqueIdByUser.set(userId, found?.mosqueId ?? null);
+      }
       return { ...prev, selectedMosque: found ?? null };
     });
   };

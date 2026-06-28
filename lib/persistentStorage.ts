@@ -6,22 +6,48 @@ type StorageLike = {
   removeItem: (key: string) => Promise<void>;
 };
 
+let cachedFileStore: Record<string, string> | null = null;
+let fileStoreLoadPromise: Promise<Record<string, string>> | null = null;
+
+function storageFilePath() {
+  return FileSystem.documentDirectory
+    ? `${FileSystem.documentDirectory}adhan-connect-storage.json`
+    : null;
+}
+
 async function readFileStore(): Promise<Record<string, string>> {
-  if (!FileSystem.documentDirectory) return {};
-  const storageFile = `${FileSystem.documentDirectory}adhan-connect-storage.json`;
+  if (cachedFileStore) return cachedFileStore;
+  if (fileStoreLoadPromise) return fileStoreLoadPromise;
+
+  const storageFile = storageFilePath();
+  if (!storageFile) {
+    cachedFileStore = {};
+    return cachedFileStore;
+  }
+
+  fileStoreLoadPromise = (async () => {
+    try {
+      const info = await FileSystem.getInfoAsync(storageFile);
+      if (!info.exists) return {};
+      const raw = await FileSystem.readAsStringAsync(storageFile);
+      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  })();
+
   try {
-    const info = await FileSystem.getInfoAsync(storageFile);
-    if (!info.exists) return {};
-    const raw = await FileSystem.readAsStringAsync(storageFile);
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
-  } catch {
-    return {};
+    cachedFileStore = await fileStoreLoadPromise;
+    return cachedFileStore;
+  } finally {
+    fileStoreLoadPromise = null;
   }
 }
 
 async function writeFileStore(data: Record<string, string>) {
-  if (!FileSystem.documentDirectory) return;
-  const storageFile = `${FileSystem.documentDirectory}adhan-connect-storage.json`;
+  cachedFileStore = data;
+  const storageFile = storageFilePath();
+  if (!storageFile) return;
   await FileSystem.writeAsStringAsync(storageFile, JSON.stringify(data));
 }
 

@@ -44,6 +44,14 @@ const resolveGlobalProfileRole = (value: unknown): AppUser['role'] => {
   return value === 'main_admin' ? 'main_admin' : 'user';
 };
 
+const describeAuthError = (message: string | null | undefined) => {
+  const fallback = message?.trim() || 'Unknown error';
+  if (/network request failed|failed to fetch|networkerror/i.test(fallback)) {
+    return 'The phone could not reach Supabase. Check that the Android phone has working internet/DNS, then try again. Switching off Guest Wi-Fi, VPN, or Private DNS can help.';
+  }
+  return fallback;
+};
+
 /* ------------------------------------------------------------------
    Types
 ------------------------------------------------------------------- */
@@ -53,6 +61,20 @@ export type AppUser = {
   display_name: string | null;
   role: 'user' | 'local_admin' | 'main_admin' | 'muezzin';
 };
+
+function buildFallbackUser(authUser: User): AppUser {
+  return {
+    id: authUser.id,
+    email: authUser.email ?? null,
+    display_name: deriveDisplayName(
+      (authUser.user_metadata as any)?.display_name,
+      authUser.email ?? null
+    ),
+    role: resolveGlobalProfileRole(
+      (authUser.app_metadata as any)?.role ?? (authUser.user_metadata as any)?.role ?? 'user'
+    ),
+  };
+}
 
 export type AuthContextType = {
   session: Session | null;
@@ -101,13 +123,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!mounted) return;
-      setSession(data.session ?? null);
+      const nextSession = data.session ?? null;
+      setSession(nextSession);
+      setUser(nextSession?.user ? buildFallbackUser(nextSession.user) : null);
       setLoading(false);
     })();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, sess) => {
       if (!mounted) return;
-      setSession(sess ?? null);
+      const nextSession = sess ?? null;
+      setSession(nextSession);
+      setUser(nextSession?.user ? buildFallbackUser(nextSession.user) : null);
     });
 
     return () => {
@@ -163,16 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // fallback if no DB profile exists yet
-    const u = session.user as User;
-    const fallback = {
-      id: u.id,
-      email: u.email ?? null,
-      display_name: deriveDisplayName(
-        (u.user_metadata as any)?.display_name,
-        u.email ?? null
-      ),
-      role: resolveGlobalProfileRole((u.app_metadata as any)?.role ?? (u.user_metadata as any)?.role ?? 'user'),
-    };
+    const fallback = buildFallbackUser(session.user as User);
 
     setUser(fallback);
 
@@ -214,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           message: error.message,
           status: error.status,
         });
-        return { error: error.message };
+        return { error: describeAuthError(error.message) };
       }
       await requireRoleEntrySelection(data.user?.id ?? null);
       console.log('[auth] signIn succeeded', {
@@ -227,7 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         projectRef: supabaseProjectRef,
         message: e?.message ?? 'Unknown error',
       });
-      return { error: e?.message ?? 'Unknown error' };
+      return { error: describeAuthError(e?.message) };
     }
   };
 

@@ -188,6 +188,7 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
   const audioSessionStartedRef = useRef(false);
   const connectionStateRef = useRef<LiveKitBroadcastConnectionState>('idle');
   const connectPromiseRef = useRef<Promise<boolean> | null>(null);
+  const disconnectPromiseRef = useRef<Promise<void> | null>(null);
   const inputGainRef = useRef(DEFAULT_INPUT_GAIN);
 
   useEffect(() => {
@@ -241,57 +242,73 @@ function useNativeBroadcast(options: Options): LiveKitBroadcastState {
   }, []);
 
   const disconnect = useCallback(async () => {
-    const hadActiveLiveKitResources =
-      !!roomRef.current || !!audioTrackRef.current || audioSessionStartedRef.current;
-    const previousConnectionState = connectionStateRef.current;
+    if (disconnectPromiseRef.current) return disconnectPromiseRef.current;
 
-    if (!hadActiveLiveKitResources) {
-      return;
-    }
+    const disconnectPromise = (async () => {
+      const hadActiveLiveKitResources =
+        !!roomRef.current || !!audioTrackRef.current || audioSessionStartedRef.current;
+      const previousConnectionState = connectionStateRef.current;
 
-    stopAudioLevelPolling();
-    setAudioLevel(0);
-
-    if (audioTrackRef.current) {
-      try {
-        await audioTrackRef.current.stop?.();
-      } catch {}
-      audioTrackRef.current = null;
-    }
-
-    if (roomRef.current) {
-      try {
-        await roomRef.current.disconnect();
-      } catch {}
-      roomRef.current = null;
-    }
-
-    if (mountedRef.current) {
-      setLiveConnectionState('idle');
-      if (previousConnectionState !== 'failed') {
-        setError(null);
+      if (!hadActiveLiveKitResources) {
+        return;
       }
-      pushDiagnostics('idle');
-    }
 
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { Audio } = require('expo-av');
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: true,
-        playsInSilentModeIOS: true,
-        interruptionModeIOS: 1,
-        shouldDuckAndroid: false,
-      });
-    } catch {}
+      stopAudioLevelPolling();
+      setAudioLevel(0);
 
-    if (audioSessionStartedRef.current) {
+      const room = roomRef.current;
+      const audioTrack = audioTrackRef.current;
+
+      if (room) {
+        try {
+          await room.disconnect(true);
+        } catch {}
+      }
+      roomRef.current = null;
+      audioTrackRef.current = null;
+
+      if (audioTrack) {
+        try {
+          await audioTrack.stop?.();
+        } catch {}
+      }
+
+      if (mountedRef.current) {
+        setLiveConnectionState('idle');
+        if (previousConnectionState !== 'failed') {
+          setError(null);
+        }
+        pushDiagnostics('idle');
+      }
+
       try {
-        await audioSessionRef.current?.stopAudioSession?.();
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { Audio } = require('expo-av');
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
+          interruptionModeIOS: 1,
+          shouldDuckAndroid: false,
+        });
       } catch {}
-      audioSessionStartedRef.current = false;
-      audioSessionRef.current = null;
+
+      if (audioSessionStartedRef.current) {
+        try {
+          await audioSessionRef.current?.stopAudioSession?.();
+        } catch {}
+        audioSessionStartedRef.current = false;
+        audioSessionRef.current = null;
+      }
+    })();
+
+    disconnectPromiseRef.current = disconnectPromise;
+    try {
+      await disconnectPromise;
+    } finally {
+      if (disconnectPromiseRef.current === disconnectPromise) {
+        disconnectPromiseRef.current = null;
+      }
     }
   }, [pushDiagnostics, setLiveConnectionState, stopAudioLevelPolling]);
 

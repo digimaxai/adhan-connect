@@ -364,9 +364,9 @@ const CANONICAL_PRAYERS = new Set(['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']);
  * reference time whenever a DB record exists.
  *
  * Priority:
- *   1. adhans.scheduled_at  (explicit scheduled record for this adhanId)
+ *   1. prayer_times.{prayer}_adhan_time (canonical mosque schedule)
  *   2. staff_rota.adhan_time (this muezzin's assigned slot for today)
- *   3. prayer_times.{prayer}_adhan_time (canonical mosque schedule)
+ *   3. adhans.scheduled_at  (explicit scheduled record for this adhanId)
  *   4. client-supplied scheduledAt (backward-compat fallback)
  *
  * Every lookup is wrapped in try/catch: a DB error never hard-blocks the muezzin.
@@ -380,19 +380,23 @@ async function resolveAuthoritativeScheduledAt(
   clientScheduledAt: string
 ): Promise<string> {
   // 1. adhans table — most explicit, verified against mosqueId
-  if (adhanId && isUuid(adhanId)) {
+  if (isTestBroadcastId(adhanId)) return clientScheduledAt;
+
+  const today = clientScheduledAt.slice(0, 10);
+
+  if (CANONICAL_PRAYERS.has(prayer)) {
     try {
-      const { data } = await supabaseAdmin
-        .from('adhans')
-        .select('scheduled_at')
-        .eq('id', adhanId)
+      const col = `${prayer}_adhan_time`;
+      const { data: ptRow } = await supabaseAdmin
+        .from('prayer_times')
+        .select(col)
         .eq('mosque_id', mosqueId)
-        .maybeSingle<{ scheduled_at?: string | null }>();
-      if (data?.scheduled_at) return data.scheduled_at;
+        .eq('date', today)
+        .maybeSingle<Record<string, string | null>>();
+      const t = ptRow?.[col];
+      if (t) return t;
     } catch {}
   }
-
-  const today = clientScheduledAt.slice(0, 10); // YYYY-MM-DD from ISO string
 
   // 2. staff_rota — this muezzin's specific assignment
   try {
@@ -408,17 +412,15 @@ async function resolveAuthoritativeScheduledAt(
   } catch {}
 
   // 3. prayer_times canonical table
-  if (CANONICAL_PRAYERS.has(prayer)) {
+  if (adhanId && isUuid(adhanId)) {
     try {
-      const col = `${prayer}_adhan_time`;
-      const { data: ptRow } = await supabaseAdmin
-        .from('prayer_times')
-        .select(col)
+      const { data } = await supabaseAdmin
+        .from('adhans')
+        .select('scheduled_at')
+        .eq('id', adhanId)
         .eq('mosque_id', mosqueId)
-        .eq('date', today)
-        .maybeSingle<Record<string, string | null>>();
-      const t = ptRow?.[col];
-      if (t) return t;
+        .maybeSingle<{ scheduled_at?: string | null }>();
+      if (data?.scheduled_at) return data.scheduled_at;
     } catch {}
   }
 
@@ -555,7 +557,7 @@ async function assertBroadcastWindow(
   prayer: string,
   adhanId: string | null,
   clientScheduledAt: string
-): Promise<void> {
+): Promise<string | void> {
   const authoritative = await resolveAuthoritativeScheduledAt(
     supabaseAdmin, mosqueId, userId, prayer, adhanId, clientScheduledAt
   );
@@ -575,6 +577,7 @@ async function assertBroadcastWindow(
   if (nowMs > windowCloseMs) {
     throw new Error('The broadcast window for this adhan has closed.');
   }
+  return authoritative;
 }
 
 type AdhanWritePayload = Record<string, string | null>;
@@ -979,7 +982,10 @@ export const POST: RequestHandler = async (request) => {
     if (action === 'start') {
       const startedAt = new Date().toISOString();
       const prayer = normalizePrayer(body.prayer);
-      const scheduledAt = normalizeScheduledAt(body.scheduledAt);
+      const requestedScheduledAt = normalizeScheduledAt(body.scheduledAt);
+      const scheduledAt =
+        (await assertBroadcastWindow(auth.supabaseAdmin, mosqueId, auth.userId, prayer, body.adhanId ?? null, requestedScheduledAt)) ??
+        requestedScheduledAt;
       await assertUserCanStartRealBroadcast(
         auth.supabaseAdmin,
         access,
@@ -989,7 +995,6 @@ export const POST: RequestHandler = async (request) => {
         scheduledAt,
         body.adhanId ?? null
       );
-      await assertBroadcastWindow(auth.supabaseAdmin, mosqueId, auth.userId, prayer, body.adhanId ?? null, scheduledAt);
       const { playbackUrl, provider, summary } = await requireMosqueBroadcastReady(auth.supabaseAdmin, mosqueId);
       const livekitRoomName = provider === 'livekit'
         ? computeLiveKitRoomName(mosqueId, prayer, scheduledAt)

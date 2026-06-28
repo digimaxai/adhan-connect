@@ -8,6 +8,7 @@ import { useAuth } from '../../lib/auth';
 import { labelForPrayer, PrayerName } from '../../lib/adhans';
 import { supabase } from '../../lib/supabase';
 import { useLiveStreamForMosque } from '../../shared/hooks/useLiveStreamForMosque';
+import { usePrayerTimesRealtime } from '../../shared/hooks/usePrayerTimesRealtime';
 import { getDailyPrayerTimes } from '../../../lib/api/prayerTimesUnified';
 import {
   crowdState,
@@ -98,6 +99,43 @@ const mapNormalizedIqamaTimes = (normalized: Awaited<ReturnType<typeof getDailyP
   return mapped;
 };
 
+async function fetchDisplayedPrayerTimes(mosqueId: string) {
+  const today = new Date();
+  const todayIso = today.toISOString().slice(0, 10);
+  const normalizedToday = await getDailyPrayerTimes(mosqueId, today);
+  if (normalizedToday) return normalizedToday;
+
+  const { data: nextPt } = await supabase
+    .from('prayer_times')
+    .select('date')
+    .eq('mosque_id', mosqueId)
+    .gte('date', todayIso)
+    .order('date', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (nextPt?.date) {
+    const d = new Date(nextPt.date as string);
+    const normalized = await getDailyPrayerTimes(mosqueId, d);
+    if (normalized) return normalized;
+  }
+
+  const { data: prevPt } = await supabase
+    .from('prayer_times')
+    .select('date')
+    .eq('mosque_id', mosqueId)
+    .lte('date', todayIso)
+    .order('date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (prevPt?.date) {
+    const d = new Date(prevPt.date as string);
+    const normalized = await getDailyPrayerTimes(mosqueId, d);
+    if (normalized) return normalized;
+  }
+
+  return null;
+}
+
 export default function MosquePage() {
   const { id, name: nameParam, city: cityParam, country: countryParam, focus } = useLocalSearchParams<{
     id: string;
@@ -143,6 +181,17 @@ export default function MosquePage() {
   const rememberSection = useCallback((key: string) => (event: LayoutChangeEvent) => {
     sectionOffsetsRef.current[key] = event.nativeEvent.layout.y;
   }, []);
+
+  const refreshPrayerTimes = useCallback(async () => {
+    if (!resolvedId) return;
+    const normalizedPrayer = await fetchDisplayedPrayerTimes(resolvedId);
+    setPrayers(mapNormalizedPrayerTimes(normalizedPrayer));
+    setIqamaTimes(mapNormalizedIqamaTimes(normalizedPrayer));
+  }, [resolvedId]);
+
+  usePrayerTimesRealtime(resolvedId, refreshPrayerTimes, {
+    channelName: 'mosque-detail-prayer-times',
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -302,42 +351,7 @@ export default function MosquePage() {
           summaryMap = summaryFromRows(summaryRes.data as JumuahSummary[]);
         }
 
-        const fetchNormalizedPrayerTimes = async () => {
-          const normalizedToday = await getDailyPrayerTimes(actualId, today);
-          if (normalizedToday) return normalizedToday;
-
-          const { data: nextPt } = await supabase
-            .from('prayer_times')
-            .select('date')
-            .eq('mosque_id', actualId)
-            .gte('date', todayIso)
-            .order('date', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (nextPt?.date) {
-            const d = new Date(nextPt.date as string);
-            const normalized = await getDailyPrayerTimes(actualId, d);
-            if (normalized) return normalized;
-          }
-
-          const { data: prevPt } = await supabase
-            .from('prayer_times')
-            .select('date')
-            .eq('mosque_id', actualId)
-            .lte('date', todayIso)
-            .order('date', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (prevPt?.date) {
-            const d = new Date(prevPt.date as string);
-            const normalized = await getDailyPrayerTimes(actualId, d);
-            if (normalized) return normalized;
-          }
-
-          return null;
-        };
-
-        const normalizedPrayer = await fetchNormalizedPrayerTimes();
+        const normalizedPrayer = await fetchDisplayedPrayerTimes(actualId);
         setPrayers(mapNormalizedPrayerTimes(normalizedPrayer));
         setIqamaTimes(mapNormalizedIqamaTimes(normalizedPrayer));
         setRecordings((recordingData as BroadcastRow[]) ?? []);

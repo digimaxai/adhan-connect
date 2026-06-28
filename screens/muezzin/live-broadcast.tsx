@@ -38,6 +38,8 @@ const formatCountdown = (seconds: number) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 function formatHealthStatus(status?: string | null) {
   switch (status) {
     case 'reachable':
@@ -354,8 +356,26 @@ export default function MuezzinLiveScreen() {
     setBanner(null);
     if (engine.isLive) {
       console.log('[LK screen] ending broadcast', { isLiveKitProvider, liveKitState: liveKit.connectionState });
-      if (isLiveKitProvider) await liveKit.disconnect();
+      let localLiveKitLeaveFinished = false;
+      const localLiveKitLeave = isLiveKitProvider
+        ? liveKit.disconnect()
+            .catch(() => {
+              console.warn('[LK screen] local LiveKit cleanup failed while ending broadcast');
+            })
+            .finally(() => {
+              localLiveKitLeaveFinished = true;
+            })
+        : null;
+
+      if (localLiveKitLeave) {
+        await Promise.race([localLiveKitLeave, wait(1500)]);
+        if (!localLiveKitLeaveFinished) {
+          console.warn('[LK screen] local LiveKit cleanup still finishing; ending backend broadcast now');
+        }
+      }
+
       const success = await engine.endBroadcast();
+      if (localLiveKitLeave) void localLiveKitLeave;
       if (success) setBanner('Broadcast ended');
     } else {
       console.log('[LK screen] starting broadcast', { isLiveKitProvider, provider: engine.config?.provider });

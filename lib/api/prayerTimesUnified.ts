@@ -281,14 +281,6 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   // Example: for Harrow on 2025-12-09, if prayer_times has edited times and mosque_prayer_times still holds imported ones, this helper returns the prayer_times values for all prayers.
   const dateIso = formatLocalDate(date);
 
-  const serverResult = await loadDailyPrayerTimesViaServer(mosqueId, dateIso);
-  if (serverResult?.row) {
-    const serverNormalized = normalizePrayerTimesRowWithBase(serverResult.row, dateIso);
-    return serverResult.source === 'prayer_times' || !serverResult.source
-      ? fillPartialPrayerTimesFromSource(mosqueId, dateIso, serverNormalized)
-      : serverNormalized;
-  }
-
   let normalized: NormalizedPrayerTimes | null = null;
   try {
     const { data: primary, error: primaryErr } = await supabase
@@ -386,6 +378,14 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
     }
   } catch (err: any) {
     console.warn('[getDailyPrayerTimes] staff_rota fallback threw', err?.message ?? err);
+  }
+
+  const serverResult = await loadDailyPrayerTimesViaServer(mosqueId, dateIso);
+  if (serverResult?.row) {
+    const serverNormalized = normalizePrayerTimesRowWithBase(serverResult.row, dateIso);
+    return serverResult.source === 'prayer_times' || !serverResult.source
+      ? fillPartialPrayerTimesFromSource(mosqueId, dateIso, serverNormalized)
+      : serverNormalized;
   }
 
   // Last resort: auto-calculate from the mosque's configured source (ELM or Aladhan).
