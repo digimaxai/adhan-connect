@@ -58,6 +58,7 @@ export function useRoleFlags(): RoleFlags {
   const { session, user } = useAuth();
   const sessionUserId = session?.user?.id ?? null;
   const sessionEmail = session?.user?.email ?? null;
+  const sessionAccessToken = session?.access_token ?? null;
   const sessionAppRole = resolveGlobalRole((session?.user?.app_metadata as any)?.role ?? null);
   const initialGlobalRole = resolveGlobalRole(user?.role ?? sessionAppRole ?? null);
   const [state, setState] = useState<RoleFlags>({
@@ -244,7 +245,8 @@ export function useRoleFlags(): RoleFlags {
     return () => {
       cancelled = true;
     };
-  }, [session, sessionUserId, sessionEmail, sessionAppRole]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionUserId, sessionEmail, sessionAccessToken, sessionAppRole]);
 
   return state;
 }
