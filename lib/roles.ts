@@ -107,7 +107,7 @@ export function useRoleFlags(): RoleFlags {
         let resolvedError: string | null = null;
 
         try {
-          const access = await fetchSessionAccess({ preferCache: true, maxAgeMs: 5 * 60_000 });
+          const access = await fetchSessionAccess({ preferCache: true, maxAgeMs: 5 * 60_000, session });
           if (cancelled) return;
 
           const isMainAdmin = !!access.isMainAdmin;
@@ -158,7 +158,7 @@ export function useRoleFlags(): RoleFlags {
           resolvedError = resolvedError ?? userErr.message ?? 'Failed to load role from user profile.';
         }
 
-        const profileRole = resolveGlobalRole(userRow?.role ?? user?.role ?? sessionAppRole ?? 'user');
+        const profileRole = resolveGlobalRole(userRow?.role ?? sessionAppRole ?? 'user');
 
         if (cancelled) return;
 
@@ -214,7 +214,7 @@ export function useRoleFlags(): RoleFlags {
           primaryMuezzinMosqueId: null,
         });
       } catch (e: any) {
-        const fallbackRole = resolveGlobalRole(user?.role ?? sessionAppRole ?? null);
+        const fallbackRole = resolveGlobalRole(sessionAppRole ?? null);
         const isMainAdmin = fallbackRole === 'main_admin';
         const isLocalAdmin = false;
         const isAdmin = isMainAdmin;
@@ -244,7 +244,7 @@ export function useRoleFlags(): RoleFlags {
     return () => {
       cancelled = true;
     };
-  }, [sessionUserId, sessionEmail, sessionAppRole, user?.role]);
+  }, [session, sessionUserId, sessionEmail, sessionAppRole]);
 
   return state;
 }

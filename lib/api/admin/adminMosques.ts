@@ -13,7 +13,6 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
   try {
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData?.user?.id) {
-      console.log('[adminMosques] no auth user', authError);
       return { mosques: [], error: authError?.message ?? 'No authenticated user.' };
     }
     const userId = authData.user.id;
@@ -47,8 +46,6 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
         'id, name, city, country'
       );
 
-      console.log('[adminMosques] main admin mosqueRows', mosquesData, mosquesError);
-
       if (mosquesError || !mosquesData) {
         return { mosques: [], error: mosquesError?.message ?? null };
       }
@@ -69,8 +66,6 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
       .select('mosque_id, role')
       .eq('user_id', userId);
 
-    console.log('[adminMosques] adminRows', adminRows, adminError, 'userId', userId);
-
     if (adminError || !adminRows || adminRows.length === 0) {
       return { mosques: [], error: adminError?.message ?? null };
     }
@@ -85,8 +80,6 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
       .from('mosques')
       .select('id, name, city, country')
       .in('id', ids);
-
-    console.log('[adminMosques] mosqueRows', mosquesData, mosquesError);
 
     if (mosquesError || !mosquesData) {
       return { mosques: [], error: mosquesError?.message ?? null };

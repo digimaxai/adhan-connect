@@ -38,6 +38,7 @@ import {
   setDefaultMosqueId as persistDefaultMosqueId,
 } from '../../lib/mosquePreferences';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
+import { usePrayerTimesRealtime } from '../shared/hooks/usePrayerTimesRealtime';
 import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/prayerTimesUnified';
 import { computeNextPrayerSummaryAcrossDays } from '../../lib/prayerTimesDisplay';
 import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
@@ -950,18 +951,20 @@ export default function HomeScreen() {
     [roles.isMainAdmin, roles.primaryAdminMosqueId, roles.primaryMuezzinMosqueId]
   );
 
+  // Shared Map used by primaryMosque, render loops, and cross-mosque alerts.
+  const mosqueById = useMemo(() => new Map(mosques.map((m) => [m.id, m])), [mosques]);
+
   const primaryMosque = useMemo(() => {
-    const byId = new Map(mosques.map((m) => [m.id, m]));
     const validDefaultId = defaultMosqueId && subscribedIds.has(defaultMosqueId) ? defaultMosqueId : null;
     const preferredIds = [staffPrimaryMosqueId, validDefaultId, subs[0]?.mosque_id].filter(Boolean) as string[];
 
-    for (const mosqueId of preferredIds) {
-      const mosque = byId.get(mosqueId);
+    for (const id of preferredIds) {
+      const mosque = mosqueById.get(id);
       if (mosque) return mosque;
     }
 
     return null;
-  }, [subs, mosques, defaultMosqueId, subscribedIds, staffPrimaryMosqueId]);
+  }, [subs, mosqueById, defaultMosqueId, subscribedIds, staffPrimaryMosqueId]);
 
   const followedMosques = useMemo(() => {
     return mosques.filter((m) => subscribedIds.has(m.id));
@@ -1178,14 +1181,38 @@ export default function HomeScreen() {
     subs,
   ]);
 
+  // ── Stable UI callbacks (prevent React.memo thrashing on memoised children) ──
+
+  const openMosquePicker = useCallback(() => setShowMosquePicker(true), []);
+  const closeMosquePicker = useCallback(() => setShowMosquePicker(false), []);
+  const openDiscover = useCallback(() => router.push('/(user)/discover'), [router]);
+  const manageMosques = useCallback(() => {
+    setShowMosquePicker(false);
+    router.push('/manage-mosques');
+  }, [router]);
+  const handleListenLive = useCallback(
+    (mosqueId: string) =>
+      router.push({
+        pathname: '/(user)/now',
+        params: {
+          mosqueId,
+          ...(userLocation
+            ? { lat: String(userLocation.latitude), lng: String(userLocation.longitude) }
+            : {}),
+        },
+      }),
+    [router, userLocation]
+  );
+
   // ── Effects ────────────────────────────────────────────────────────────────
 
   useFocusEffect(
     React.useCallback(() => {
       void loadHomeData();
       void loadDefault();
+      void loadPrayerTimes(primaryMosque?.id);
       setContentRefreshKey((key) => key + 1);
-    }, [loadDefault, loadHomeData])
+    }, [loadDefault, loadHomeData, loadPrayerTimes, primaryMosque?.id])
   );
 
   // Live stream realtime + polling (listener only — untouched)
@@ -1207,9 +1234,9 @@ export default function HomeScreen() {
     return () => { cancelled = true; clearInterval(pollId); supabase.removeChannel(channel); };
   }, [loadHomeData, roles.isMuezzin, userId]);
 
-  // 1-second clock tick
+  // 30-second clock tick — remaining display is HH:MM so minute granularity is sufficient.
   useEffect(() => {
-    const id = setInterval(() => setClockMs(Date.now()), 1000);
+    const id = setInterval(() => setClockMs(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
 
@@ -1231,6 +1258,13 @@ export default function HomeScreen() {
 
   useEffect(() => { loadMuezzin(); }, [loadMuezzin]);
   useEffect(() => { loadPrayerTimes(primaryMosque?.id); }, [loadPrayerTimes, primaryMosque?.id]);
+  usePrayerTimesRealtime(
+    primaryMosque?.id,
+    () => {
+      void loadPrayerTimes(primaryMosque?.id);
+    },
+    { channelName: 'listener-home-prayer-times' }
+  );
 
   // Load "What's On" content for the actual primary mosque only.
   useEffect(() => {
@@ -1327,7 +1361,6 @@ export default function HomeScreen() {
         setCrossMosqueAlerts([]);
         return;
       }
-      const mosqueById = new Map(mosques.map((m) => [m.id, m]));
       const alerts: CrossMosqueAlert[] = (data as RawAnnouncement[])
         .reduce<CrossMosqueAlert[]>((acc, ann) => {
           const mosque = mosqueById.get(ann.mosque_id);
@@ -1339,7 +1372,7 @@ export default function HomeScreen() {
     })();
 
     return () => { cancelled = true; };
-  }, [subs, mosques, primaryMosque?.id, contentRefreshKey]);
+  }, [subs, mosqueById, primaryMosque?.id, contentRefreshKey]);
 
   // Silently activate location if permission was already granted in a prior session
   useEffect(() => {
@@ -1380,13 +1413,15 @@ export default function HomeScreen() {
   );
   const currentDayOfWeek = useMemo(() => new Date(clockMs).getDay(), [clockMs]);
 
+  // Freshness uses Date.now() at evaluation time; 15 s polling catches any
+  // stream that crosses the 20-min window between evaluations.
   const freshLiveStreams = useMemo(() => {
     const next: Record<string, StreamRow> = {};
-    Object.entries(liveStreams).forEach(([mosqueId, stream]) => {
-      if (isFreshLiveStream(stream, clockMs)) next[mosqueId] = stream;
-    });
+    for (const [mosqueId, stream] of Object.entries(liveStreams)) {
+      if (isFreshLiveStream(stream)) next[mosqueId] = stream;
+    }
     return next;
-  }, [clockMs, liveStreams]);
+  }, [liveStreams]);
   const liveMosqueIds = useMemo(() => new Set(Object.keys(freshLiveStreams)), [freshLiveStreams]);
 
   const nearbyLiveEntries = useMemo((): NearbyLiveEntry[] => {
@@ -1394,7 +1429,7 @@ export default function HomeScreen() {
     return Object.keys(freshLiveStreams)
       .filter((id) => id !== primaryMosque?.id)
       .reduce<NearbyLiveEntry[]>((acc, mosqueId) => {
-        const mosque = mosques.find((m) => m.id === mosqueId);
+        const mosque = mosqueById.get(mosqueId);
         if (!mosque?.lat || !mosque?.lng) return acc;
         const distance = haversineKm(
           userLocation.latitude, userLocation.longitude,
@@ -1405,7 +1440,7 @@ export default function HomeScreen() {
       }, [])
       .sort((a, b) => a.distance - b.distance)
       .slice(0, 3);
-  }, [userLocation, freshLiveStreams, primaryMosque?.id, mosques]);
+  }, [userLocation, freshLiveStreams, primaryMosque?.id, mosqueById]);
 
   // ── Live broadcast state for primary mosque (UNTOUCHED logic) ─────────────
 
@@ -1484,8 +1519,8 @@ export default function HomeScreen() {
       <MosqueIdentityBar
         mosque={primaryMosque}
         canSwitch={followedMosques.length > 1}
-        onSwitch={() => setShowMosquePicker(true)}
-        onDiscover={() => router.push('/(user)/discover')}
+        onSwitch={openMosquePicker}
+        onDiscover={openDiscover}
         hasSubscriptions={subs.length > 0}
         otherMosqueLive={otherMosqueLive}
       />
@@ -1496,8 +1531,8 @@ export default function HomeScreen() {
         mosques={followedMosques}
         selectedId={primaryMosque?.id ?? null}
         onSelect={handleSwitchMosque}
-        onClose={() => setShowMosquePicker(false)}
-        onManage={() => { setShowMosquePicker(false); router.push('/manage-mosques'); }}
+        onClose={closeMosquePicker}
+        onManage={manageMosques}
       />
 
       {/* ── Discover CTA for new users with no mosque ── */}
@@ -1523,7 +1558,7 @@ export default function HomeScreen() {
         <TravelBanner
           mosqueName={primaryMosque.name}
           distanceKm={distanceFromHomeMosque}
-          onDiscover={() => router.push('/(user)/discover')}
+          onDiscover={openDiscover}
         />
       )}
 
@@ -1641,27 +1676,14 @@ export default function HomeScreen() {
       />
 
       {/* ── Nearby live broadcasts ── */}
-      <NearbyLiveCard
-        entries={nearbyLiveEntries}
-        onListen={(mosqueId) =>
-          router.push({
-            pathname: '/(user)/now',
-            params: {
-              mosqueId,
-              ...(userLocation
-                ? { lat: String(userLocation.latitude), lng: String(userLocation.longitude) }
-                : {}),
-            },
-          })
-        }
-      />
+      <NearbyLiveCard entries={nearbyLiveEntries} onListen={handleListenLive} />
 
       {/* ── Other live broadcasts from followed mosques ── */}
       {otherLive.length > 0 && (
         <AppCard style={[styles.cardContainer, { gap: 10 }]}>
           <AppText variant="sectionTitle">Other Live Broadcasts</AppText>
           {otherLive.map(([mosqueId]) => {
-            const m = mosques.find((ms) => ms.id === mosqueId);
+            const m = mosqueById.get(mosqueId);
             if (!m) return null;
             const city = [m.city, m.country].filter(Boolean).join(', ');
             return (

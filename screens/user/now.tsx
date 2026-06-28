@@ -17,6 +17,7 @@ import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/p
 import { computeNextPrayerSummaryAcrossDays } from '../../lib/prayerTimesDisplay';
 import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
 import { useLiveKitSubscribe } from '../../lib/hooks/useLiveKitSubscribe';
+import { usePrayerTimesRealtime } from '../shared/hooks/usePrayerTimesRealtime';
 
 type StreamRow = {
   id: string;
@@ -272,31 +273,36 @@ export default function NowScreen() {
     })();
   }, []);
 
-  useEffect(() => {
-    const fetchPrayer = async () => {
-      const mosqueId = current?.mosque_id;
-      if (!mosqueId) {
-        setPrayerTimes(null);
-        setNextDayPrayerTimes(null);
-        return;
-      }
-      try {
-        const today = new Date();
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const [normalized, normalizedTomorrow] = await Promise.all([
-          getDailyPrayerTimes(mosqueId, today),
-          getDailyPrayerTimes(mosqueId, tomorrow),
-        ]);
-        setPrayerTimes(normalized);
-        setNextDayPrayerTimes(normalizedTomorrow);
-      } catch {
-        setPrayerTimes(null);
-        setNextDayPrayerTimes(null);
-      }
-    };
-    fetchPrayer();
+  const loadPrayerTimesForCurrent = useCallback(async () => {
+    const mosqueId = current?.mosque_id;
+    if (!mosqueId) {
+      setPrayerTimes(null);
+      setNextDayPrayerTimes(null);
+      return;
+    }
+    try {
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const [normalized, normalizedTomorrow] = await Promise.all([
+        getDailyPrayerTimes(mosqueId, today),
+        getDailyPrayerTimes(mosqueId, tomorrow),
+      ]);
+      setPrayerTimes(normalized);
+      setNextDayPrayerTimes(normalizedTomorrow);
+    } catch {
+      setPrayerTimes(null);
+      setNextDayPrayerTimes(null);
+    }
   }, [current?.mosque_id]);
+
+  useEffect(() => {
+    void loadPrayerTimesForCurrent();
+  }, [loadPrayerTimesForCurrent]);
+
+  usePrayerTimesRealtime(current?.mosque_id, loadPrayerTimesForCurrent, {
+    channelName: 'listener-now-prayer-times',
+  });
   const nextPrayer = useMemo(
     () => computeNextPrayerSummaryAcrossDays(prayerTimes, nextDayPrayerTimes, new Date(clockMs)),
     [clockMs, prayerTimes, nextDayPrayerTimes]

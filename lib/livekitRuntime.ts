@@ -49,6 +49,8 @@ type Runtime = {
 const globalAny = globalThis as any;
 let globalsRegistered = false;
 let globalsRegisteredVia: 'react-native' | 'webrtc-fallback' | null = null;
+let unhandledGuardInstalled = false;
+let webSocketGuardInstalledFor: unknown = null;
 const WEBRTC_NATIVE_MODULE_MISSING_MESSAGE =
   'Live broadcasting requires a development build. Expo Go does not include the WebRTC native module.';
 
@@ -61,15 +63,147 @@ function safeKeys(value: unknown, limit = 40): string[] {
   }
 }
 
+function redactSensitiveLogText(value: string) {
+  return value
+    .replace(/([?&](?:access_token|token|refresh_token|join_request)=)[^&#\s"']+/gi, '$1[redacted]')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted-jwt]');
+}
+
+function isLiveKitWebSocketUrl(value: unknown) {
+  return typeof value === 'string' && /livekit|\/rtc\/v1/i.test(value);
+}
+
+function installLiveKitWebSocketLogGuard() {
+  const OriginalWebSocket = globalAny.WebSocket;
+  if (typeof OriginalWebSocket !== 'function') return;
+  if (webSocketGuardInstalledFor === OriginalWebSocket) return;
+  if ((OriginalWebSocket as any).__adhanConnectLiveKitGuarded) {
+    webSocketGuardInstalledFor = OriginalWebSocket;
+    return;
+  }
+
+  function GuardedWebSocket(this: unknown, url: string, protocols?: string | string[]) {
+    const ws =
+      typeof protocols === 'undefined'
+        ? new OriginalWebSocket(url)
+        : new OriginalWebSocket(url, protocols);
+
+    if (isLiveKitWebSocketUrl(url)) {
+      const safeUrl = redactSensitiveLogText(url);
+      try {
+        Object.defineProperty(ws, 'url', {
+          configurable: true,
+          enumerable: true,
+          get: () => safeUrl,
+        });
+      } catch {
+        try {
+          ws.url = safeUrl;
+        } catch {}
+      }
+    }
+
+    return ws;
+  }
+
+  try {
+    Object.setPrototypeOf(GuardedWebSocket, OriginalWebSocket);
+  } catch {}
+  GuardedWebSocket.prototype = OriginalWebSocket.prototype;
+
+  for (const key of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const) {
+    try {
+      if (typeof OriginalWebSocket[key] !== 'undefined') {
+        Object.defineProperty(GuardedWebSocket, key, {
+          configurable: true,
+          enumerable: false,
+          value: OriginalWebSocket[key],
+        });
+      }
+    } catch {}
+  }
+
+  try {
+    Object.defineProperty(GuardedWebSocket, '__adhanConnectLiveKitGuarded', {
+      configurable: false,
+      enumerable: false,
+      value: true,
+    });
+  } catch {}
+
+  globalAny.WebSocket = GuardedWebSocket;
+  webSocketGuardInstalledFor = GuardedWebSocket;
+}
+
+function liveKitEventSummary(value: unknown) {
+  const event = value as any;
+  const target = event?.target ?? event?.currentTarget ?? null;
+  const url = typeof target?.url === 'string' ? summarizeLiveKitUrl(target.url) : null;
+  const reason =
+    typeof event?.message === 'string'
+      ? event.message
+      : typeof event?.reason === 'string'
+        ? event.reason
+        : typeof target?.error?.message === 'string'
+          ? target.error.message
+          : null;
+
+  return {
+    type: typeof event?._type === 'string' ? event._type : typeof event?.type === 'string' ? event.type : 'event',
+    url,
+    reason: reason ? redactSensitiveLogText(reason) : null,
+  };
+}
+
+function isLiveKitWebsocketEvent(value: unknown) {
+  const event = value as any;
+  const target = event?.target ?? event?.currentTarget ?? null;
+  const url = typeof target?.url === 'string' ? target.url : '';
+  const type = typeof event?._type === 'string' ? event._type : typeof event?.type === 'string' ? event.type : '';
+  return type === 'error' && /livekit|\/rtc\/v1/i.test(url);
+}
+
+function installLiveKitUnhandledGuard() {
+  if (unhandledGuardInstalled) return;
+  unhandledGuardInstalled = true;
+
+  const handleUnhandled = (event: any) => {
+    const reason = event?.reason ?? event;
+    if (!isLiveKitWebsocketEvent(reason)) return;
+    try {
+      event?.preventDefault?.();
+    } catch {}
+    console.warn('[LK] suppressed LiveKit websocket event', liveKitEventSummary(reason));
+  };
+
+  try {
+    globalAny.addEventListener?.('unhandledrejection', handleUnhandled);
+  } catch {}
+
+  const previousUnhandled = globalAny.onunhandledrejection;
+  globalAny.onunhandledrejection = (event: any) => {
+    handleUnhandled(event);
+    if (typeof previousUnhandled === 'function') {
+      return previousUnhandled.call(globalAny, event);
+    }
+    return undefined;
+  };
+}
+
 export function describeLiveKitError(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === 'string') return error;
+  if (isLiveKitWebsocketEvent(error)) {
+    const summary = liveKitEventSummary(error);
+    return `LiveKit websocket ${summary.type}${summary.url ? ` at ${summary.url}` : ''}${summary.reason ? `: ${summary.reason}` : ''}`;
+  }
+  if (error instanceof Error && error.message) return redactSensitiveLogText(error.message);
+  if (typeof error === 'string') return redactSensitiveLogText(error);
   return 'Unknown LiveKit error.';
 }
 
 export function describeLiveKitStack(error: unknown): string | null {
   if (!(error instanceof Error) || !error.stack) return null;
-  return error.stack.split('\n').slice(0, 10).join('\n');
+  return redactSensitiveLogText(error.stack.split('\n').slice(0, 10).join('\n'));
 }
 
 export function createLiveKitDiagnostics(phase = 'idle'): LiveKitRuntimeDiagnostics {
@@ -373,6 +507,7 @@ function assertClientExports(client: any) {
 
 export function loadLiveKitRuntime(): Runtime {
   const diagnostics = createLiveKitDiagnostics('runtime-loading');
+  installLiveKitUnhandledGuard();
   diagnostics.usedReactNativeRegisterGlobals = globalsRegisteredVia === 'react-native';
   diagnostics.usedWebRTCFallbackRegisterGlobals = globalsRegisteredVia === 'webrtc-fallback';
   installBasePolyfills(diagnostics);
@@ -427,6 +562,7 @@ export function loadLiveKitRuntime(): Runtime {
   }
 
   installBasePolyfills(diagnostics);
+  installLiveKitWebSocketLogGuard();
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const client = require('livekit-client');

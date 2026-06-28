@@ -65,7 +65,7 @@ const PRAYERS: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 const ROTA_PRAYERS: RotaPrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 const WINDOW_START_MS = 3 * 60 * 1000;
 const WINDOW_END_MS = 2 * 60 * 1000;
-const FUTURE_LOOKAHEAD_DAYS = 14;
+const FUTURE_LOOKAHEAD_DAYS = 1;
 
 type CoverOverride = { volunteerUserId: string; status: 'provisional_cover' | 'approved' };
 
@@ -814,8 +814,6 @@ export async function getMuezzinScheduleForToday(): Promise<{
       nextAssignedPrayer: nextAssignedSlot?.prayerName ?? null,
       nextMosquePrayer: nextMosqueSlot?.prayerName ?? null,
     });
-
-    console.log('[getMuezzinScheduleForToday] user', user.id, 'mosque', mosqueId, 'slots', slots);
 
     return {
       schedule: {

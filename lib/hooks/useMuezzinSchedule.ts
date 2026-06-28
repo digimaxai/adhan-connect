@@ -133,6 +133,19 @@ export type MuezzinScheduleEntry = {
   status?: string | null;
 };
 
+// Module-scope helpers — stable references, never recreated on re-render.
+const slotTimeMs = (slot: MuezzinSlot) =>
+  slot.adhanTime ? slot.adhanTime.getTime() : Number.MAX_SAFE_INTEGER;
+
+const slotWindowEndMs = (slot: MuezzinSlot) =>
+  slot.liveWindowEnd?.getTime() ?? slot.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+
+const isWindowOpen = (slot: MuezzinSlot, nowMs: number) =>
+  !!slot.liveWindowStart &&
+  !!slot.liveWindowEnd &&
+  nowMs >= slot.liveWindowStart.getTime() &&
+  nowMs <= slot.liveWindowEnd.getTime();
+
 export function useMuezzinSchedule() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
@@ -149,12 +162,6 @@ export function useMuezzinSchedule() {
   const lastGoodScheduleRef = useRef<MuezzinSchedule | null>(null);
   const lastGoodAssignedSlotRef = useRef<MuezzinSlot | null>(null);
   const loadCountRef = useRef(0);
-
-  const slotTimeMs = (slot: MuezzinSlot) => (slot.adhanTime ? slot.adhanTime.getTime() : Number.MAX_SAFE_INTEGER);
-  const slotWindowEndMs = (slot: MuezzinSlot) =>
-    slot.liveWindowEnd?.getTime() ?? slot.adhanTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
-  const isWindowOpen = (slot: MuezzinSlot, nowMs: number) =>
-    !!slot.liveWindowStart && !!slot.liveWindowEnd && nowMs >= slot.liveWindowStart.getTime() && nowMs <= slot.liveWindowEnd.getTime();
 
   const load = useCallback(async () => {
     const loadId = ++loadCountRef.current;
@@ -283,8 +290,7 @@ export function useMuezzinSchedule() {
     const now = Date.now();
     const actionable = schedule.slots
       .filter((slot) => slot.isAssignedToMe)
-      .filter((slot) => slotWindowEndMs(slot) >= now)
-      .sort((a, b) => (a.adhanTime?.getTime() ?? 0) - (b.adhanTime?.getTime() ?? 0));
+      .filter((slot) => slotWindowEndMs(slot) >= now);
     actionable.sort((a, b) => {
       const openA = isWindowOpen(a, now);
       const openB = isWindowOpen(b, now);
@@ -321,8 +327,6 @@ export function useMuezzinSchedule() {
     }),
     [schedule, nextAssignedSlot, loading, error, load]
   );
-
-  console.log('[useMuezzinSchedule] schedule', schedule, 'nextAssigned', nextAssignedSlot, 'error', error);
 
   return result;
 }

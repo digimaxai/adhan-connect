@@ -55,7 +55,7 @@ function json(body: unknown, status = 200) {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Cache-Control': 'private, max-age=60',
+      'Cache-Control': 'no-store',
     },
   });
 }

@@ -72,5 +72,20 @@ npm run lint          # check code
 
 npx expo prebuild     # (if you need native build)
 
+```
+
+### iPhone LiveKit Test App
+
+Use the custom development build runbook for physical iPhone broadcast testing:
+
+- `docs/mobile/iphone-livekit-e2e-test-app.md`
+
+### Android Phone Test App
+
+Use the USB helper for the easiest physical Android launch:
+
+- `npm run android:doctor`
+- `npm run android:phone`
+- `docs/mobile/android-phone-launch.md`
 
 

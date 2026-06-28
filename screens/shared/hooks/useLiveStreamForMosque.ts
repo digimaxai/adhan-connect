@@ -54,7 +54,7 @@ export function useLiveStreamForMosque(mosqueId?: string | null): LiveState {
           .limit(1),
         supabase
           .from('adhans')
-          .select('*')
+          .select('id, mosque_id, prayer, scheduled_at, status, started_at, ended_at, broadcast_started_at, broadcast_ended_at')
           .eq('mosque_id', mosqueId)
           .eq('status', 'live')
           .order('scheduled_at', { ascending: false })
@@ -62,7 +62,7 @@ export function useLiveStreamForMosque(mosqueId?: string | null): LiveState {
           .maybeSingle<AdhanRow>(),
         supabase
           .from('adhans')
-          .select('*')
+          .select('id, mosque_id, prayer, scheduled_at, status, started_at, ended_at, broadcast_started_at, broadcast_ended_at')
           .eq('mosque_id', mosqueId)
           .gte('scheduled_at', `${today}T00:00:00Z`)
           .order('scheduled_at', { ascending: false })

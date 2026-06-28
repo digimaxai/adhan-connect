@@ -1,3 +1,4 @@
+import type { Session } from '@supabase/supabase-js';
 import { fetchServerApi, resolveApiUrls, supportsServerApi } from './api/apiBaseUrl';
 import { persistentStorage } from './persistentStorage';
 import { supabase } from './supabase';
@@ -105,7 +106,11 @@ function isSessionAccessPayload(value: unknown): value is SessionAccessPayload {
   );
 }
 
-export async function fetchSessionAccess(options?: { preferCache?: boolean; maxAgeMs?: number }): Promise<SessionAccessPayload> {
+export async function fetchSessionAccess(options?: {
+  preferCache?: boolean;
+  maxAgeMs?: number;
+  session?: Session | null;
+}): Promise<SessionAccessPayload> {
   if (!supportsServerApi()) {
     throw new Error('Server access API is unavailable in this runtime.');
   }
@@ -115,12 +120,16 @@ export async function fetchSessionAccess(options?: { preferCache?: boolean; maxA
     throw new Error('Could not resolve the session access endpoint.');
   }
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !sessionData.session?.access_token) {
-    throw new Error('Your session has expired. Refresh the app and sign in again.');
+  let session = options?.session ?? null;
+  if (!session?.access_token) {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session?.access_token) {
+      throw new Error('Your session has expired. Refresh the app and sign in again.');
+    }
+    session = sessionData.session;
   }
 
-  const userId = sessionData.session.user.id;
+  const userId = session.user.id;
   const maxAgeMs = options?.maxAgeMs ?? 60_000;
   const cached = await readCachedSessionAccess(userId);
   if (options?.preferCache && cached && Date.now() - cached.cachedAt <= maxAgeMs) {
@@ -138,7 +147,7 @@ export async function fetchSessionAccess(options?: { preferCache?: boolean; maxA
       try {
         const response = await fetchServerApi(endpoint, {
           headers: {
-            Authorization: `Bearer ${sessionData.session.access_token}`,
+            Authorization: `Bearer ${session.access_token}`,
           },
         });
 
