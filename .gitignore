@@ -47,3 +47,11 @@ app-example
 
 # Claude Code — dynamic model routing (written per-turn by route-classifier hook)
 .claude/settings.local.json
+
+# Diagnostic artifacts (ANR reports, emulator screenshots, Metro logs)
+anr-*.txt
+emulator-*.png
+expo-metro-*.log
+expo-metro-*.err.log
+expo-portal-*.log
+expo-portal-*.err.log
