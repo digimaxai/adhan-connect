@@ -4,6 +4,7 @@
   },
   "build": {
     "development": {
+      "environment": "development",
       "developmentClient": true,
       "distribution": "internal",
       "android": {
@@ -12,18 +13,28 @@
       },
       "ios": {},
       "env": {
+        "EXPO_FORCE_WEBCONTAINER_ENV": "0"
+      }
+    },
+    "development:android-emulator": {
+      "extends": "development",
+      "env": {
         "EXPO_PUBLIC_API_BASE_URL": "http://10.0.2.2:8081",
         "EXPO_FORCE_WEBCONTAINER_ENV": "0"
       }
     },
     "preview": {
+      "environment": "preview",
       "distribution": "internal",
+      "autoIncrement": true,
       "android": {
         "buildType": "apk"
       },
       "ios": {}
     },
     "production": {
+      "environment": "production",
+      "autoIncrement": true,
       "android": {
         "buildType": "aab"
       },

@@ -5,7 +5,7 @@ param(
 
   [int]$Port = 8081,
 
-  [string]$AppId = 'com.yourorg.adhanconnect',
+  [string]$AppId = 'com.digimaxai.adhanconnect',
 
   [string]$AppScheme = 'adhanconnect',
 
