@@ -88,4 +88,9 @@ Use the USB helper for the easiest physical Android launch:
 - `npm run android:phone`
 - `docs/mobile/android-phone-launch.md`
 
+### Beta Release Builds
+
+Use the beta build runbook when creating signed Android and iOS builds for testers:
+
+- `docs/mobile/beta-release-builds.md`
 

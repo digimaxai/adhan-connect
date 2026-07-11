@@ -32,7 +32,6 @@ If you use EAS cloud builds from Windows:
 npm install --global eas-cli
 eas login
 eas device:create
-$env:IOS_BUNDLE_IDENTIFIER='com.yourdomain.adhanconnect.test'
 eas build --platform ios --profile development
 ```
 
@@ -91,7 +90,7 @@ If auth redirects are part of the iPhone test, use a mobile-safe redirect URL su
 Install the app onto a plugged-in, unlocked iPhone:
 
 ```bash
-IOS_BUNDLE_IDENTIFIER=com.yourdomain.adhanconnect.test npm run ios:device
+npm run ios:device
 ```
 
 If signing fails, open the generated Xcode workspace under `ios/`, select your Apple team, and make sure the bundle identifier is unique for your Apple account. The generated `ios/` folder is local build output and should stay uncommitted.
@@ -137,7 +136,7 @@ Use EAS internal distribution when you want a link testers can install from:
 
 ```bash
 eas device:create
-IOS_BUNDLE_IDENTIFIER=com.yourdomain.adhanconnect.test eas build --platform ios --profile development
+eas build --platform ios --profile development
 ```
 
 EAS internal distribution uses ad hoc provisioning, so new iPhones must be registered before the build or you must refresh/resign the build.
@@ -147,7 +146,7 @@ For a non-dev preview build, deploy the API routes to a stable URL first, then b
 ```bash
 npx expo export --platform web
 eas deploy --environment preview
-EXPO_PUBLIC_API_BASE_URL=https://<preview-host>.expo.app eas build --platform ios --profile preview
+eas build --platform ios --profile preview
 ```
 
 Use EAS environment variables for server-side values such as Supabase service role and LiveKit secrets. Do not put server secrets in `EXPO_PUBLIC_` variables.

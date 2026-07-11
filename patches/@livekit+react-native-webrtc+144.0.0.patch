@@ -2,15 +2,18 @@ diff --git a/node_modules/@livekit/react-native-webrtc/src/index.ts b/node_modul
 index 5a25f31..1931148 100644
 --- a/node_modules/@livekit/react-native-webrtc/src/index.ts
 +++ b/node_modules/@livekit/react-native-webrtc/src/index.ts
-@@ -1,6 +1,9 @@
+@@ -1,7 +1,10 @@
 -import { NativeModules, Platform } from 'react-native';
+-const { WebRTCModule } = NativeModules;
 +import { NativeModules, Platform, TurboModuleRegistry } from 'react-native';
-
--const WebRTCModule = NativeModules.WebRTCModule;
 +const WebRTCModule =
 +    NativeModules.WebRTCModule ??
 +    (TurboModuleRegistry.get?.('WebRTCModule') as any) ??
 +    null;
-
- if (WebRTCModule === null || WebRTCModule === undefined) {
+-
++
+-if (WebRTCModule === null) {
++if (WebRTCModule === null || WebRTCModule === undefined) {
      throw new Error(`WebRTC native module not found.\n${Platform.OS === 'ios' ?
+         'Try executing the "pod install" command inside your projects ios folder.' :
+         'Try executing the "npm install" command inside your projects folder.'

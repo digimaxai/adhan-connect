@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "adhan-connect",
+    "name": "Adhan Connect",
     "slug": "adhan-connect",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,7 +11,8 @@
 
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourorg.adhanconnect",
+      "bundleIdentifier": "com.digimaxai.adhanconnect",
+      "buildNumber": "1",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Adhan Connect needs microphone access for live Adhan broadcasts.",
         "NSLocationWhenInUseUsageDescription": "Adhan Connect uses your location to find nearby mosques.",
@@ -20,7 +21,8 @@
     },
 
     "android": {
-      "package": "com.yourorg.adhanconnect",
+      "package": "com.digimaxai.adhanconnect",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
