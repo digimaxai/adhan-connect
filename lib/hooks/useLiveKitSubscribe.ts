@@ -40,6 +40,17 @@ type Options = {
 };
 
 const LIVEKIT_REMOTE_PLAYBACK_GAIN = 2.5;
+const CONNECT_TIMEOUT_MS = 15000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms.`)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
 
 function ignoreMaybeAsync(action?: () => unknown) {
   try {
@@ -285,7 +296,10 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
       return;
     }
 
-    if (roomRef.current && activeRoomNameRef.current === livekitRoomName) return;
+    const existingRoomState = roomRef.current?.state;
+    const existingRoomIsLive =
+      existingRoomState === 'connected' || existingRoomState === 'connecting' || existingRoomState === 'reconnecting';
+    if (roomRef.current && activeRoomNameRef.current === livekitRoomName && existingRoomIsLive) return;
     if (roomRef.current) {
       await disconnect();
     }
@@ -416,9 +430,13 @@ function useNativeSubscribe(options: Options): LiveKitSubscribeState {
         }
       });
 
-      await room.connect(tokenData.livekitUrl, tokenData.token, {
-        autoSubscribe: true, // automatically subscribe to all published tracks
-      });
+      await withTimeout(
+        room.connect(tokenData.livekitUrl, tokenData.token, {
+          autoSubscribe: true, // automatically subscribe to all published tracks
+        }),
+        CONNECT_TIMEOUT_MS,
+        'LiveKit room connect'
+      );
       diagnosticsRef.current = mergeLiveKitDiagnostics(diagnosticsRef.current, 'listener-room-connected');
       if (mountedRef.current) setDiagnostics(diagnosticsRef.current);
       adoptPublishedRemoteAudioTracks();
