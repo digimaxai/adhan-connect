@@ -454,8 +454,13 @@ export default function NowScreen() {
         liveKitSubscribe.setVolume(safeVolume);
         void liveKitSubscribe.connect();
       } else {
+        // connectionState is 'connecting' or 'connected' but no audio ever arrived
+        // (e.g. the broadcast ended and restarted while we were mid-connect, reusing
+        // the same room name for the same prayer/day). Treat a repeat tap as a
+        // deliberate retry instead of silently doing nothing.
         setActiveId(current.id);
         liveKitSubscribe.setVolume(safeVolume);
+        void liveKitSubscribe.disconnect().then(() => liveKitSubscribe.connect());
       }
       return;
     }

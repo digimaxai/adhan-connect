@@ -196,40 +196,20 @@ async function hasTargetedMuezzinAccess(
     return true;
   }
 
+  // Confirmed staff_rota columns (docs/admin/db-reference-prayer-rotas.md): id, mosque_id,
+  // muezzin_user_id, prayer_name, date, adhan_time, iqama_time, notes, assigned_by.
   const todayIso = new Date().toISOString().slice(0, 10);
-  let result: any = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('staff_rota')
     .select('id')
     .eq('mosque_id', mosqueId)
-    .or(`muezzin_user_id.eq.${userId},staff_user_id.eq.${userId}`)
+    .eq('muezzin_user_id', userId)
     .gte('date', todayIso)
     .limit(1)
     .maybeSingle<{ id?: string | null }>();
 
-  if (result.error?.code === '42703') {
-    result = await supabaseAdmin
-      .from('staff_rota')
-      .select('id')
-      .eq('mosque_id', mosqueId)
-      .eq('muezzin_user_id', userId)
-      .gte('date', todayIso)
-      .limit(1)
-      .maybeSingle<{ id?: string | null }>();
-  }
-
-  if (result.error?.code === '42703') {
-    result = await supabaseAdmin
-      .from('staff_rota')
-      .select('id')
-      .eq('mosque_id', mosqueId)
-      .eq('muezzin_user_id', userId)
-      .gte('duty_date', todayIso)
-      .limit(1)
-      .maybeSingle<{ id?: string | null }>();
-  }
-
-  if (result.error && result.error.code !== 'PGRST116') throw result.error;
-  return !!result.data?.id;
+  if (error && error.code !== 'PGRST116') throw error;
+  return !!data?.id;
 }
 
 async function ensureMuezzinMosqueAccess(
@@ -434,36 +414,20 @@ async function fetchRotaAssignmentRows(
   prayer: string,
   dateIso: string
 ): Promise<RotaAssignmentRow[]> {
-  let result: any = await supabaseAdmin
+  // Confirmed staff_rota columns (docs/admin/db-reference-prayer-rotas.md): id, mosque_id,
+  // muezzin_user_id, prayer_name, date, adhan_time, iqama_time, notes, assigned_by.
+  const { data, error } = await supabaseAdmin
     .from('staff_rota')
-    .select('id, muezzin_user_id, staff_user_id')
+    .select('id, muezzin_user_id')
     .eq('mosque_id', mosqueId)
     .eq('prayer_name', prayer)
     .eq('date', dateIso);
 
-  if (result.error?.code === '42703') {
-    result = await supabaseAdmin
-      .from('staff_rota')
-      .select('id, muezzin_user_id')
-      .eq('mosque_id', mosqueId)
-      .eq('prayer_name', prayer)
-      .eq('date', dateIso);
+  if (error && error.code !== 'PGRST116') {
+    throw error;
   }
 
-  if (result.error?.code === '42703') {
-    result = await supabaseAdmin
-      .from('staff_rota')
-      .select('id, muezzin_user_id')
-      .eq('mosque_id', mosqueId)
-      .eq('prayer_name', prayer)
-      .eq('duty_date', dateIso);
-  }
-
-  if (result.error && result.error.code !== 'PGRST116') {
-    throw result.error;
-  }
-
-  return (result.data ?? []) as RotaAssignmentRow[];
+  return (data ?? []) as RotaAssignmentRow[];
 }
 
 async function fetchDefaultMuezzinUserId(
