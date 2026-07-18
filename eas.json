@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 5.0.0"
+    "version": ">= 5.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -42,6 +43,13 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascApiKeyPath": "/Users/mzk/Documents/IOS/AuthKey_3FQ24HAAB6.p8",
+        "ascApiKeyIssuerId": "aacd5fc1-164e-4608-ba4b-f63dafc80cda",
+        "ascApiKeyId": "3FQ24HAAB6",
+        "ascAppId": "6792143739"
+      }
+    }
   }
 }

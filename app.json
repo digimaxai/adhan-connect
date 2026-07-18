@@ -9,21 +9,23 @@
     "scheme": "adhanconnect",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
-
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.digimaxai.adhanconnect",
+      "bundleIdentifier": "com.maksumsdigitalagency.adhanconnect",
       "buildNumber": "1",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Adhan Connect needs microphone access for live Adhan broadcasts.",
+        "NSCameraUsageDescription": "Adhan Connect's live broadcast feature is built on WebRTC, which may request camera access even though video broadcasting is not currently used.",
         "NSLocationWhenInUseUsageDescription": "Adhan Connect uses your location to find nearby mosques.",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
-
     "android": {
-      "package": "com.digimaxai.adhanconnect",
-      "versionCode": 1,
+      "package": "com.maksumsdigitalagency.adhanconnect",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -40,12 +42,10 @@
         "FOREGROUND_SERVICE"
       ]
     },
-
     "web": {
       "output": "server",
       "favicon": "./assets/images/favicon.png"
     },
-
     "plugins": [
       "expo-router",
       "expo-web-browser",
@@ -56,16 +56,16 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
-          "dark": { "backgroundColor": "#000000" }
+          "dark": {
+            "backgroundColor": "#000000"
+          }
         }
       ]
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "eas": {
         "projectId": "20092fdb-b6af-47f8-891a-42f343175678"
