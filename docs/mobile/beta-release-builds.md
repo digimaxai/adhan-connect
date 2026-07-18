@@ -6,11 +6,20 @@ Adhan Connect uses native LiveKit/WebRTC modules, so Expo Go is not enough for b
 
 ## Current App IDs
 
-- iOS bundle identifier: `com.digimaxai.adhanconnect`
-- Android package name: `com.digimaxai.adhanconnect`
+- iOS bundle identifier: `com.maksumsdigitalagency.adhanconnect`
+- Android package name: `com.maksumsdigitalagency.adhanconnect`
 - App scheme: `adhanconnect`
 
 Keep these identifiers stable once testers have installed beta builds.
+
+## Apple Developer Enrollment
+
+- Enrollment type: Organization
+- Legal entity name: Maksums Limited
+- Trading name: Maksums Digital Agency
+- Website: https://www.maksums.com
+
+Apple's public "Seller" name on the App Store defaults to the legal entity name (Maksums Limited) unless a separate request is made after enrollment to display the trading name instead.
 
 ## Required Backend URL
 
