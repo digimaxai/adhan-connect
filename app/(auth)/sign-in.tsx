@@ -68,7 +68,7 @@ export default function SignInScreen() {
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, padding: 16, backgroundColor: '#F8FAFC', justifyContent: 'center' },
+  screen: { flex: 1, padding: 16, paddingTop: 80, backgroundColor: '#F8FAFC' },
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#E2E8F0' },
   title: { fontSize: 22, fontWeight: '800' },
   subtle: { color: '#64748B', marginTop: 4, marginBottom: 16 },

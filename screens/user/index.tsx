@@ -655,18 +655,26 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
                 passed && styles.prayerPillPassed,
                 isNext && styles.prayerPillNext,
               ]}>
-                <Text style={[
-                  styles.prayerPillName,
-                  passed && styles.prayerPillNamePassed,
-                  isNext && styles.prayerPillNameNext,
-                ]}>
+                <Text
+                  style={[
+                    styles.prayerPillName,
+                    passed && styles.prayerPillNamePassed,
+                    isNext && styles.prayerPillNameNext,
+                  ]}
+                  numberOfLines={1}
+                >
                   {PRAYER_DISPLAY_NAMES[name]}
                 </Text>
-                <Text style={[
-                  styles.prayerPillTime,
-                  passed && styles.prayerPillTimePassed,
-                  isNext && styles.prayerPillTimeNext,
-                ]}>
+                <Text
+                  style={[
+                    styles.prayerPillTime,
+                    passed && styles.prayerPillTimePassed,
+                    isNext && styles.prayerPillTimeNext,
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
                   {timeLabel ?? '--:--'}
                 </Text>
                 {isNext ? <View style={styles.prayerPillDot} /> : null}
@@ -2019,18 +2027,17 @@ const styles = StyleSheet.create({
   prayerPill: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     paddingVertical: 9,
     borderRadius: 14,
     backgroundColor: '#F8FAFC',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E6E8EB',
     gap: 2,
   },
   prayerPillNext: {
     backgroundColor: '#EFF6FF',
     borderColor: '#0EA5E9',
-    borderWidth: 1.5,
   },
   prayerPillPassed: { backgroundColor: '#F8FAFC', borderColor: '#F1F5F9' },
   prayerPillName: { fontSize: 11, fontWeight: '700', color: '#64748B' },
