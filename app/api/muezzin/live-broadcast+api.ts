@@ -606,144 +606,66 @@ async function attachLiveBroadcastDiagnostics(
   return attachMosqueLiveUpstreamState(nextConfig, upstreamState);
 }
 
-function dedupePayloadVariants<T extends AdhanWritePayload>(variants: T[]) {
-  const seen = new Set<string>();
-  return variants.filter((variant) => {
-    const key = JSON.stringify(Object.keys(variant).sort().map((field) => [field, variant[field]]));
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function buildStartAdhanPayloadVariants(
+// Confirmed adhans columns (migrations/20251206120000_live_adhan_schema_additions.sql,
+// docs/admin/db-reference-prayer-rotas.md): id, mosque_id, prayer, status, scheduled_at,
+// started_at, ended_at, broadcast_started_at, broadcast_ended_at, stream_id, source.
+function buildStartAdhanPayload(
   mosqueId: string,
   prayer: string,
   scheduledAt: string,
   startedAt: string,
   streamId: string | null
-) {
-  return dedupePayloadVariants([
-    {
-      mosque_id: mosqueId,
-      prayer,
-      scheduled_at: scheduledAt,
-      status: 'live',
-      started_at: startedAt,
-      ended_at: null,
-      stream_id: streamId,
-      source: 'live',
-      broadcast_started_at: startedAt,
-      broadcast_ended_at: null,
-    },
-    {
-      mosque_id: mosqueId,
-      prayer,
-      scheduled_at: scheduledAt,
-      status: 'live',
-      started_at: startedAt,
-      ended_at: null,
-      source: 'live',
-      broadcast_started_at: startedAt,
-      broadcast_ended_at: null,
-    },
-    {
-      mosque_id: mosqueId,
-      prayer,
-      scheduled_at: scheduledAt,
-      status: 'live',
-      source: 'live',
-      broadcast_started_at: startedAt,
-      broadcast_ended_at: null,
-    },
-    {
-      mosque_id: mosqueId,
-      prayer,
-      scheduled_at: scheduledAt,
-      status: 'live',
-      started_at: startedAt,
-      ended_at: null,
-    },
-    {
-      mosque_id: mosqueId,
-      prayer,
-      scheduled_at: scheduledAt,
-      status: 'live',
-    },
-  ]);
+): AdhanWritePayload {
+  return {
+    mosque_id: mosqueId,
+    prayer,
+    scheduled_at: scheduledAt,
+    status: 'live',
+    source: 'live',
+    started_at: startedAt,
+    ended_at: null,
+    broadcast_started_at: startedAt,
+    broadcast_ended_at: null,
+    stream_id: streamId,
+  };
 }
 
-function buildCompleteAdhanPayloadVariants(endedAt: string) {
-  return dedupePayloadVariants([
-    {
-      status: 'completed',
-      ended_at: endedAt,
-      broadcast_ended_at: endedAt,
-    },
-    {
-      status: 'completed',
-      broadcast_ended_at: endedAt,
-    },
-    {
-      status: 'completed',
-      ended_at: endedAt,
-    },
-    {
-      status: 'completed',
-    },
-  ]);
+function buildCompleteAdhanPayload(endedAt: string): AdhanWritePayload {
+  return {
+    status: 'completed',
+    ended_at: endedAt,
+    broadcast_ended_at: endedAt,
+  };
 }
 
-async function tryUpdateAdhanWithPayloads(
+async function updateAdhan(
   supabaseAdmin: SupabaseClient<any, any, any>,
   candidateId: string,
-  payloads: AdhanWritePayload[]
+  payload: AdhanWritePayload
 ) {
-  let lastError: unknown = null;
+  const { data, error } = await supabaseAdmin
+    .from('adhans')
+    .update(payload as any)
+    .eq('id', candidateId)
+    .select('id')
+    .maybeSingle<{ id?: string | null }>();
 
-  for (const payload of payloads) {
-    const { data, error } = await supabaseAdmin
-      .from('adhans')
-      .update(payload as any)
-      .eq('id', candidateId)
-      .select('id')
-      .maybeSingle<{ id?: string | null }>();
-
-    if (error && error.code !== 'PGRST116') {
-      lastError = error;
-      continue;
-    }
-
-    return data?.id ?? null;
-  }
-
-  if (lastError) throw lastError;
-  return null;
+  if (error && error.code !== 'PGRST116') throw error;
+  return data?.id ?? null;
 }
 
-async function tryInsertAdhanWithPayloads(
+async function insertAdhan(
   supabaseAdmin: SupabaseClient<any, any, any>,
-  payloads: AdhanWritePayload[]
+  payload: AdhanWritePayload
 ) {
-  let lastError: unknown = null;
+  const { data, error } = await supabaseAdmin
+    .from('adhans')
+    .insert(payload as any)
+    .select('id')
+    .maybeSingle<{ id?: string | null }>();
 
-  for (const payload of payloads) {
-    const { data, error } = await supabaseAdmin
-      .from('adhans')
-      .insert(payload as any)
-      .select('id')
-      .maybeSingle<{ id?: string | null }>();
-
-    if (error) {
-      lastError = error;
-      continue;
-    }
-
-    return data?.id ?? null;
-  }
-
-  if (lastError) throw lastError;
-  return null;
+  if (error) throw error;
+  return data?.id ?? null;
 }
 
 async function startOrCreateStream(
@@ -831,7 +753,7 @@ async function startOrCreateAdhan(
   streamId: string | null
 ) {
   try {
-    const payloads = buildStartAdhanPayloadVariants(mosqueId, prayer, scheduledAt, startedAt, streamId);
+    const payload = buildStartAdhanPayload(mosqueId, prayer, scheduledAt, startedAt, streamId);
     const candidateIds = new Set<string>();
     if (isUuid(adhanId)) {
       candidateIds.add(adhanId as string);
@@ -855,13 +777,13 @@ async function startOrCreateAdhan(
     }
 
     for (const candidateId of candidateIds) {
-      const updatedId = await tryUpdateAdhanWithPayloads(supabaseAdmin, candidateId, payloads);
+      const updatedId = await updateAdhan(supabaseAdmin, candidateId, payload);
       if (updatedId) {
         return updatedId;
       }
     }
 
-    return await tryInsertAdhanWithPayloads(supabaseAdmin, payloads);
+    return await insertAdhan(supabaseAdmin, payload);
   } catch (error) {
     console.warn('[live-broadcast] adhan start sync failed', {
       mosqueId,
@@ -880,7 +802,7 @@ async function completeAdhan(
   endedAt: string
 ) {
   try {
-    const payloads = buildCompleteAdhanPayloadVariants(endedAt);
+    const payload = buildCompleteAdhanPayload(endedAt);
     const candidateIds = new Set<string>();
     if (isUuid(adhanId)) {
       candidateIds.add(adhanId as string);
@@ -904,7 +826,7 @@ async function completeAdhan(
     }
 
     for (const candidateId of candidateIds) {
-      const updatedId = await tryUpdateAdhanWithPayloads(supabaseAdmin, candidateId, payloads);
+      const updatedId = await updateAdhan(supabaseAdmin, candidateId, payload);
       if (updatedId) {
         return updatedId;
       }
