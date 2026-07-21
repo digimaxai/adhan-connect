@@ -1,6 +1,6 @@
 # Codex Worklog
 
-Last updated: 2026-05-12
+Last updated: 2026-07-21
 
 ## Purpose
 
@@ -348,6 +348,63 @@ Residual risk / follow-up:
 - complete the two-iPhone LiveKit publisher/listener/audio/end/restart test for Harrow before adding another mosque or selecting global `rpc`
 - if rollback is needed, promote legacy deployment `h0tk5aa6pe`; the database RPC can remain installed because legacy mode does not call it
 - no new iOS binary is required while the API response and native LiveKit code remain unchanged
+
+### 2026-07-21: Transactional Broadcast End Harrow Canary
+
+Problem:
+
+- the Harrow TestFlight broadcast looked successful, but the hosted end request silently exceeded the Cloudflare Worker subrequest limit after ending the stream
+- the caught failures left the related adhan in `live` status and prevented the explicit LiveKit room deletion attempt
+- followers observe both `streams` and `adhans`, so a partial end can leave follower UI or an already-connected listener in a stale live state
+
+Root cause:
+
+- authorization, stream lookup/update, configuration, upstream state, adhan lookup/update, and LiveKit deletion were separate outbound requests
+- the legacy end path updated only one stream and one adhan candidate, and deliberately swallowed the late adhan/room cleanup failures
+
+Files changed:
+
+- `supabase/migrations/20260721213000_transactional_live_broadcast_end.sql`
+- `app/api/muezzin/live-broadcast+api.ts`
+- `lib/server/livekitRoom.ts`
+- `docs/mobile/beta-release-builds.md`
+
+Fix:
+
+- added service-role-only `end_live_broadcast_v1`, which uses the same per-mosque lock and general access rules as transactional start
+- all live stream rows and all live adhan rows for the mosque now end in one idempotent transaction; supplied foreign-mosque adhan UUIDs are rejected before writes
+- retries preserve the original end timestamp and return every LiveKit room from the same end transition, allowing cleanup to resume after a Worker interruption
+- the RPC also returns the configuration/upstream snapshot internally, keeping the established mobile response exactly `{ stream, config }` without post-commit database reads
+- LiveKit deletion remains non-fatal, but the Harrow transactional path uses a bounded retry and request timeout; legacy-mode mosques retain the previous one-attempt behavior
+- rollout is independently gated by `LIVE_BROADCAST_END_MODE=legacy|allowlist|rpc` and `LIVE_BROADCAST_END_RPC_MOSQUE_IDS`
+
+Verification:
+
+- independent SQL, API contract, and adversarial rollout reviews
+- `git diff --check`
+- `npx tsc --noEmit`
+- `npm run lint`
+- production-environment `npx expo export --platform web --clear`
+- rollback-only production compile and functional test against Harrow's exact stale state, including a second idempotent call
+- installed RPC verified as security invoker with an empty search path; only `service_role` has execute permission
+- immutable and production root/unauthenticated endpoint smoke checks returned the expected `200`/`401` statuses
+
+Production rollout:
+
+- implementation commit: `011ced3`
+- applied migration `20260721213000_transactional_live_broadcast_end`
+- repaired stale Harrow adhan `c5481585-0a45-4574-aa00-d8bb0b171de3` only after locking the mosque and verifying its ended stream linkage; Harrow then had zero live streams and zero live adhans
+- deployed, smoke-tested, and promoted legacy-END safety deployment `jcwu288kmd`; this is the preferred rollback
+- deployed, smoke-tested, and promoted Harrow-only canary `5zlqrgnnk6`; production points to this deployment
+- both transactional start and end allowlists contain only Harrow Mosque (`52fbe3bf-2d08-4009-9921-208afb5b3169`)
+- no iOS/TestFlight rebuild is required because the native code and `{ stream, config }` contract are unchanged
+
+Residual risk / follow-up:
+
+- complete the physical Harrow publisher/listener/audio/end/restart test before adding another mosque or selecting global `rpc`
+- wait for the end request to resolve before restarting; deterministic daily room names leave a narrow delayed-delete/restart race across two devices
+- the Worker cleanup budget handles at most six distinct legacy room names per invocation; audit duplicate stream/room state before any wider rollout
+- if rollback is needed, promote `jcwu288kmd`, then set `LIVE_BROADCAST_END_MODE=legacy` for future deployments; the additive RPC can remain installed
 
 ### 2026-05-12: LiveKit Listener E2E Hardening
 
