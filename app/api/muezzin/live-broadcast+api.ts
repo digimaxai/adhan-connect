@@ -58,8 +58,16 @@ type CoverAssignmentRow = {
   status?: string | null;
 };
 
+type TransactionalStartResult = {
+  stream?: StreamRow | null;
+  adhanId?: string | null;
+  scheduledAt?: string | null;
+  idempotent?: boolean | null;
+};
+
 const HEALTH_CHECK_BUDGET_MS = 4500;
 const AUTH_CHECK_BUDGET_MS = 6000;
+const TRANSACTIONAL_START_RPC = 'start_live_broadcast_v1';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -281,35 +289,57 @@ async function fetchMosqueLiveStreamConfig(
   return data;
 }
 
-async function requireMosqueBroadcastReady(
-  supabaseAdmin: SupabaseClient<any, any, any>,
-  mosqueId: string
-) {
-  const config = await fetchMosqueLiveStreamConfig(supabaseAdmin, mosqueId);
+function resolveMosqueBroadcastReadiness(config: MosqueLiveStreamConfigRow) {
   const mosqueName = config.name?.trim() || 'This mosque';
   const provider = normalizeLiveStreamProvider(config.live_stream_provider);
   const summary = summarizeMosqueLiveBroadcastConfig(config);
+  let readinessError: string | null = null;
 
   if (!summary.streaming_enabled) {
-    throw new Error(`${mosqueName} does not have live streaming enabled yet.`);
-  }
-  if (!summary.is_ready_for_broadcast) {
-    throw new Error(summary.issues[0] ?? `${mosqueName} is not ready for broadcast.`);
+    readinessError = `${mosqueName} does not have live streaming enabled yet.`;
+  } else if (!summary.is_ready_for_broadcast) {
+    readinessError = summary.issues[0] ?? `${mosqueName} is not ready for broadcast.`;
   }
 
   // LiveKit: no playback URL needed — listeners join the room via token.
   if (provider === 'livekit') {
-    if (!isLiveKitConfigured()) {
-      throw new Error('LiveKit is not configured on the server. Contact support.');
+    if (!readinessError && !isLiveKitConfigured()) {
+      readinessError = 'LiveKit is not configured on the server. Contact support.';
     }
-    return { mosqueName, playbackUrl: null as null, provider, summary };
+    return { mosqueName, playbackUrl: null as null, provider, summary, readinessError };
   }
 
-  const playbackUrl = normalizePlaybackUrl(config.live_stream_playback_url);
-  if (!playbackUrl) {
-    throw new Error(`${mosqueName} is missing a live stream playback URL.`);
+  let playbackUrl: string | null = null;
+  try {
+    playbackUrl = normalizePlaybackUrl(config.live_stream_playback_url);
+  } catch (error) {
+    if (!readinessError) {
+      readinessError = describeError(error) || `${mosqueName} is missing a live stream playback URL.`;
+    }
   }
-  return { mosqueName, playbackUrl, provider, summary };
+  if (!playbackUrl && !readinessError) {
+    readinessError = `${mosqueName} is missing a live stream playback URL.`;
+  }
+  return { mosqueName, playbackUrl, provider, summary, readinessError };
+}
+
+async function loadMosqueBroadcastReadiness(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string
+) {
+  const config = await fetchMosqueLiveStreamConfig(supabaseAdmin, mosqueId);
+  return resolveMosqueBroadcastReadiness(config);
+}
+
+async function requireMosqueBroadcastReady(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  mosqueId: string
+) {
+  const readiness = await loadMosqueBroadcastReadiness(supabaseAdmin, mosqueId);
+  if (readiness.readinessError) {
+    throw new Error(readiness.readinessError);
+  }
+  return readiness;
 }
 
 function isUuid(value?: string | null) {
@@ -330,6 +360,64 @@ function normalizeScheduledAt(value?: string | null) {
 function isTestBroadcastId(value?: string | null) {
   const normalized = (value ?? '').trim().toLowerCase();
   return normalized === 'test-broadcast' || normalized.startsWith('test-');
+}
+
+function shouldUseTransactionalStart(mosqueId: string) {
+  const mode = (process.env.LIVE_BROADCAST_START_MODE ?? 'legacy').trim().toLowerCase();
+  if (mode === 'rpc') return true;
+  if (mode !== 'allowlist') return false;
+
+  return (process.env.LIVE_BROADCAST_START_RPC_MOSQUE_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(mosqueId.toLowerCase());
+}
+
+async function startLiveBroadcastTransaction(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  input: {
+    actorUserId: string;
+    mosqueId: string;
+    prayer: string;
+    requestedScheduledAt: string;
+    adhanId: string | null;
+    isTest: boolean;
+    provider: string;
+    readinessError: string | null;
+    playbackUrl: string | null;
+    livekitRoomName: string | null;
+  }
+) {
+  const { data, error } = await supabaseAdmin.rpc(TRANSACTIONAL_START_RPC, {
+    p_actor_user_id: input.actorUserId,
+    p_mosque_id: input.mosqueId,
+    p_prayer: input.prayer,
+    p_requested_scheduled_at: input.requestedScheduledAt,
+    p_adhan_id: isUuid(input.adhanId) ? input.adhanId : null,
+    p_is_test: input.isTest,
+    p_provider: input.provider,
+    p_readiness_error: input.readinessError,
+    p_playback_url: input.playbackUrl,
+    p_livekit_room_name: input.livekitRoomName,
+  });
+
+  if (error) throw error;
+
+  const result = data as TransactionalStartResult | null;
+  const stream = result?.stream ?? null;
+  if (!stream?.id || stream.mosque_id !== input.mosqueId || stream.is_live !== true) {
+    throw new Error('The broadcast start transaction returned an invalid stream state.');
+  }
+
+  console.info('[live-broadcast] transactional start committed', {
+    mosqueId: input.mosqueId,
+    streamId: stream.id,
+    adhanId: result?.adhanId ?? null,
+    idempotent: result?.idempotent === true,
+  });
+
+  return stream;
 }
 
 // Mirrors the client window in useLiveBroadcastEngine.ts
@@ -863,6 +951,36 @@ export const POST: RequestHandler = async (request) => {
   }
 
   try {
+    if (action === 'start' && shouldUseTransactionalStart(mosqueId)) {
+      const prayer = normalizePrayer(body.prayer);
+      const requestedScheduledAt = normalizeScheduledAt(body.scheduledAt);
+      const [{ playbackUrl, provider, summary, readinessError }, upstreamState] = await Promise.all([
+        loadMosqueBroadcastReadiness(auth.supabaseAdmin, mosqueId),
+        fetchMosqueLiveStreamUpstreamState(auth.supabaseAdmin, mosqueId),
+      ]);
+      const livekitRoomName = provider === 'livekit'
+        ? computeLiveKitRoomName(mosqueId, prayer, requestedScheduledAt)
+        : null;
+      const stream = await startLiveBroadcastTransaction(auth.supabaseAdmin, {
+        actorUserId: auth.userId,
+        mosqueId,
+        prayer,
+        requestedScheduledAt,
+        adhanId: body.adhanId ?? null,
+        isTest: isTestBroadcastId(body.adhanId),
+        provider,
+        readinessError,
+        playbackUrl,
+        livekitRoomName,
+      });
+
+      // Keep every fallible network read before the transactional commit. The
+      // response is assembled in memory so an upstream error cannot turn a
+      // successful start into a client-visible failure and duplicate retry.
+      const config = attachMosqueLiveUpstreamState(summary, upstreamState);
+      return json({ stream, config });
+    }
+
     const access = await ensureMuezzinMosqueAccess(auth.supabaseAdmin, auth.userId, mosqueId);
 
     if (action === 'start') {
@@ -914,10 +1032,14 @@ export const POST: RequestHandler = async (request) => {
   } catch (error: any) {
     const message = error?.message ?? 'Unable to update the live broadcast state.';
     const forbidden =
+      error?.code === '42501' ||
       message === 'You do not have muezzin access to this mosque.' ||
+      message === 'The selected adhan does not belong to this mosque.' ||
       message.startsWith('Only the assigned muezzin') ||
       message.startsWith('Too early') ||
       message.startsWith('The broadcast window');
-    return json({ error: message }, forbidden ? 403 : 500);
+    const conflict = message.startsWith('Another live broadcast is still active');
+    const invalid = error?.code === '22023';
+    return json({ error: message }, conflict ? 409 : forbidden ? 403 : invalid ? 400 : 500);
   }
 };

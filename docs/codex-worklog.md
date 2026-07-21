@@ -297,6 +297,48 @@ Current protection:
 
 ## Recent Change Log
 
+### 2026-07-21: Transactional And Idempotent Broadcast Start
+
+Problem:
+
+- the hosted `/api/muezzin/live-broadcast` start request could exceed the Cloudflare Worker subrequest limit
+- the old sequence updated `streams`, attempted the related `adhans` write separately, and then performed another database read, so a late failure could report an error after a partial start
+- the mobile client retries ambiguous failures across resolved API candidates, which could reset `started_at` or duplicate state
+
+Root cause:
+
+- authorization, schedule resolution, rota/cover checks, and the two live-state writes were spread across many independent Supabase requests
+- stream and adhan changes were not one database transaction
+
+Files changed:
+
+- `supabase/migrations/20260721120000_transactional_live_broadcast_start.sql`
+- `app/api/muezzin/live-broadcast+api.ts`
+- `docs/mobile/beta-release-builds.md`
+
+Fix:
+
+- added a service-role-only `start_live_broadcast_v1` RPC that validates access and timing, locks per mosque, preserves the preconfigured stream row, and changes stream plus adhan state atomically
+- matching retries return the original stream and `started_at`; conflicting fresh sessions are rejected
+- test and real sessions use internal adhan source markers so a test cannot be mistaken for a retry of a real broadcast sharing the same room name
+- supplied adhan UUIDs are constrained to the target mosque
+- the API preloads provider config and upstream state, commits with one RPC, and assembles the unchanged `{ stream, config }` response without a post-commit network request
+- rollout is gated by `LIVE_BROADCAST_START_MODE=legacy|allowlist|rpc`; the default remains `legacy`
+- publisher/listener LiveKit token paths and the end/room-deletion path are unchanged
+
+Verification:
+
+- `git diff --check`
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npx expo export --platform web`
+
+Residual risk / follow-up:
+
+- apply and validate the additive migration before enabling `allowlist`
+- complete the two-iPhone LiveKit publisher/listener/audio/end/restart test on one allowlisted mosque before selecting `rpc`
+- no new iOS binary is required while the API response and native LiveKit code remain unchanged
+
 ### 2026-05-12: LiveKit Listener E2E Hardening
 
 Problem:
