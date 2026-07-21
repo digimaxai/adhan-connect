@@ -55,6 +55,8 @@ LIVEKIT_API_KEY
 LIVEKIT_API_SECRET
 LIVE_BROADCAST_START_MODE
 LIVE_BROADCAST_START_RPC_MOSQUE_IDS
+LIVE_BROADCAST_END_MODE
+LIVE_BROADCAST_END_RPC_MOSQUE_IDS
 ```
 
 If the API routes are deployed with EAS Hosting, configure those server-only values in the hosting/server environment with **sensitive** visibility. EAS Hosting cannot deploy variables with **secret** visibility. Do not prefix server-only values with `EXPO_PUBLIC_`.
@@ -66,6 +68,14 @@ If the API routes are deployed with EAS Hosting, configure those server-only val
 - `rpc`: use the transactional RPC for every mosque.
 
 Deploy the database migration before selecting `allowlist` or `rpc`. Never fall back to the legacy start path after an RPC timeout because the transaction may already have committed.
+
+`LIVE_BROADCAST_END_MODE` independently controls the transactional broadcast-end rollout with the same values:
+
+- `legacy` (or missing): keep the existing end path.
+- `allowlist`: use the transactional RPC only for UUIDs listed in the comma-separated `LIVE_BROADCAST_END_RPC_MOSQUE_IDS` value.
+- `rpc`: use the transactional RPC for every mosque.
+
+Deploy the end migration before selecting `allowlist` or `rpc`. The transactional end clears all live stream and adhan rows for the mosque in one commit, then performs non-fatal LiveKit room cleanup. Do not fall back to the legacy end path after an RPC timeout; retrying the RPC is idempotent and retains the room name for cleanup.
 
 ## One-Time EAS Setup
 
