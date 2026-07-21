@@ -398,10 +398,13 @@ Production rollout:
 - deployed, smoke-tested, and promoted Harrow-only canary `5zlqrgnnk6`; production points to this deployment
 - both transactional start and end allowlists contain only Harrow Mosque (`52fbe3bf-2d08-4009-9921-208afb5b3169`)
 - no iOS/TestFlight rebuild is required because the native code and `{ stream, config }` contract are unchanged
+- physical Harrow Isha publisher/listener/audio/end test passed at 21:45 UTC; the start and end POSTs both returned `200`, with no crash or limit-exceeded flag
+- the transactional end log recorded one ended stream, one completed adhan, and one LiveKit cleanup room
+- post-test database verification found zero live stream/adhan rows and matching stream/adhan end timestamps; LiveKit reported the ended room absent
 
 Residual risk / follow-up:
 
-- complete the physical Harrow publisher/listener/audio/end/restart test before adding another mosque or selecting global `rpc`
+- keep the rollout Harrow-only until each additional mosque's stream/configuration state is audited and physically canaried; do not select global `rpc` yet
 - wait for the end request to resolve before restarting; deterministic daily room names leave a narrow delayed-delete/restart race across two devices
 - the Worker cleanup budget handles at most six distinct legacy room names per invocation; audit duplicate stream/room state before any wider rollout
 - if rollback is needed, promote `jcwu288kmd`, then set `LIVE_BROADCAST_END_MODE=legacy` for future deployments; the additive RPC can remain installed
