@@ -333,10 +333,20 @@ Verification:
 - `npm run lint`
 - `npx expo export --platform web`
 
+Production rollout:
+
+- applied the five previously unrecorded idempotent migrations and the new `20260721120000` migration atomically; local and remote migration histories now match
+- verified `start_live_broadcast_v1` is executable by `service_role` only, anonymous prayer-time reads still work, and both prayer-time tables remain in Supabase Realtime
+- converted the three server credentials required by EAS Hosting from secret to sensitive visibility; they remain server-only and are not included in the client bundle
+- deployed and smoke-tested legacy-mode Hosting deployment `h0tk5aa6pe`; keep this as the immediate rollback target
+- deployed and promoted Harrow-only allowlist deployment `k1qi7st54w`; production points to this deployment
+- the allowlist contains only Harrow Mosque (`52fbe3bf-2d08-4009-9921-208afb5b3169`)
+- post-promotion EAS request telemetry showed no crashes and no limit-exceeded requests; Harrow still had one configured non-live stream and no live adhan before handoff
+
 Residual risk / follow-up:
 
-- apply and validate the additive migration before enabling `allowlist`
-- complete the two-iPhone LiveKit publisher/listener/audio/end/restart test on one allowlisted mosque before selecting `rpc`
+- complete the two-iPhone LiveKit publisher/listener/audio/end/restart test for Harrow before adding another mosque or selecting global `rpc`
+- if rollback is needed, promote legacy deployment `h0tk5aa6pe`; the database RPC can remain installed because legacy mode does not call it
 - no new iOS binary is required while the API response and native LiveKit code remain unchanged
 
 ### 2026-05-12: LiveKit Listener E2E Hardening
