@@ -53,9 +53,19 @@ SUPABASE_SERVICE_ROLE
 LIVEKIT_URL
 LIVEKIT_API_KEY
 LIVEKIT_API_SECRET
+LIVE_BROADCAST_START_MODE
+LIVE_BROADCAST_START_RPC_MOSQUE_IDS
 ```
 
-If the API routes are deployed with EAS Hosting, configure those server-only values in the hosting/server environment. Do not prefix them with `EXPO_PUBLIC_`.
+If the API routes are deployed with EAS Hosting, configure those server-only values in the hosting/server environment with **sensitive** visibility. EAS Hosting cannot deploy variables with **secret** visibility. Do not prefix server-only values with `EXPO_PUBLIC_`.
+
+`LIVE_BROADCAST_START_MODE` controls the transactional broadcast-start rollout:
+
+- `legacy` (or missing): keep the existing start path.
+- `allowlist`: use the transactional RPC only for UUIDs listed in the comma-separated `LIVE_BROADCAST_START_RPC_MOSQUE_IDS` value.
+- `rpc`: use the transactional RPC for every mosque.
+
+Deploy the database migration before selecting `allowlist` or `rpc`. Never fall back to the legacy start path after an RPC timeout because the transaction may already have committed.
 
 ## One-Time EAS Setup
 
@@ -73,7 +83,19 @@ npx eas-cli@latest env:create --environment preview --name EXPO_PUBLIC_API_BASE_
 npx eas-cli@latest env:create --environment production --name EXPO_PUBLIC_API_BASE_URL --value https://<production-api-host> --visibility plaintext
 ```
 
-Use plaintext or sensitive visibility for client-side `EXPO_PUBLIC_` values because they are embedded in the app and are inherently public. Use secret visibility only for build-time/server-only values that are not embedded in the mobile binary.
+Use plaintext or sensitive visibility for client-side `EXPO_PUBLIC_` values because they are embedded in the app and are inherently public. Use sensitive visibility for server-only values required by EAS Hosting. Reserve secret visibility for values used only inside EAS Build or Workflows, because secret variables cannot be included in a Hosting deployment.
+
+When the local `.env` contains credentials that do not belong in Hosting (for example `SUPABASE_ACCESS_TOKEN`), disable local dotenv loading and export with the selected EAS environment before deploying:
+
+```bash
+EXPO_NO_DOTENV=1 npx eas-cli@latest env:exec production \
+  'npx expo export --platform web --clear'
+EXPO_NO_DOTENV=1 npx eas-cli@latest deploy \
+  --environment production \
+  --non-interactive
+```
+
+This keeps the Hosting manifest limited to the variables configured in the EAS production environment.
 
 ## Pre-Build Checks
 
