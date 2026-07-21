@@ -65,9 +65,23 @@ type TransactionalStartResult = {
   idempotent?: boolean | null;
 };
 
+type TransactionalEndResult = {
+  stream?: StreamRow | null;
+  config?: MosqueLiveStreamConfigRow | null;
+  upstreamState?: MosqueLiveStreamUpstreamStateRow | null;
+  livekitRoomNames?: unknown;
+  endedAdhanIds?: unknown;
+  endedStreamCount?: number | null;
+  completedAdhanCount?: number | null;
+  idempotent?: boolean | null;
+};
+
 const HEALTH_CHECK_BUDGET_MS = 4500;
 const AUTH_CHECK_BUDGET_MS = 6000;
 const TRANSACTIONAL_START_RPC = 'start_live_broadcast_v1';
+const TRANSACTIONAL_END_RPC = 'end_live_broadcast_v1';
+const TRANSACTIONAL_END_LIVEKIT_MAX_ROOMS = 6;
+const TRANSACTIONAL_END_LIVEKIT_TIMEOUT_SECONDS = 1.25;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -374,6 +388,18 @@ function shouldUseTransactionalStart(mosqueId: string) {
     .includes(mosqueId.toLowerCase());
 }
 
+function shouldUseTransactionalEnd(mosqueId: string) {
+  const mode = (process.env.LIVE_BROADCAST_END_MODE ?? 'legacy').trim().toLowerCase();
+  if (mode === 'rpc') return true;
+  if (mode !== 'allowlist') return false;
+
+  return (process.env.LIVE_BROADCAST_END_RPC_MOSQUE_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(mosqueId.toLowerCase());
+}
+
 async function startLiveBroadcastTransaction(
   supabaseAdmin: SupabaseClient<any, any, any>,
   input: {
@@ -418,6 +444,66 @@ async function startLiveBroadcastTransaction(
   });
 
   return stream;
+}
+
+async function endLiveBroadcastTransaction(
+  supabaseAdmin: SupabaseClient<any, any, any>,
+  input: {
+    actorUserId: string;
+    mosqueId: string;
+    adhanId: string | null;
+  }
+) {
+  const { data, error } = await supabaseAdmin.rpc(TRANSACTIONAL_END_RPC, {
+    p_actor_user_id: input.actorUserId,
+    p_mosque_id: input.mosqueId,
+    p_adhan_id: isUuid(input.adhanId) ? input.adhanId : null,
+  });
+
+  if (error) throw error;
+
+  const result = data as TransactionalEndResult | null;
+  const stream = result?.stream ?? null;
+  const config = result?.config ?? null;
+  if (
+    stream !== null &&
+    (!stream.id || stream.mosque_id !== input.mosqueId || stream.is_live !== false)
+  ) {
+    throw new Error('The broadcast end transaction returned an invalid stream state.');
+  }
+  if (!config || config.id !== input.mosqueId) {
+    throw new Error('The broadcast end transaction returned an invalid mosque configuration.');
+  }
+  if (!Array.isArray(result?.livekitRoomNames)) {
+    throw new Error('The broadcast end transaction returned invalid LiveKit cleanup state.');
+  }
+
+  const livekitRoomNames = Array.from(
+    new Set(
+      result.livekitRoomNames.map((value) => {
+        if (typeof value !== 'string') {
+          throw new Error('The broadcast end transaction returned an invalid LiveKit room name.');
+        }
+        return value.trim();
+      }).filter(Boolean)
+    )
+  );
+
+  console.info('[live-broadcast] transactional end committed', {
+    mosqueId: input.mosqueId,
+    streamId: stream?.id ?? null,
+    endedStreamCount: result?.endedStreamCount ?? null,
+    completedAdhanCount: result?.completedAdhanCount ?? null,
+    livekitRoomCount: livekitRoomNames.length,
+    idempotent: result?.idempotent === true,
+  });
+
+  return {
+    stream,
+    config,
+    upstreamState: result?.upstreamState ?? null,
+    livekitRoomNames,
+  };
 }
 
 // Mirrors the client window in useLiveBroadcastEngine.ts
@@ -979,6 +1065,44 @@ export const POST: RequestHandler = async (request) => {
       // successful start into a client-visible failure and duplicate retry.
       const config = attachMosqueLiveUpstreamState(summary, upstreamState);
       return json({ stream, config });
+    }
+
+    if (action === 'end' && shouldUseTransactionalEnd(mosqueId)) {
+      const result = await endLiveBroadcastTransaction(auth.supabaseAdmin, {
+        actorUserId: auth.userId,
+        mosqueId,
+        adhanId: body.adhanId ?? null,
+      });
+
+      // The RPC returns the configuration snapshot used for the established
+      // client response. From this point onward there are no database reads;
+      // LiveKit cleanup is post-commit, bounded, and non-fatal.
+      const config = attachMosqueLiveUpstreamState(
+        summarizeMosqueLiveBroadcastConfig(result.config),
+        result.upstreamState
+      );
+      const cleanupRoomNames = result.livekitRoomNames.slice(
+        0,
+        TRANSACTIONAL_END_LIVEKIT_MAX_ROOMS
+      );
+      if (cleanupRoomNames.length < result.livekitRoomNames.length) {
+        console.warn('[live-broadcast] LiveKit cleanup room budget exceeded', {
+          mosqueId,
+          requestedRoomCount: result.livekitRoomNames.length,
+          cleanupRoomCount: cleanupRoomNames.length,
+        });
+      }
+      await Promise.all(
+        cleanupRoomNames.map((roomName) => deleteLiveKitRoom(roomName, {
+          // The common one-room path gets one bounded retry. Legacy duplicate
+          // rooms each get one attempt so the invocation remains below the
+          // Worker subrequest budget.
+          maxAttempts: cleanupRoomNames.length === 1 ? 2 : 1,
+          requestTimeoutSeconds: TRANSACTIONAL_END_LIVEKIT_TIMEOUT_SECONDS,
+          treatMissingAsSuccess: true,
+        }))
+      );
+      return json({ stream: result.stream, config });
     }
 
     const access = await ensureMuezzinMosqueAccess(auth.supabaseAdmin, auth.userId, mosqueId);
