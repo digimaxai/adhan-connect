@@ -10,12 +10,29 @@ Starting a conversation with a mosque must not enable broadcasting. Create the
 mosque as `pending` and keep live streaming inactive until the mosque has agreed
 to onboarding and its staff and schedule are being configured.
 
+Record the mosque leadership's agreement in the normal onboarding record before
+enabling streaming. The portal readiness stage is a technical gate; it is not a
+substitute for consent or ownership verification.
+
+## LiveKit Configuration
+
+For the current in-app microphone flow, select `LiveKit (In-App Mic)`. LiveKit
+does not use a mosque playback URL, ingest URL, mount path, encoder stream key,
+listener secret, or provider callback. Publisher and listener access comes from
+short-lived room tokens created by the hosted API when a broadcast starts.
+
+Legacy external-provider values may remain stored for rollback, but they are
+ignored while LiveKit is selected and are not shown as active requirements in
+the portal.
+
 ## Stages
 
 1. `Setup pending`
    - Confirm the mosque profile and timezone.
    - Configure its prayer-time source or timetable.
    - Assign a local admin and at least one active muezzin.
+   - Confirm the invited muezzin has accepted, signed in, and tested microphone
+     permission on the intended device.
    - Select an active default muezzin or publish usable rota assignments.
    - Select and enable the streaming provider.
 2. `Ready for test`
@@ -72,3 +89,10 @@ For each new mosque:
 
 Do not select global `rpc` mode until several representative mosques have passed
 this process and the operator explicitly approves the broader rollout.
+
+Keep a mosque `pending` while preparing and confirming technical readiness. A
+normal follower cannot discover a pending mosque, so agree the private test
+listener path before the physical canary. If the mosque must be approved for a
+normal follower to subscribe, schedule that approval immediately before the
+test and treat it as public launch exposure; do not activate it casually just
+to make the test screen easier to reach.

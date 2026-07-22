@@ -86,6 +86,7 @@ declare
   v_has_active_muezzin boolean := false;
   v_has_staff_coverage boolean := false;
   v_has_schedule_source boolean := false;
+  v_local_date date;
   v_idempotent boolean := false;
 begin
   if p_actor_user_id is null or p_mosque_id is null then
@@ -140,6 +141,8 @@ begin
       using errcode = '55000';
   end if;
 
+  v_local_date := (v_now at time zone trim(v_mosque.time_zone))::date;
+
   if v_provider = 'livekit' then
     v_stream_type := 'webrtc'::public.stream_type;
     v_url := 'livekit://mosque/' || p_mosque_id::text;
@@ -177,12 +180,9 @@ begin
       join public.muezzins as mz
         on mz.mosque_id = sr.mosque_id
        and coalesce(mz.is_active, true)
-       and (
-         mz.user_id = sr.muezzin_user_id
-         or mz.user_id = sr.staff_user_id
-       )
+       and mz.user_id = coalesce(sr.muezzin_user_id, sr.staff_user_id)
       where sr.mosque_id = p_mosque_id
-        and coalesce(sr.date, sr.duty_date) >= current_date
+        and coalesce(sr.date, sr.duty_date) >= v_local_date
     )
   into v_has_staff_coverage;
 
@@ -197,7 +197,7 @@ begin
       select 1
       from public.prayer_times as pt
       where pt.mosque_id = p_mosque_id
-        and pt.date >= current_date
+        and pt.date >= v_local_date
     )
   into v_has_schedule_source;
 
@@ -358,6 +358,7 @@ declare
   v_has_active_muezzin boolean := false;
   v_has_staff_coverage boolean := false;
   v_has_schedule_source boolean := false;
+  v_local_date date;
 begin
   if p_actor_user_id is null or p_mosque_id is null then
     raise exception 'Missing required broadcast onboarding arguments.'
@@ -462,6 +463,8 @@ begin
         using errcode = '55000';
     end if;
 
+    v_local_date := (v_now at time zone trim(v_mosque.time_zone))::date;
+
     if v_provider <> 'livekit'
        and (
          nullif(trim(v_mosque.live_stream_playback_url), '') is null
@@ -496,12 +499,9 @@ begin
         join public.muezzins as mz
           on mz.mosque_id = sr.mosque_id
          and coalesce(mz.is_active, true)
-         and (
-           mz.user_id = sr.muezzin_user_id
-           or mz.user_id = sr.staff_user_id
-         )
+         and mz.user_id = coalesce(sr.muezzin_user_id, sr.staff_user_id)
         where sr.mosque_id = p_mosque_id
-          and coalesce(sr.date, sr.duty_date) >= current_date
+          and coalesce(sr.date, sr.duty_date) >= v_local_date
       )
     into v_has_staff_coverage;
 
@@ -516,7 +516,7 @@ begin
         select 1
         from public.prayer_times as pt
         where pt.mosque_id = p_mosque_id
-          and pt.date >= current_date
+          and pt.date >= v_local_date
       )
     into v_has_schedule_source;
 

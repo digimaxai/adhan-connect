@@ -7,6 +7,7 @@ type MosqueRow = {
   name: string;
   city?: string | null;
   country?: string | null;
+  time_zone?: string | null;
   status?: string | null;
   default_muezzin_user_id?: string | null;
   allow_multi_mosque_local_admins?: boolean | null;
@@ -104,14 +105,14 @@ export const GET: RequestHandler = async (request) => {
 
   let mosqueRes = await supabaseAdmin
     .from('mosques')
-    .select('id, name, city, country, status, default_muezzin_user_id, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, prayer_source, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
+    .select('id, name, city, country, time_zone, status, default_muezzin_user_id, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, prayer_source, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
     .eq('id', mosqueId)
     .maybeSingle();
 
   if (mosqueRes.error?.code === '42703') {
     mosqueRes = await supabaseAdmin
       .from('mosques')
-      .select('id, name, city, country, status, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
+      .select('id, name, city, country, time_zone, status, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
       .eq('id', mosqueId)
       .maybeSingle();
   }
