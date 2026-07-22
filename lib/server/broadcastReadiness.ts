@@ -205,8 +205,8 @@ export async function loadBroadcastReadiness(
   const activeMuezzinIds = new Set(activeMuezzins.map((row) => row.user_id));
   const defaultMuezzinReady = !!mosque.default_muezzin_user_id && activeMuezzinIds.has(mosque.default_muezzin_user_id);
   const rotaReady = ((rotaRes.data ?? []) as RotaReadinessRow[]).some((row) => {
-    const candidates = [row.muezzin_user_id, row.staff_user_id].filter(Boolean) as string[];
-    return candidates.some((userId) => activeMuezzinIds.has(userId));
+    const effectiveMuezzinId = row.muezzin_user_id ?? row.staff_user_id;
+    return !!effectiveMuezzinId && activeMuezzinIds.has(effectiveMuezzinId);
   });
   const staffCoverageReady = defaultMuezzinReady || rotaReady;
   const config = summarizeMosqueLiveBroadcastConfig(mosque);

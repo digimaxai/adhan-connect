@@ -25,6 +25,7 @@ import { AdminMetricCard, AdminPanel } from '../../../components/admin/web/Admin
 import ConfirmDialog from '../../../components/admin/web/ConfirmDialog';
 import { Button, Modal, Pill, Select, TextInput } from '../../../components/admin/web/ui';
 import { ALADHAN_METHODS, DEFAULT_ALADHAN_METHOD } from '../../../lib/api/aladhan';
+import { isValidTimeZone, TIMEZONE_OPTIONS } from '../../../lib/timeZones';
 import type {
   BroadcastReadinessPayload,
   BroadcastReadinessPostAction,
@@ -35,6 +36,7 @@ type MosqueRow = {
   name: string;
   city?: string | null;
   country?: string | null;
+  time_zone?: string | null;
   status?: string | null;
   default_muezzin_user_id?: string | null;
   allow_multi_mosque_local_admins?: boolean | null;
@@ -213,6 +215,7 @@ function MosqueProfileShell() {
   const [editMode, setEditMode] = useState<EditMosqueMode>('profile');
   const [editForm, setEditForm] = useState({
     name: '', city: '', country: '', status: 'pending',
+    timeZone: 'UTC',
     lat: '', lng: '',
     allowMultiMosqueLocalAdmins: false,
     prayerSource: 'aladhan' as 'aladhan' | 'elm',
@@ -334,6 +337,7 @@ function MosqueProfileShell() {
       name: mosque.name ?? '',
       city: mosque.city ?? '',
       country: mosque.country ?? '',
+      timeZone: mosque.time_zone?.trim() || 'UTC',
       status: mosque.status ?? 'pending',
       lat: mosque.lat != null ? String(mosque.lat) : '',
       lng: mosque.lng != null ? String(mosque.lng) : '',
@@ -373,6 +377,7 @@ function MosqueProfileShell() {
   const liveStreamStatusSecret = mosque?.live_stream_status_secret?.trim() || '';
   const liveStreamListenerSecret = mosque ? resolveLiveStreamListenerSecret(mosque) || '' : '';
   const editCityIsLondon = editForm.city.trim().toLowerCase().includes('london');
+  const editTimeZoneIsListed = TIMEZONE_OPTIONS.some((option) => option.value === editForm.timeZone);
   const effectivePrayerSource = editCityIsLondon ? editForm.prayerSource : 'aladhan';
   const editProviderProfile = useMemo(() => getLiveStreamProviderProfile(editForm.liveStreamProvider), [editForm.liveStreamProvider]);
   const editProviderUsesExternalEncoder = editProviderProfile.supportsExternalEncoder;
@@ -394,6 +399,50 @@ function MosqueProfileShell() {
 
   const metaRowStyle = { ...styles.metaRow, ...(isPhone ? styles.metaRowPhone : null) };
   const idTextStyle = { ...styles.idText, ...(isPhone ? styles.idTextPhone : null) };
+  const liveStreamConfigRows: [string, React.ReactNode][] = [
+    ['Broadcasting enabled', <Pill key="ls" status={liveStreamEnabled ? 'active' : 'inactive'} />],
+    ['Provider', liveStreamProviderProfile.label],
+  ];
+
+  if (liveStreamProvider === 'livekit') {
+    liveStreamConfigRows.push(
+      ['Audio source', 'Muezzin app microphone'],
+      ['Follower delivery', 'Automatic LiveKit room access'],
+      ['External encoder', 'Not required']
+    );
+  } else {
+    if (liveStreamProviderProfile.requiresPlaybackUrl) {
+      liveStreamConfigRows.push([
+        'Playback URL',
+        <span key="pu" style={idTextStyle}>{liveStreamPlaybackUrl || '—'}</span>,
+      ]);
+    }
+    if (liveStreamProviderProfile.supportsExternalEncoder) {
+      liveStreamConfigRows.push([
+        'Ingest URL',
+        <span key="iu" style={idTextStyle}>{liveStreamIngestUrl || '—'}</span>,
+      ]);
+      if (liveStreamProvider === 'icecast') {
+        liveStreamConfigRows.push([
+          'Mount path',
+          <span key="mp" style={idTextStyle}>{liveStreamMountPath || '—'}</span>,
+        ]);
+      }
+      if (liveStreamProviderProfile.usernameLabel) {
+        liveStreamConfigRows.push([liveStreamProviderProfile.usernameLabel, liveStreamUsername || '—']);
+      }
+      liveStreamConfigRows.push([
+        liveStreamProviderProfile.credentialLabel,
+        liveStreamStreamKeyConfigured ? 'Configured' : 'Not set',
+      ]);
+    }
+    if (liveStreamProviderProfile.requiresListenerSecret) {
+      liveStreamConfigRows.push([
+        'Listener access secret',
+        liveStreamListenerSecret ? 'Configured' : 'Not set',
+      ]);
+    }
+  }
 
   const updateSelector = (patch: Partial<MosqueRow>) =>
     setMosquesForSelector((prev) => prev.map((m) => (m.id === mosqueId ? { ...m, ...patch } : m)));
@@ -684,6 +733,8 @@ function MosqueProfileShell() {
     if (!mosqueId) return;
     const nextName = editForm.name.trim();
     if (!nextName) { setEditError('Name is required.'); return; }
+    const timeZone = editForm.timeZone.trim();
+    if (!isValidTimeZone(timeZone)) { setEditError('Select a valid mosque timezone.'); return; }
     const lsp = normalizeLiveStreamProvider(editForm.liveStreamProvider);
     const lspProfile = getLiveStreamProviderProfile(lsp);
     const needsProviderCallbackSecret = lspProfile.supportsExternalEncoder;
@@ -731,6 +782,7 @@ function MosqueProfileShell() {
     const payload: Record<string, any> = {
       name: nextName, status: editForm.status,
       city: editForm.city.trim() || null, country: editForm.country.trim() || null,
+      time_zone: timeZone,
       lat: latVal, lng: lngVal,
       allow_multi_mosque_local_admins: editForm.allowMultiMosqueLocalAdmins,
       prayer_source: effectivePrayerSource,
@@ -1001,6 +1053,7 @@ function MosqueProfileShell() {
                 ['Status', <Pill key="s" status={status} />],
                 ['City', mosque?.city?.trim() || '—'],
                 ['Country', mosque?.country?.trim() || '—'],
+                ['Timezone', mosque?.time_zone?.trim() || '—'],
                 ['Coordinates', mosque?.lat != null && mosque?.lng != null
                   ? `${mosque.lat.toFixed(5)}, ${mosque.lng.toFixed(5)}`
                   : <span key="coords" style={{ color: '#ef4444', fontWeight: 700, fontSize: 13 }}>Not set — prayer times will not auto-calculate</span>],
@@ -1251,21 +1304,14 @@ function MosqueProfileShell() {
           </div>
 
           <AdminPanel
-            title="Live stream config"
-            subtitle="Playback URL and provider credentials for follower listening."
-            action={<Button variant="ghost" onClick={() => { setEditMode('live-stream'); setEditError(null); setEditOpen(true); }}>Edit live stream</Button>}
+            title="Broadcast configuration"
+            subtitle={liveStreamProvider === 'livekit'
+              ? 'In-app microphone audio delivered to followers through LiveKit.'
+              : 'Provider settings for publishing and follower listening.'}
+            action={<Button variant="ghost" onClick={() => { setEditMode('live-stream'); setEditError(null); setEditOpen(true); }}>Edit broadcast settings</Button>}
           >
             <div style={styles.metaList}>
-              {[
-                ['Live streaming', <Pill key="ls" status={liveStreamEnabled ? 'active' : 'inactive'} />],
-                ['Provider', liveStreamProviderProfile.label],
-                ['Playback URL', <span key="pu" style={idTextStyle}>{liveStreamPlaybackUrl || '—'}</span>],
-                ['Ingest URL', <span key="iu" style={idTextStyle}>{liveStreamIngestUrl || '—'}</span>],
-                ['Mount path', <span key="mp" style={idTextStyle}>{liveStreamMountPath || '—'}</span>],
-                ...(liveStreamProviderProfile.usernameLabel ? [[liveStreamProviderProfile.usernameLabel, liveStreamUsername || '—']] : []),
-                [liveStreamProviderProfile.credentialLabel, liveStreamStreamKeyConfigured ? 'Configured' : 'Not set'],
-                ['Listener access secret', liveStreamListenerSecret ? 'Configured' : 'Not set'],
-              ].map(([label, value]) => (
+              {liveStreamConfigRows.map(([label, value]) => (
                 <div key={String(label)} style={metaRowStyle}>
                   <span style={styles.metaLabel}>{label}</span>
                   <span>{value}</span>
@@ -1273,34 +1319,52 @@ function MosqueProfileShell() {
               ))}
             </div>
             <div style={styles.inlineActions}>
-              {liveStreamMountPath ? <Button variant="ghost" onClick={() => handleCopyText(liveStreamMountPath, 'Mount path copied.')}>Copy mount path</Button> : null}
-              <Button variant="ghost" onClick={() => handleCopyText(liveStreamCallbackUrl, 'Callback URL copied.')}>Copy callback URL</Button>
-              {liveStreamStatusSecret ? <Button variant="ghost" onClick={() => handleCopyText(liveStreamStatusSecret, 'Callback secret copied.')}>Copy callback secret</Button> : null}
-              {liveStreamListenerSecret ? <Button variant="ghost" onClick={() => handleCopyText(liveStreamListenerSecret, 'Listener secret copied.')}>Copy listener secret</Button> : null}
+              {liveStreamProvider === 'icecast' && liveStreamMountPath ? <Button variant="ghost" onClick={() => handleCopyText(liveStreamMountPath, 'Mount path copied.')}>Copy mount path</Button> : null}
+              {liveStreamProviderProfile.supportsExternalEncoder ? <Button variant="ghost" onClick={() => handleCopyText(liveStreamCallbackUrl, 'Callback URL copied.')}>Copy callback URL</Button> : null}
+              {liveStreamProviderProfile.supportsExternalEncoder && liveStreamStatusSecret ? <Button variant="ghost" onClick={() => handleCopyText(liveStreamStatusSecret, 'Callback secret copied.')}>Copy callback secret</Button> : null}
+              {liveStreamProviderProfile.requiresListenerSecret && liveStreamListenerSecret ? <Button variant="ghost" onClick={() => handleCopyText(liveStreamListenerSecret, 'Listener secret copied.')}>Copy listener secret</Button> : null}
             </div>
           </AdminPanel>
 
-          <AdminPanel title="Provider callback state" subtitle="Latest upstream encoder signal received for this mosque.">
-            <div style={styles.metaList}>
-              {[
-                ['Provider status', upstreamStatusLabel],
-                ['Encoder connected', upstreamState?.encoder_connected ? 'Yes' : 'No'],
-                ['Playback active', upstreamState?.playback_active ? 'Yes' : 'No'],
-                ['Last signal', upstreamLastSeenLabel || '—'],
-                ['Provider stream ID', <span key="ps" style={idTextStyle}>{upstreamState?.provider_stream_id?.trim() || '—'}</span>],
-              ].map(([label, value]) => (
-                <div key={String(label)} style={metaRowStyle}>
-                  <span style={styles.metaLabel}>{label}</span>
-                  <span>{value}</span>
-                </div>
-              ))}
-            </div>
-            {upstreamState?.provider_message?.trim() ? (
-              <div style={styles.helperText}>{upstreamState.provider_message.trim()}</div>
-            ) : (
-              <div style={styles.helperText}>No provider callback received yet. Configure your encoder to POST to the callback URL above.</div>
-            )}
-          </AdminPanel>
+          {liveStreamProviderProfile.supportsExternalEncoder ? (
+            <AdminPanel title="Provider callback state" subtitle="Latest upstream encoder signal received for this mosque.">
+              <div style={styles.metaList}>
+                {[
+                  ['Provider status', upstreamStatusLabel],
+                  ['Encoder connected', upstreamState?.encoder_connected ? 'Yes' : 'No'],
+                  ['Playback active', upstreamState?.playback_active ? 'Yes' : 'No'],
+                  ['Last signal', upstreamLastSeenLabel || '—'],
+                  ['Provider stream ID', <span key="ps" style={idTextStyle}>{upstreamState?.provider_stream_id?.trim() || '—'}</span>],
+                ].map(([label, value]) => (
+                  <div key={String(label)} style={metaRowStyle}>
+                    <span style={styles.metaLabel}>{label}</span>
+                    <span>{value}</span>
+                  </div>
+                ))}
+              </div>
+              {upstreamState?.provider_message?.trim() ? (
+                <div style={styles.helperText}>{upstreamState.provider_message.trim()}</div>
+              ) : (
+                <div style={styles.helperText}>No provider callback received yet. Configure your encoder to POST to the callback URL above.</div>
+              )}
+            </AdminPanel>
+          ) : liveStreamProvider === 'livekit' ? (
+            <AdminPanel title="LiveKit delivery" subtitle="LiveKit rooms exist only while an adhan broadcast is active.">
+              <div style={styles.metaList}>
+                {[
+                  ['Publisher', 'Muezzin app microphone'],
+                  ['Follower access', 'Short-lived authenticated room token'],
+                  ['Idle state', 'No room or provider signal expected'],
+                ].map(([label, value]) => (
+                  <div key={label} style={metaRowStyle}>
+                    <span style={styles.metaLabel}>{label}</span>
+                    <span>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={styles.helperText}>The hosted API creates publisher and listener access when the broadcast starts. External callback, ingest and playback settings are not used.</div>
+            </AdminPanel>
+          ) : null}
         </div>
       ) : null}
 
@@ -1417,6 +1481,23 @@ function MosqueProfileShell() {
                   <label style={styles.label} htmlFor="edit-country">Country</label>
                   <TextInput id="edit-country" value={editForm.country} onChange={(e) => setEditForm((p) => ({ ...p, country: e.target.value }))} />
                 </div>
+              </div>
+              <div>
+                <label style={styles.label} htmlFor="edit-timezone">Timezone *</label>
+                <Select
+                  id="edit-timezone"
+                  value={editForm.timeZone}
+                  onChange={(e) => setEditForm((p) => ({ ...p, timeZone: e.target.value }))}
+                  aria-label="Timezone for prayer dates and broadcast scheduling"
+                >
+                  {!editTimeZoneIsListed && editForm.timeZone ? (
+                    <option value={editForm.timeZone}>{editForm.timeZone} (current value)</option>
+                  ) : null}
+                  {TIMEZONE_OPTIONS.map((timeZoneOption) => (
+                    <option key={timeZoneOption.value} value={timeZoneOption.value}>{timeZoneOption.label}</option>
+                  ))}
+                </Select>
+                <div style={styles.helperText}>Used for prayer dates, rota coverage and live-broadcast scheduling.</div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 140 }}>
