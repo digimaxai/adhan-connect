@@ -77,6 +77,27 @@ Deploy the database migration before selecting `allowlist` or `rpc`. Never fall 
 
 Deploy the end migration before selecting `allowlist` or `rpc`. The transactional end clears all live stream and adhan rows for the mosque in one commit, then performs non-fatal LiveKit room cleanup. Do not fall back to the legacy end path after an RPC timeout; retrying the RPC is idempotent and retains the room name for cleanup.
 
+## Adding A Mosque To The Transactional Canary
+
+Do not add a mosque to the START or END list merely because its live-stream
+toggle is active. Complete the main-admin **Broadcast Readiness** workflow first:
+
+1. Configure the prayer source/timetable, local admin, active muezzin, and
+   default muezzin or future rota.
+2. Configure and enable the intended provider.
+3. Resolve every required readiness check and provision one dormant stream.
+4. Confirm `Ready for test` in the portal.
+5. Add the same mosque UUID to both START and END lists, then export and deploy
+   the hosted API with the production EAS environment.
+6. Confirm the portal reports both transactional paths enabled.
+7. Run the publisher/listener start, audio, end, and restart test.
+8. Verify hosted telemetry, zero residual live database rows, and LiveKit room
+   cleanup before recording `Test passed` and launching the mosque.
+
+The portal does not expose or edit either allowlist. A partial rollout, where
+only START or END is transactional, must not be tested. See
+`docs/admin/live-broadcast-onboarding.md` for the complete operational flow.
+
 ## One-Time EAS Setup
 
 ```bash
