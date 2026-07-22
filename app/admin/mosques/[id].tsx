@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../lib/supabaseClient';
 import { RequireMainAdmin } from '../../../components/admin/web/RequireMainAdmin';
@@ -25,6 +25,10 @@ import { AdminMetricCard, AdminPanel } from '../../../components/admin/web/Admin
 import ConfirmDialog from '../../../components/admin/web/ConfirmDialog';
 import { Button, Modal, Pill, Select, TextInput } from '../../../components/admin/web/ui';
 import { ALADHAN_METHODS, DEFAULT_ALADHAN_METHOD } from '../../../lib/api/aladhan';
+import type {
+  BroadcastReadinessPayload,
+  BroadcastReadinessPostAction,
+} from '../../../lib/types/broadcastReadiness';
 
 type MosqueRow = {
   id: string;
@@ -32,6 +36,7 @@ type MosqueRow = {
   city?: string | null;
   country?: string | null;
   status?: string | null;
+  default_muezzin_user_id?: string | null;
   allow_multi_mosque_local_admins?: boolean | null;
   live_stream_enabled?: boolean | null;
   live_stream_provider?: string | null;
@@ -72,6 +77,12 @@ type UpstreamStateRow = {
 };
 type MosqueWorkspaceTab = 'overview' | 'admins' | 'muezzins';
 type EditMosqueMode = 'profile' | 'live-stream';
+type AdminApiOptions = {
+  method?: 'GET' | 'POST';
+  body?: Record<string, unknown>;
+  searchParams?: Record<string, string>;
+  signal?: AbortSignal;
+};
 type MosqueWorkspacePayload = {
   mosque: MosqueRow;
   mosques: MosqueRow[];
@@ -80,6 +91,32 @@ type MosqueWorkspacePayload = {
   people: AssignmentUser[];
   upstreamState: UpstreamStateRow | null;
 };
+
+async function requestAdminApi<T>(path: string, options: AdminApiOptions = {}): Promise<T> {
+  if (!supportsServerApi()) throw new Error('The admin API is unavailable in this runtime.');
+  const endpoint = resolveApiUrl(path);
+  if (!endpoint) throw new Error('Could not resolve the admin endpoint.');
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session?.access_token) {
+    throw new Error('Your session has expired. Refresh the page and sign in again.');
+  }
+
+  const url = new URL(endpoint);
+  Object.entries(options.searchParams ?? {}).forEach(([key, value]) => url.searchParams.set(key, value));
+  const response = await fetch(url.toString(), {
+    method: options.method ?? 'GET',
+    headers: {
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || 'The admin request could not be completed.');
+  return payload as T;
+}
 
 function parseWorkspaceTab(value: string | string[] | undefined): MosqueWorkspaceTab {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -139,6 +176,8 @@ function MosqueProfileShell() {
   const { isCompact, isPhone } = useAdminViewport();
 
   const mosqueId = routeId || selectedMosqueId || '';
+  const currentMosqueIdRef = useRef(mosqueId);
+  currentMosqueIdRef.current = mosqueId;
   const [tab, setTab] = useState<MosqueWorkspaceTab>(routeTab);
 
   const [mosque, setMosque] = useState<MosqueRow | null>(null);
@@ -149,6 +188,12 @@ function MosqueProfileShell() {
   const [muezzins, setMuezzins] = useState<MuezzinRow[]>([]);
   const [peopleById, setPeopleById] = useState<Record<string, AssignmentUser>>({});
   const [upstreamState, setUpstreamState] = useState<UpstreamStateRow | null>(null);
+  const [broadcastReadiness, setBroadcastReadiness] = useState<BroadcastReadinessPayload | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [readinessMutation, setReadinessMutation] = useState<BroadcastReadinessPostAction | null>(null);
+  const readinessRequestIdRef = useRef(0);
+  const readinessAbortRef = useRef<AbortController | null>(null);
 
   // Invite modals
   const [addAdminOpen, setAddAdminOpen] = useState(false);
@@ -161,6 +206,7 @@ function MosqueProfileShell() {
   const [addMuezzinDisplayName, setAddMuezzinDisplayName] = useState('');
   const [addMuezzinError, setAddMuezzinError] = useState<string | null>(null);
   const [addingMuezzin, setAddingMuezzin] = useState(false);
+  const [savingDefaultMuezzin, setSavingDefaultMuezzin] = useState<string | null>(null);
 
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
@@ -194,6 +240,34 @@ function MosqueProfileShell() {
 
   const confirm = (opts: Omit<typeof confirmState, 'open'>) => setConfirmState({ open: true, ...opts });
   const closeConfirm = () => setConfirmState((s) => ({ ...s, open: false }));
+
+  const refreshBroadcastReadiness = useCallback(async (targetMosqueId: string) => {
+    if (!targetMosqueId) return;
+    const requestId = readinessRequestIdRef.current + 1;
+    readinessRequestIdRef.current = requestId;
+    readinessAbortRef.current?.abort();
+    const controller = new AbortController();
+    readinessAbortRef.current = controller;
+    setReadinessLoading(true);
+    setReadinessError(null);
+
+    try {
+      const payload = await requestAdminApi<BroadcastReadinessPayload>('/api/admin/broadcast-readiness', {
+        searchParams: { mosqueId: targetMosqueId },
+        signal: controller.signal,
+      });
+      if (readinessRequestIdRef.current === requestId && !controller.signal.aborted) {
+        setBroadcastReadiness(payload);
+      }
+    } catch (error) {
+      if (controller.signal.aborted || readinessRequestIdRef.current !== requestId) return;
+      setReadinessError(error instanceof Error ? error.message : 'Unable to load broadcast readiness.');
+    } finally {
+      if (readinessRequestIdRef.current === requestId && !controller.signal.aborted) {
+        setReadinessLoading(false);
+      }
+    }
+  }, []);
 
   const upsertPeople = (rows: AssignmentUser[]) => {
     if (!rows?.length) return;
@@ -242,6 +316,17 @@ function MosqueProfileShell() {
     load();
     return () => { cancelled = true; };
   }, [mosqueId]);
+
+  useEffect(() => {
+    setBroadcastReadiness(null);
+    setReadinessError(null);
+    if (!mosqueId) return;
+    void refreshBroadcastReadiness(mosqueId);
+    return () => {
+      readinessRequestIdRef.current += 1;
+      readinessAbortRef.current?.abort();
+    };
+  }, [mosqueId, refreshBroadcastReadiness]);
 
   useEffect(() => {
     if (!mosque) return;
@@ -318,6 +403,89 @@ function MosqueProfileShell() {
     router.replace((`/admin/mosques/${mosqueId}${nextTab !== 'overview' ? `?tab=${nextTab}` : ''}`) as any);
   };
 
+  const performReadinessAction = async (action: BroadcastReadinessPostAction, targetMosqueId: string) => {
+    if (!targetMosqueId) return;
+    const requestId = readinessRequestIdRef.current + 1;
+    readinessRequestIdRef.current = requestId;
+    readinessAbortRef.current?.abort();
+    setReadinessLoading(false);
+    setReadinessMutation(action);
+    setConfirmLoading(true);
+    try {
+      const payload = await requestAdminApi<BroadcastReadinessPayload>('/api/admin/broadcast-readiness', {
+        method: 'POST',
+        body: { mosqueId: targetMosqueId, action },
+      });
+      if (currentMosqueIdRef.current !== targetMosqueId || readinessRequestIdRef.current !== requestId) return;
+      setBroadcastReadiness(payload);
+      setReadinessError(null);
+      const successMessages: Record<BroadcastReadinessPostAction, string> = {
+        provision_stream: 'Dormant broadcast stream provisioned.',
+        confirm_readiness: 'Broadcast readiness confirmed.',
+        record_test_passed: 'Physical broadcast test recorded.',
+        mark_live: 'Mosque marked live-ready.',
+        reset_onboarding: 'Broadcast onboarding reset.',
+      };
+      notifySuccess(successMessages[action]);
+    } catch (error) {
+      if (currentMosqueIdRef.current === targetMosqueId && readinessRequestIdRef.current === requestId) {
+        notifyError(
+          'Broadcast readiness update failed.',
+          error instanceof Error ? error.message : undefined
+        );
+      }
+    } finally {
+      setReadinessMutation(null);
+      setConfirmLoading(false);
+      closeConfirm();
+    }
+  };
+
+  const handleReadinessAction = (action: BroadcastReadinessPostAction) => {
+    const targetMosqueId = mosqueId;
+    const actionCopy: Record<BroadcastReadinessPostAction, {
+      title: string;
+      description: string;
+      consequence: string;
+      variant: 'danger' | 'warning' | 'neutral';
+    }> = {
+      provision_stream: {
+        title: 'Provision dormant stream record',
+        description: `Create the preconfigured stream record required for ${mosqueName}?`,
+        consequence: 'This does not start a broadcast and does not notify followers. Transactional rollout remains externally managed.',
+        variant: 'neutral',
+      },
+      confirm_readiness: {
+        title: 'Confirm ready for canary test',
+        description: `Confirm that ${mosqueName}'s required setup has been reviewed?`,
+        consequence: 'This records an admin readiness decision. It does not start a broadcast or change the external START/END rollout.',
+        variant: 'neutral',
+      },
+      record_test_passed: {
+        title: 'Record physical test passed',
+        description: `Confirm that ${mosqueName} passed the publisher-and-follower broadcast test?`,
+        consequence: 'Only continue after start, live audio, end, cleanup, and restart have all been verified on physical devices.',
+        variant: 'warning',
+      },
+      mark_live: {
+        title: 'Mark broadcast onboarding live',
+        description: `Approve ${mosqueName} for normal live broadcasting?`,
+        consequence: 'This records final launch approval. It does not edit the externally managed START or END rollout configuration.',
+        variant: 'warning',
+      },
+      reset_onboarding: {
+        title: 'Reset broadcast onboarding',
+        description: `Return ${mosqueName} to broadcast setup pending?`,
+        consequence: 'Readiness and test approvals will be reset. Stream configuration and external START/END rollout are not changed.',
+        variant: 'danger',
+      },
+    };
+    confirm({
+      ...actionCopy[action],
+      onConfirm: () => performReadinessAction(action, targetMosqueId),
+    });
+  };
+
   const doApprove = async () => {
     if (!mosqueId) return;
     setConfirmLoading(true);
@@ -329,6 +497,7 @@ function MosqueProfileShell() {
     setMosque((prev) => (prev ? { ...prev, ...patch } : prev));
     updateSelector(patch);
     notifySuccess('Mosque approved.');
+    void refreshBroadcastReadiness(mosqueId);
   };
 
   const doSuspend = async () => {
@@ -342,6 +511,7 @@ function MosqueProfileShell() {
     setMosque((prev) => (prev ? { ...prev, ...patch } : prev));
     updateSelector(patch);
     notifySuccess('Mosque deactivated.');
+    void refreshBroadcastReadiness(mosqueId);
   };
 
   const doReactivate = async () => {
@@ -355,6 +525,7 @@ function MosqueProfileShell() {
     setMosque((prev) => (prev ? { ...prev, ...patch } : prev));
     updateSelector(patch);
     notifySuccess('Mosque reactivated.');
+    void refreshBroadcastReadiness(mosqueId);
   };
 
   const handleStatusAction = () => {
@@ -400,6 +571,7 @@ function MosqueProfileShell() {
           setAdmins((prev) => prev.filter((a) => a.user_id !== userId));
           closeConfirm();
           notifySuccess('Local admin removed.');
+          void refreshBroadcastReadiness(mosqueId);
         } catch (error) {
           notifyError('Removing local-admin access failed.', error instanceof Error ? error.message : undefined);
           closeConfirm();
@@ -411,27 +583,100 @@ function MosqueProfileShell() {
   };
 
   const handleRemoveMuezzin = (userId: string) => {
+    const targetMosqueId = mosqueId;
     const user = peopleById[userId];
+    const isDefaultMuezzin = mosque?.default_muezzin_user_id === userId;
     confirm({
       title: 'Remove muezzin',
       description: `Remove muezzin access for ${user?.email ?? userId} from ${mosqueName}?`,
-      consequence: 'They will lose muezzin access and cannot start broadcasts for this mosque.',
+      consequence: isDefaultMuezzin
+        ? 'Their default-muezzin fallback will be cleared first. They will then lose muezzin access and cannot start broadcasts for this mosque.'
+        : 'They will lose muezzin access and cannot start broadcasts for this mosque.',
       variant: 'danger',
       onConfirm: async () => {
-        if (!mosqueId) return;
+        if (!targetMosqueId) return;
         setConfirmLoading(true);
         try {
-          await removeMuezzinMembership({ mosqueId, userId });
+          if (isDefaultMuezzin) {
+            await requestAdminApi('/api/admin/muezzin-default', {
+              method: 'POST',
+              body: { mosqueId: targetMosqueId, userId: null },
+            });
+            if (currentMosqueIdRef.current === targetMosqueId) {
+              setMosque((prev) => (prev ? { ...prev, default_muezzin_user_id: null } : prev));
+            }
+          }
+          await removeMuezzinMembership({ mosqueId: targetMosqueId, userId });
+          if (currentMosqueIdRef.current !== targetMosqueId) return;
           setMuezzins((prev) => prev.filter((m) => m.user_id !== userId));
           closeConfirm();
           notifySuccess('Muezzin removed.');
+          void refreshBroadcastReadiness(targetMosqueId);
         } catch (error) {
-          notifyError('Removing muezzin access failed.', error instanceof Error ? error.message : undefined);
-          closeConfirm();
+          if (currentMosqueIdRef.current === targetMosqueId) {
+            notifyError('Removing muezzin access failed.', error instanceof Error ? error.message : undefined);
+            closeConfirm();
+            void refreshBroadcastReadiness(targetMosqueId);
+          }
         } finally {
           setConfirmLoading(false);
         }
       },
+    });
+  };
+
+  const saveDefaultMuezzin = async (userId: string | null, targetMosqueId: string) => {
+    if (!targetMosqueId) return;
+    setConfirmLoading(true);
+    setSavingDefaultMuezzin(userId ?? 'clear');
+    try {
+      await requestAdminApi<{ defaultMuezzinUserId?: string | null }>('/api/admin/muezzin-default', {
+        method: 'POST',
+        body: { mosqueId: targetMosqueId, userId },
+      });
+      if (currentMosqueIdRef.current !== targetMosqueId) return;
+      setMosque((prev) => (prev ? { ...prev, default_muezzin_user_id: userId } : prev));
+      notifySuccess(
+        userId ? 'Default muezzin set.' : 'Default muezzin cleared.',
+        userId
+          ? `${peopleById[userId]?.email ?? 'This muezzin'} will cover unassigned prayer slots.`
+          : 'Unassigned prayer slots now require a rota assignment or mosque-admin override.'
+      );
+      void refreshBroadcastReadiness(targetMosqueId);
+    } catch (error) {
+      if (currentMosqueIdRef.current === targetMosqueId) {
+        notifyError(
+          userId ? 'Unable to set the default muezzin.' : 'Unable to clear the default muezzin.',
+          error instanceof Error ? error.message : undefined
+        );
+      }
+    } finally {
+      setSavingDefaultMuezzin(null);
+      setConfirmLoading(false);
+      closeConfirm();
+    }
+  };
+
+  const handleSetDefaultMuezzin = (userId: string) => {
+    const targetMosqueId = mosqueId;
+    const userLabel = peopleById[userId]?.email ?? userId;
+    confirm({
+      title: 'Set default muezzin',
+      description: `Set ${userLabel} as the default muezzin for ${mosqueName}?`,
+      consequence: 'They may lead an unassigned prayer slot. Existing rota assignments still take priority.',
+      variant: 'neutral',
+      onConfirm: () => saveDefaultMuezzin(userId, targetMosqueId),
+    });
+  };
+
+  const handleClearDefaultMuezzin = () => {
+    const targetMosqueId = mosqueId;
+    confirm({
+      title: 'Clear default muezzin',
+      description: `Remove the default muezzin fallback for ${mosqueName}?`,
+      consequence: 'Unassigned prayer slots will require a rota assignment or mosque-admin override.',
+      variant: 'warning',
+      onConfirm: () => saveDefaultMuezzin(null, targetMosqueId),
     });
   };
 
@@ -511,6 +756,7 @@ function MosqueProfileShell() {
       updateSelector(payload);
       setEditOpen(false);
       notifySuccess('Mosque details saved.');
+      void refreshBroadcastReadiness(mosqueId);
     } finally {
       setSavingEdit(false);
     }
@@ -563,6 +809,7 @@ function MosqueProfileShell() {
       setAddAdminOpen(false);
       setAddAdminEmail(''); setAddAdminDisplayName('');
       notifySuccess(payload.invited ? 'Local admin invited.' : (payload.alreadyAssigned ? 'Already assigned.' : 'Local admin added.'), `${preparedUser.email ?? preparedUser.id} now manages ${mosqueName}.`);
+      void refreshBroadcastReadiness(mosqueId);
     } catch {
       setAddAdminError('Unable to add or invite this local admin right now.');
     } finally {
@@ -602,12 +849,75 @@ function MosqueProfileShell() {
       setAddMuezzinOpen(false);
       setAddMuezzinEmail(''); setAddMuezzinDisplayName('');
       notifySuccess(payload.invited ? 'Muezzin invited.' : (payload.alreadyAssigned ? 'Already assigned.' : 'Muezzin added.'), `${preparedUser.email ?? preparedUser.id} now serves ${mosqueName}.`);
+      void refreshBroadcastReadiness(mosqueId);
     } catch {
       setAddMuezzinError('Unable to add or invite this muezzin right now.');
     } finally {
       setAddingMuezzin(false);
     }
   };
+
+  const getReadinessCheckAction = (check: BroadcastReadinessPayload['checks'][number]) => {
+    if (check.status === 'pass' || !check.action) return null;
+    if (check.key === 'stream_record' && broadcastReadiness?.actions.canProvision) {
+      return {
+        label: 'Provision stream',
+        onClick: () => handleReadinessAction('provision_stream'),
+      };
+    }
+    switch (check.action) {
+      case 'profile':
+        return {
+          label: 'Edit profile',
+          onClick: () => { setEditMode('profile'); setEditError(null); setEditOpen(true); },
+        };
+      case 'live_stream':
+        return {
+          label: 'Edit live stream',
+          onClick: () => { setEditMode('live-stream'); setEditError(null); setEditOpen(true); },
+        };
+      case 'admins':
+        return { label: 'Manage admins', onClick: () => setActiveTab('admins') };
+      case 'muezzins':
+        return { label: 'Manage muezzins', onClick: () => setActiveTab('muezzins') };
+      case 'prayer_times':
+        return {
+          label: 'Prayer times',
+          onClick: () => router.push(`/admin/mosques/${mosqueId}/prayer-times` as any),
+        };
+      case 'operator':
+        return {
+          label: 'Copy mosque ID',
+          onClick: () => handleCopyText(mosqueId, 'Mosque ID copied for the rollout operator.'),
+        };
+      default:
+        return null;
+    }
+  };
+
+  const readinessBusy = readinessLoading || readinessMutation !== null;
+  const readinessActionDisabled = readinessBusy || readinessError !== null;
+  const readinessNeedsAttention = !!broadcastReadiness && broadcastReadiness.stage !== 'setup_pending' && (
+    !broadcastReadiness.testReady ||
+    broadcastReadiness.rollout.state === 'partial' ||
+    ((broadcastReadiness.stage === 'test_passed' || broadcastReadiness.stage === 'live') &&
+      broadcastReadiness.rollout.state !== 'enabled') ||
+    (broadcastReadiness.stage === 'live' && !broadcastReadiness.launchReady)
+  );
+  const readinessStageStyle = readinessNeedsAttention
+    ? styles.readinessStageAttention
+    : broadcastReadiness?.stage === 'live'
+    ? styles.readinessStageSuccess
+    : broadcastReadiness?.stage === 'test_passed'
+    ? styles.readinessStageInfo
+    : broadcastReadiness?.stage === 'ready_for_test'
+    ? styles.readinessStageReady
+    : styles.readinessStagePending;
+  const rolloutLabel = broadcastReadiness?.rollout.state === 'enabled'
+    ? 'Transactional START/END enabled'
+    : broadcastReadiness?.rollout.state === 'partial'
+    ? 'Partial rollout'
+    : 'Not enabled';
 
   const commandActions = [
     { key: 'mosque-back', label: 'Back to mosque directory', description: 'Return to the main mosque list.', keywords: ['back', 'directory'], onSelect: () => router.push('/admin/mosques' as any) },
@@ -729,6 +1039,217 @@ function MosqueProfileShell() {
             </div>
           </AdminPanel>
 
+          <div style={styles.readinessPanelWrapper}>
+            <AdminPanel
+              title="Broadcast readiness"
+              subtitle="Complete and verify each gate before enabling production live adhans for this mosque."
+              action={(
+                <Button
+                  variant="ghost"
+                  onClick={() => refreshBroadcastReadiness(mosqueId)}
+                  disabled={readinessBusy}
+                >
+                  {readinessLoading ? 'Refreshing…' : 'Refresh'}
+                </Button>
+              )}
+            >
+              {readinessError ? (
+                <div role="alert" style={styles.readinessError}>
+                  <div>
+                    <div style={styles.readinessErrorTitle}>Readiness could not be refreshed</div>
+                    <div style={styles.readinessErrorText}>{readinessError}</div>
+                  </div>
+                  <Button variant="ghost" onClick={() => refreshBroadcastReadiness(mosqueId)} disabled={readinessBusy}>Try again</Button>
+                </div>
+              ) : null}
+
+              {!broadcastReadiness && readinessLoading ? (
+                <div role="status" aria-live="polite" style={styles.readinessLoading}>
+                  Checking mosque configuration, staff, timetable, stream state, and rollout…
+                </div>
+              ) : null}
+
+              {!broadcastReadiness && !readinessLoading && !readinessError ? (
+                <div style={styles.muted}>Readiness information is not available yet.</div>
+              ) : null}
+
+              {broadcastReadiness ? (
+                <>
+                  <div style={{ ...styles.readinessSummary, ...(isCompact ? styles.readinessSummaryCompact : null), ...readinessStageStyle }}>
+                    <div style={styles.readinessSummaryCopy}>
+                      <div style={styles.readinessEyebrow}>Onboarding stage</div>
+                      <div style={styles.readinessStageLabel}>
+                        {readinessNeedsAttention ? 'Attention required' : broadcastReadiness.stageLabel}
+                      </div>
+                      <div style={styles.readinessSummaryDetail}>
+                        {broadcastReadiness.requiredComplete} of {broadcastReadiness.requiredTotal} required checks complete
+                        {readinessNeedsAttention ? ` · Saved stage: ${broadcastReadiness.stageLabel}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ ...styles.readinessSummaryFacts, ...(isCompact ? styles.readinessSummaryFactsCompact : null) }}>
+                      <span style={styles.readinessFact}>Test {broadcastReadiness.testReady ? 'ready' : 'not ready'}</span>
+                      <span style={styles.readinessFact}>Launch {broadcastReadiness.launchReady ? 'ready' : 'not ready'}</span>
+                      <span style={styles.readinessFact}>
+                        {broadcastReadiness.stream.count === 1
+                          ? (broadcastReadiness.stream.isLive ? 'Stream currently live' : 'Dormant stream ready')
+                          : `${broadcastReadiness.stream.count} stream records`}
+                      </span>
+                    </div>
+                    <div
+                      role="progressbar"
+                      aria-label="Required broadcast readiness checks"
+                      aria-valuemin={0}
+                      aria-valuemax={broadcastReadiness.requiredTotal}
+                      aria-valuenow={broadcastReadiness.requiredComplete}
+                      style={styles.readinessProgressTrack}
+                    >
+                      <div
+                        style={{
+                          ...styles.readinessProgressValue,
+                          width: `${broadcastReadiness.requiredTotal
+                            ? Math.min(100, Math.round((broadcastReadiness.requiredComplete / broadcastReadiness.requiredTotal) * 100))
+                            : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={styles.readinessCheckList} aria-label="Broadcast readiness checklist">
+                    {broadcastReadiness.checks.map((check) => {
+                      const action = getReadinessCheckAction(check);
+                      const checkTone = check.status === 'pass'
+                        ? styles.readinessCheckPass
+                        : check.status === 'warning'
+                        ? styles.readinessCheckWarning
+                        : styles.readinessCheckBlocker;
+                      return (
+                        <div key={check.key} style={{ ...styles.readinessCheck, ...checkTone }}>
+                          <span
+                            style={{
+                              ...styles.readinessCheckIcon,
+                              ...(check.status === 'pass'
+                                ? styles.readinessCheckIconPass
+                                : check.status === 'warning'
+                                ? styles.readinessCheckIconWarning
+                                : styles.readinessCheckIconBlocker),
+                            }}
+                            aria-hidden="true"
+                          >
+                            {check.status === 'pass' ? '✓' : check.status === 'warning' ? '!' : '×'}
+                          </span>
+                          <div style={styles.readinessCheckCopy}>
+                            <div style={styles.readinessCheckTitleRow}>
+                              <span style={styles.readinessCheckTitle}>{check.label}</span>
+                              <span style={styles.readinessRequirement}>
+                                {check.requiredFor === 'advisory' ? 'Advisory' : `Required for ${check.requiredFor}`}
+                              </span>
+                            </div>
+                            <div style={styles.readinessCheckDetail}>{check.detail}</div>
+                          </div>
+                          {action ? (
+                            <Button variant="ghost" onClick={action.onClick} disabled={readinessActionDisabled}>
+                              {action.label}
+                            </Button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {(broadcastReadiness.actions.canConfirmReadiness ||
+                    broadcastReadiness.actions.canRecordTestPassed ||
+                    broadcastReadiness.actions.canMarkLive ||
+                    broadcastReadiness.actions.canReset) ? (
+                    <div style={styles.readinessActions} aria-label="Broadcast onboarding actions">
+                      {broadcastReadiness.actions.canConfirmReadiness ? (
+                        <Button onClick={() => handleReadinessAction('confirm_readiness')} disabled={readinessActionDisabled}>
+                          {readinessMutation === 'confirm_readiness' ? 'Confirming…' : 'Confirm ready for test'}
+                        </Button>
+                      ) : null}
+                      {broadcastReadiness.actions.canRecordTestPassed ? (
+                        <Button variant="secondary" onClick={() => handleReadinessAction('record_test_passed')} disabled={readinessActionDisabled}>
+                          {readinessMutation === 'record_test_passed' ? 'Recording…' : 'Record test passed'}
+                        </Button>
+                      ) : null}
+                      {broadcastReadiness.actions.canMarkLive ? (
+                        <Button onClick={() => handleReadinessAction('mark_live')} disabled={readinessActionDisabled}>
+                          {readinessMutation === 'mark_live' ? 'Updating…' : 'Mark live'}
+                        </Button>
+                      ) : null}
+                      {broadcastReadiness.actions.canReset ? (
+                        <Button variant="danger" onClick={() => handleReadinessAction('reset_onboarding')} disabled={readinessActionDisabled}>
+                          {readinessMutation === 'reset_onboarding' ? 'Resetting…' : 'Reset onboarding'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div
+                    style={{
+                      ...styles.readinessRollout,
+                      ...(broadcastReadiness.rollout.state === 'partial'
+                        ? styles.readinessRolloutWarning
+                        : broadcastReadiness.rollout.state === 'enabled'
+                        ? styles.readinessRolloutSuccess
+                        : null),
+                    }}
+                  >
+                    <div style={styles.readinessRolloutHeader}>
+                      <div>
+                        <div style={styles.readinessEyebrow}>Transactional rollout</div>
+                        <div style={styles.readinessRolloutTitle}>{rolloutLabel}</div>
+                      </div>
+                      <div style={styles.readinessRolloutGates}>
+                        <span style={broadcastReadiness.rollout.startTransactional ? styles.rolloutGateOn : styles.rolloutGateOff}>
+                          START {broadcastReadiness.rollout.startTransactional ? 'transactional' : 'legacy'}
+                        </span>
+                        <span style={broadcastReadiness.rollout.endTransactional ? styles.rolloutGateOn : styles.rolloutGateOff}>
+                          END {broadcastReadiness.rollout.endTransactional ? 'transactional' : 'legacy'}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={styles.readinessRolloutText}>
+                      {broadcastReadiness.rollout.state === 'partial'
+                        ? 'Do not run the physical canary until both START and END are transactional for this mosque.'
+                        : broadcastReadiness.rollout.state === 'enabled'
+                        ? 'Both transactional paths are enabled for this deployment. Complete the physical publisher-and-follower canary before launch approval.'
+                        : 'A deployment operator must add this mosque to both transactional allowlists and deploy before the physical canary.'}
+                      {broadcastReadiness.rollout.managedExternally
+                        ? ' The portal deliberately does not edit deployment environment variables.'
+                        : ''}
+                    </div>
+                  </div>
+
+                  <div style={styles.readinessAudit}>
+                    <div style={styles.readinessAuditTitle}>Recent admin activity</div>
+                    {broadcastReadiness.auditEvents.length ? (
+                      <div style={styles.readinessAuditList}>
+                        {broadcastReadiness.auditEvents.slice(0, 5).map((event) => (
+                          <div key={event.id} style={styles.readinessAuditEvent}>
+                            <div style={styles.readinessAuditEventHeader}>
+                              <span style={styles.readinessAuditEventName}>{event.eventType.replace(/_/g, ' ')}</span>
+                              <time dateTime={event.createdAt} style={styles.readinessAuditTime}>
+                                {new Date(event.createdAt).toLocaleString()}
+                              </time>
+                            </div>
+                            {event.fromStage || event.toStage ? (
+                              <div style={styles.readinessAuditTransition}>
+                                {(event.fromStage ?? '—').replace(/_/g, ' ')} → {(event.toStage ?? '—').replace(/_/g, ' ')}
+                              </div>
+                            ) : null}
+                            {event.notes ? <div style={styles.readinessAuditNotes}>{event.notes}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={styles.muted}>No broadcast-onboarding changes have been recorded yet.</div>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </AdminPanel>
+          </div>
+
           <AdminPanel
             title="Live stream config"
             subtitle="Playback URL and provider credentials for follower listening."
@@ -827,6 +1348,15 @@ function MosqueProfileShell() {
           action={
             <>
               <Button variant="ghost" onClick={() => router.push('/admin/users' as any)}>Global users</Button>
+              {mosque?.default_muezzin_user_id ? (
+                <Button
+                  variant="ghost"
+                  onClick={handleClearDefaultMuezzin}
+                  disabled={savingDefaultMuezzin !== null || loading}
+                >
+                  Clear default
+                </Button>
+              ) : null}
               <Button variant="secondary" onClick={() => { setAddMuezzinError(null); setAddMuezzinEmail(''); setAddMuezzinDisplayName(''); setAddMuezzinOpen(true); }}>Add or invite</Button>
             </>
           }
@@ -834,10 +1364,23 @@ function MosqueProfileShell() {
           <div style={styles.chipRow}>
             {muezzins.map((m) => {
               const user = peopleById[m.user_id];
+              const isDefault = mosque?.default_muezzin_user_id === m.user_id;
               return (
                 <span key={m.user_id} style={styles.chipGreen}>
                   {user?.email ?? m.user_id}
-                  <span style={styles.chipStatus}>{m.is_active ? 'active' : 'inactive'}</span>
+                  <span style={styles.chipStatus}>{isDefault ? 'Default' : (m.is_active !== false ? 'active' : 'inactive')}</span>
+                  {!isDefault ? (
+                    <button
+                      type="button"
+                      className="adm-chip-action"
+                      style={styles.chipAction}
+                      onClick={() => handleSetDefaultMuezzin(m.user_id)}
+                      disabled={savingDefaultMuezzin !== null || loading}
+                      aria-label={`Set ${user?.email ?? m.user_id} as default muezzin`}
+                    >
+                      Set default
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="adm-chip-remove"
@@ -1156,6 +1699,60 @@ const styles: Record<string, React.CSSProperties> = {
   tabActive: { padding: '10px 16px', border: '1px solid #0f172a', borderRadius: 999, backgroundColor: '#0f172a', color: '#fff', fontWeight: 800, cursor: 'pointer', fontSize: 14 },
   overviewGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 },
   overviewGridCompact: { gridTemplateColumns: '1fr' },
+  readinessPanelWrapper: { gridColumn: '1 / -1', minWidth: 0 },
+  readinessLoading: { padding: '18px', borderRadius: 14, backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569', fontSize: 14, fontWeight: 700 },
+  readinessError: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderRadius: 14, backgroundColor: '#fff7ed', border: '1px solid #fdba74' },
+  readinessErrorTitle: { color: '#9a3412', fontSize: 14, fontWeight: 800 },
+  readinessErrorText: { color: '#b45309', fontSize: 13, lineHeight: 1.45, marginTop: 2 },
+  readinessSummary: { position: 'relative', overflow: 'hidden', display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) minmax(220px, auto)', gap: 18, padding: '18px 20px 22px', borderRadius: 16, border: '1px solid #fde68a', backgroundColor: '#fffbeb', color: '#78350f' },
+  readinessSummaryCompact: { gridTemplateColumns: '1fr' },
+  readinessStagePending: { borderColor: '#fde68a', backgroundColor: '#fffbeb', color: '#78350f' },
+  readinessStageAttention: { borderColor: '#fecaca', backgroundColor: '#fff7f7', color: '#991b1b' },
+  readinessStageReady: { borderColor: '#bae6fd', backgroundColor: '#f0f9ff', color: '#075985' },
+  readinessStageInfo: { borderColor: '#c7d2fe', backgroundColor: '#eef2ff', color: '#3730a3' },
+  readinessStageSuccess: { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4', color: '#166534' },
+  readinessSummaryCopy: { minWidth: 0 },
+  readinessEyebrow: { fontSize: 11, fontWeight: 900, letterSpacing: '0.09em', textTransform: 'uppercase', opacity: 0.72 },
+  readinessStageLabel: { fontSize: 24, lineHeight: 1.15, fontWeight: 900, letterSpacing: '-0.025em', marginTop: 5 },
+  readinessSummaryDetail: { fontSize: 13, lineHeight: 1.5, fontWeight: 700, marginTop: 5, opacity: 0.78 },
+  readinessSummaryFacts: { display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', justifyContent: 'flex-end', gap: 7 },
+  readinessSummaryFactsCompact: { justifyContent: 'flex-start' },
+  readinessFact: { padding: '6px 9px', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.72)', border: '1px solid rgba(100,116,139,0.2)', fontSize: 12, lineHeight: 1.2, fontWeight: 800 },
+  readinessProgressTrack: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 5, backgroundColor: 'rgba(148,163,184,0.2)', overflow: 'hidden' },
+  readinessProgressValue: { height: '100%', backgroundColor: 'currentColor', transition: 'width 180ms ease' },
+  readinessCheckList: { display: 'flex', flexDirection: 'column', gap: 9 },
+  readinessCheck: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderRadius: 14, border: '1px solid #e2e8f0', backgroundColor: '#f8fafc' },
+  readinessCheckPass: { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4', color: '#166534' },
+  readinessCheckWarning: { borderColor: '#fde68a', backgroundColor: '#fffbeb', color: '#92400e' },
+  readinessCheckBlocker: { borderColor: '#fecaca', backgroundColor: '#fff7f7', color: '#991b1b' },
+  readinessCheckIcon: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: '50%', color: '#fff', fontSize: 14, lineHeight: 1, fontWeight: 900, flexShrink: 0 },
+  readinessCheckIconPass: { backgroundColor: '#16a34a' },
+  readinessCheckIconWarning: { backgroundColor: '#d97706' },
+  readinessCheckIconBlocker: { backgroundColor: '#dc2626' },
+  readinessCheckCopy: { flex: '1 1 260px', minWidth: 0 },
+  readinessCheckTitleRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  readinessCheckTitle: { color: '#0f172a', fontSize: 14, fontWeight: 800 },
+  readinessRequirement: { padding: '2px 6px', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.78)', color: '#64748b', border: '1px solid rgba(148,163,184,0.24)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  readinessCheckDetail: { color: '#475569', fontSize: 13, lineHeight: 1.5, marginTop: 3 },
+  readinessActions: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', paddingTop: 2 },
+  readinessRollout: { padding: '15px 16px', borderRadius: 14, border: '1px solid #dbe4ec', backgroundColor: '#f8fafc' },
+  readinessRolloutWarning: { borderColor: '#fbbf24', backgroundColor: '#fffbeb' },
+  readinessRolloutSuccess: { borderColor: '#86efac', backgroundColor: '#f0fdf4' },
+  readinessRolloutHeader: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
+  readinessRolloutTitle: { color: '#0f172a', fontSize: 16, fontWeight: 900, marginTop: 3 },
+  readinessRolloutGates: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+  rolloutGateOn: { padding: '5px 8px', borderRadius: 999, backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', fontSize: 11, fontWeight: 900 },
+  rolloutGateOff: { padding: '5px 8px', borderRadius: 999, backgroundColor: '#e2e8f0', color: '#475569', border: '1px solid #cbd5e1', fontSize: 11, fontWeight: 900 },
+  readinessRolloutText: { color: '#475569', fontSize: 13, lineHeight: 1.55, marginTop: 9 },
+  readinessAudit: { borderTop: '1px solid #e2e8f0', paddingTop: 15 },
+  readinessAuditTitle: { color: '#0f172a', fontSize: 13, fontWeight: 900, marginBottom: 9 },
+  readinessAuditList: { display: 'flex', flexDirection: 'column', gap: 8 },
+  readinessAuditEvent: { padding: '10px 12px', borderRadius: 12, backgroundColor: '#f8fafc', border: '1px solid #eef2f7' },
+  readinessAuditEventHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+  readinessAuditEventName: { color: '#0f172a', fontSize: 12, fontWeight: 900, textTransform: 'capitalize' },
+  readinessAuditTime: { color: '#64748b', fontSize: 11, fontWeight: 700 },
+  readinessAuditTransition: { color: '#475569', fontSize: 12, fontWeight: 700, textTransform: 'capitalize', marginTop: 3 },
+  readinessAuditNotes: { color: '#64748b', fontSize: 12, lineHeight: 1.45, marginTop: 3 },
   metaList: { display: 'flex', flexDirection: 'column', gap: 2 },
   metaRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid #eef2f7', color: '#0f172a' },
   metaRowPhone: { alignItems: 'flex-start', flexDirection: 'column' },
@@ -1167,6 +1764,7 @@ const styles: Record<string, React.CSSProperties> = {
   chip: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 999, backgroundColor: '#e2e8f0', color: '#0f172a', fontWeight: 700, fontSize: 13 },
   chipGreen: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 999, backgroundColor: '#dcfce7', color: '#166534', fontWeight: 700, fontSize: 13 },
   chipStatus: { fontSize: 12, fontWeight: 700, color: '#475569', backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: 999 },
+  chipAction: { border: 'none', borderRadius: 999, backgroundColor: '#fff', color: '#0f172a', cursor: 'pointer', fontWeight: 800, fontSize: 12, padding: '3px 8px', lineHeight: 1.2 },
   chipRemove: { border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 800, fontSize: 12, padding: '1px 3px', lineHeight: 1, color: 'inherit' },
   muted: { color: '#94a3b8', fontSize: 13, fontWeight: 600 },
   toggleRow: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 },

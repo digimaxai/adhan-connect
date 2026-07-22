@@ -409,6 +409,49 @@ Residual risk / follow-up:
 - the Worker cleanup budget handles at most six distinct legacy room names per invocation; audit duplicate stream/room state before any wider rollout
 - if rollback is needed, promote `jcwu288kmd`, then set `LIVE_BROADCAST_END_MODE=legacy` for future deployments; the additive RPC can remain installed
 
+### 2026-07-21: Main-Admin Broadcast Readiness Workflow
+
+Problem:
+
+- the main-admin portal could enable a provider but could not prove that a mosque was operationally ready to broadcast
+- transactional start deliberately requires a preconfigured stream row, while portal saves only updated the mosque configuration
+- production's legacy `staff_rota` table was missing `adhan_time`, `iqama_time`, and `assigned_by`, even though current rota code and transactional start use those canonical columns
+- START and END canary selection is a deployment control and must not be confused with ordinary mosque configuration
+
+Files changed:
+
+- `supabase/migrations/20260721230000_broadcast_onboarding_readiness.sql`
+- `app/api/admin/broadcast-readiness+api.ts`
+- `lib/server/broadcastReadiness.ts`
+- `lib/types/broadcastReadiness.ts`
+- `app/api/admin/mosque-workspace+api.ts`
+- `app/admin/mosques/[id].tsx`
+- `docs/admin/live-broadcast-onboarding.md`
+
+Fix:
+
+- added the missing canonical rota columns additively without reinterpreting or rewriting the legacy `start_at` / `end_at` data
+- enforced one stream state row per mosque after the production preflight confirmed there were no duplicates
+- added service-only broadcast-onboarding state and append-only audit events
+- added a main-admin-only readiness API that checks provider configuration, server credentials, local admin and muezzin coverage, schedule source, stream cardinality, stale live state, mosque launch status, and the effective START/END rollout for only the selected mosque
+- added an idempotent provisioning RPC that shares the mosque lock used by transactional start/end, preserves one clean dormant stream, refuses live or duplicate state, and creates no adhan, room, notification, or public live state
+- added explicit audited milestones for setup pending, ready for test, physical test passed, and live
+- added the web readiness panel plus main-admin default-muezzin controls
+- kept EAS allowlists external and operator-controlled; the portal reports effective booleans but never returns or edits the lists
+
+Verification:
+
+- `git diff --check`
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npx expo export --platform web --clear`
+
+Deployment status / follow-up:
+
+- code and migration are committed only; production migration and Hosting deployment require a separate reviewed rollout
+- apply the database migration before deploying the portal/API code
+- retain Harrow-only START and END allowlists until another mosque passes the documented readiness and physical canary process
+
 ### 2026-05-12: LiveKit Listener E2E Hardening
 
 Problem:
