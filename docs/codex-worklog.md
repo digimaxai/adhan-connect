@@ -852,3 +852,61 @@ Residual risk / follow-up:
 
 - what still needs checking
 ```
+
+### 2026-07-22: LiveKit onboarding clarity and readiness rollout
+
+Problem:
+
+- the main-admin mosque workspace still presented legacy playback, ingest,
+  stream-key, listener-secret, and provider-callback fields for LiveKit
+  in-app microphone broadcasts
+- broadcast readiness failed because the production database had not yet
+  received `public.mosque_broadcast_onboarding`
+- readiness needed to use the same effective rota assignee and mosque-local
+  date as transactional START/END
+
+Files changed:
+
+- `app/admin/mosques/[id].tsx`
+- `app/admin/mosques/index.tsx`
+- `app/api/admin/mosque-workspace+api.ts`
+- `lib/server/broadcastReadiness.ts`
+- `lib/timeZones.ts`
+- `supabase/migrations/20260721230000_broadcast_onboarding_readiness.sql`
+- `docs/admin/live-broadcast-onboarding.md`
+
+Fix:
+
+- made the admin live-stream card provider-aware; LiveKit now explains that
+  room access and listener playback are automatic and hides legacy external
+  encoder/provider controls
+- added editable, validated mosque timezones to the existing profile workflow
+- aligned readiness with `muezzin_user_id ?? staff_user_id` and the validated
+  mosque-local calendar date
+- applied migration `20260721230000_broadcast_onboarding_readiness` to the
+  linked production project and recorded the matching migration history entry
+- used the authenticated Supabase Management API query path because the legacy
+  `db push` subprocess did not inherit the CLI's macOS Keychain session
+
+Verification:
+
+- `git diff --check`
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npx expo export --platform web --clear`
+- local and remote migration histories match through `20260721230000`
+- both readiness tables exist with RLS enabled and are exposed through
+  PostgREST without a schema-cache error
+- both readiness RPCs are security-invoker and executable only by
+  `service_role`
+- the one-stream-per-mosque unique index is valid and no duplicate mosque
+  stream rows exist
+- rollout was non-activating: Harrow retained one dormant stream row, with no
+  live stream and no live adhan
+
+Residual risk / follow-up:
+
+- the provider-aware portal changes remain a code deployment concern separate
+  from the completed database migration
+- each new mosque still requires a controlled two-device private canary before
+  approval and production launch
