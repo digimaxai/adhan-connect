@@ -17,12 +17,5 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Diagnostics (temporary)
-        run: |
-          node --version
-          npm --version
-          npx tsc --version
-          cat node_modules/typescript/package.json | grep '"version"'
-          npx tsc --showConfig
       - run: npx tsc --noEmit
       - run: npm run lint
