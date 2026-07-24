@@ -147,7 +147,7 @@ export default function PrayerTimesAdminScreen() {
     const base = form[pickerState.prayer][pickerState.field];
     const d = new Date(selectedDate);
     if (base) {
-      const [h, m] = base.split(':').map((n) => parseInt(n, 10));
+      const [h, m] = base.split(':').map((n: string) => parseInt(n, 10));
       d.setHours(h, m, 0, 0);
     }
     return d;
@@ -261,7 +261,7 @@ function toHm(val?: string | null) {
 
 function combine(day: Date, hm: string | null) {
   if (!hm) return null;
-  const [h, m] = hm.split(':').map((n) => parseInt(n, 10));
+  const [h, m] = hm.split(':').map((n: string) => parseInt(n, 10));
   const d = new Date(day);
   d.setHours(h, m, 0, 0);
   return d.toISOString();

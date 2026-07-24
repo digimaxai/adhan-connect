@@ -2289,7 +2289,7 @@ function toHm(val?: string | null) {
 
 function combine(day: Date, hm: string | null) {
   if (!hm) return null;
-  const [h, m] = hm.split(':').map((n) => parseInt(n, 10));
+  const [h, m] = hm.split(':').map((n: string) => parseInt(n, 10));
   const d = new Date(day);
   d.setHours(h, m, 0, 0);
   return d.toISOString();
@@ -2373,7 +2373,7 @@ function findInvalidPrayerTime(form: PrayerTimeForm) {
 function buildPickerValue(hm: string | null, baseDate: Date) {
   const d = new Date(baseDate);
   if (hm) {
-    const [h, m] = hm.split(':').map((n) => parseInt(n, 10));
+    const [h, m] = hm.split(':').map((n: string) => parseInt(n, 10));
     d.setHours(h, m, 0, 0);
   }
   return d;

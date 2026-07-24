@@ -165,7 +165,7 @@ function isBlockedLocalHostname(hostname: string) {
 function parseHostRules(rawValue = process.env.LIVE_STREAM_UPSTREAM_ALLOWED_HOSTS) {
   const entries = (rawValue ?? '')
     .split(',')
-    .map((entry) => entry.trim())
+    .map((entry: string) => entry.trim())
     .filter(Boolean);
 
   if (!entries.length) {
@@ -176,7 +176,7 @@ function parseHostRules(rawValue = process.env.LIVE_STREAM_UPSTREAM_ALLOWED_HOST
     );
   }
 
-  return entries.map<HostRule>((entry) => {
+  return entries.map<HostRule>((entry: string) => {
     const isSuffix = entry.startsWith('*.') || entry.startsWith('.');
     const unprefixed = entry.startsWith('*.')
       ? entry.slice(2)
