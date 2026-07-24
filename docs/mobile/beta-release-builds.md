@@ -193,3 +193,58 @@ npx eas-cli@latest build --platform android --profile development:android-emulat
 ```
 
 Do not use emulator or LAN API URLs for beta testers.
+
+## Environments And Branch Promotion (added 2026-07-24)
+
+There are now two persistent environments, each with its own Supabase project and EAS environment:
+
+- **`staging`** git branch -> EAS `preview`/`development` environments -> the
+  `adhan-connect-staging` Supabase project (same org/region as production,
+  schema-cloned from it). This is where beta/TestFlight-ad-hoc builds get cut
+  from, and where UAT happens.
+- **`main`** git branch -> EAS `production` environment -> the real production
+  Supabase project. `main` is protected: changes land via a pull request with
+  a required `checks` CI status (`npx tsc --noEmit` + `npm run lint`), no
+  force-push, no branch deletion. The repo owner can still bypass this in a
+  genuine emergency (`enforce_admins` is deliberately `false`) -- GitHub will
+  show a "Bypassed rule violations" warning when that happens, which is the
+  intended signal that an emergency path was used, not a bug.
+- `staging` itself is intentionally **not** protected -- push directly to it.
+  CI still runs on every push there (informational), but gating only earns
+  its keep on `main`, where it's tied to the live database and App Store
+  identity.
+
+Promotion flow for a change (including a new Supabase migration):
+
+1. Branch off `staging` (e.g. `feature/xyz`), commit, push, open a PR into
+   `staging`. Let CI run.
+2. Merge into `staging`. If the change includes a new file under
+   `supabase/migrations/`, apply it to staging now:
+   ```bash
+   npx supabase@latest db push --project-ref <staging-project-ref>
+   ```
+3. Cut an EAS `preview`-profile build from `staging` for real device/UAT
+   testing against the staging Supabase project's synthetic data.
+4. Only once UAT passes and the product owner explicitly signs off: open a
+   PR from `staging` into `main`. Once merged, apply the same migration to
+   production -- always `--dry-run` first:
+   ```bash
+   npx supabase@latest db push --project-ref yecbsezhwvpdkuzmmziv --dry-run
+   npx supabase@latest db push --project-ref yecbsezhwvpdkuzmmziv
+   ```
+   Then cut the EAS `production`-profile build/submit.
+
+The local `supabase` CLI's persistent link (`supabase/config.toml`, gitignored)
+defaults to the staging project specifically, so a command run without an
+explicit `--project-ref` hits the safe target. Touching production is always
+a conscious extra flag, and any production push should be `--dry-run` first.
+
+Before touching EAS environment variables: `SUPABASE_URL`,
+`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, and
+`SUPABASE_SERVICE_ROLE` were originally each a *single* variable record
+shared across all three EAS environments (not obvious from the CLI). They
+were split into independent per-environment records on 2026-07-24. Run
+`eas env:list --environment <env> --format long` and check the
+`Environments:` field before assuming a variable is already
+environment-specific -- if it lists more than one environment, updating it
+for "one" environment silently updates all of them.
