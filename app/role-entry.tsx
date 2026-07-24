@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { AppButton } from '../components/ui/app-button';
 import { AppCard } from '../components/ui/app-card';
 import { AppText } from '../components/ui/app-text';
@@ -8,7 +8,11 @@ import { ScreenContainer } from '../components/ui/screen-container';
 import { useAuth } from '../lib/auth';
 import { getPreferredStaffEntry, setPreferredStaffEntry, type StaffEntryMode } from '../lib/roleEntryPreferences';
 import { clearRoleEntrySelectionRequirement } from '../lib/roleEntrySession';
-import { resolveRoleEntryTarget, resolveRouteTargetHref } from '../lib/roleRouting';
+import {
+  getAvailableWorkspaceModes,
+  resolveRoleEntryTarget,
+  resolveRouteTargetHref,
+} from '../lib/roleRouting';
 import { useRoleFlags } from '../lib/roles';
 import { tokens } from '../theme/tokens';
 
@@ -20,22 +24,34 @@ type WorkspaceCard = {
   defaultVariant?: 'primary' | 'secondary';
 };
 
-const WORKSPACE_CARDS: WorkspaceCard[] = [
-  {
-    mode: 'admin',
-    roleLabel: 'Local Admin',
-    title: 'Enter Admin',
-    subtitle: 'Open the mosque console to manage prayer times, muezzins, rota, and settings.',
+const WORKSPACE_CARD_DETAILS: Record<
+  StaffEntryMode,
+  Omit<WorkspaceCard, 'mode' | 'roleLabel'>
+> = {
+  listener: {
+    title: 'Enter Listener',
+    subtitle:
+      'Follow mosques, view prayer information, plan Jumu’ah attendance, and use listener preferences.',
     defaultVariant: 'primary',
   },
-  {
-    mode: 'muezzin',
-    roleLabel: 'Muezzin',
+  admin: {
+    title: 'Enter Admin',
+    subtitle:
+      'Open the mosque console to manage prayer times, muezzins, rota, and settings.',
+    defaultVariant: 'secondary',
+  },
+  muezzin: {
     title: 'Enter Muezzin',
     subtitle: 'Go straight to your rota, cover requests, and live adhan tools.',
     defaultVariant: 'secondary',
   },
-];
+};
+
+function workspaceLabel(mode: StaffEntryMode) {
+  if (mode === 'listener') return 'Listener workspace';
+  if (mode === 'admin') return 'Admin workspace';
+  return 'Muezzin workspace';
+}
 
 export default function RoleEntryScreen() {
   const router = useRouter();
@@ -44,14 +60,16 @@ export default function RoleEntryScreen() {
   const [busy, setBusy] = useState<StaffEntryMode | null>(null);
   const [preferredEntry, setPreferredEntry] = useState<StaffEntryMode | null>(null);
   const [preferredLoaded, setPreferredLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const userId = session?.user?.id ?? null;
+  const availableModes = useMemo(() => getAvailableWorkspaceModes(roles), [roles]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function sync() {
       if (!session || roles.loading) return;
-      if (roles.hasDualStaffAccess) return;
+      if (roles.hasMultipleWorkspaceAccess) return;
       const storedPreference = await getPreferredStaffEntry(userId);
       if (cancelled) return;
       const target = resolveRoleEntryTarget(roles, storedPreference);
@@ -85,24 +103,46 @@ export default function RoleEntryScreen() {
   }, [userId]);
 
   const orderedCards = useMemo(() => {
-    return [...WORKSPACE_CARDS].sort((left, right) => {
+    const cards = availableModes.map<WorkspaceCard>((mode) => ({
+      mode,
+      roleLabel:
+        mode === 'admin'
+          ? roles.isMainAdmin
+            ? 'Main Admin'
+            : 'Local Admin'
+          : mode === 'muezzin'
+            ? 'Muezzin'
+            : 'Listener',
+      ...WORKSPACE_CARD_DETAILS[mode],
+    }));
+
+    return cards.sort((left, right) => {
       if (!preferredEntry) return 0;
       if (left.mode === preferredEntry) return -1;
       if (right.mode === preferredEntry) return 1;
       return 0;
     });
-  }, [preferredEntry]);
+  }, [availableModes, preferredEntry, roles.isMainAdmin]);
 
   const handleSelect = async (mode: StaffEntryMode) => {
+    if (!userId || !availableModes.includes(mode) || busy) return;
     setBusy(mode);
+    setError(null);
     try {
       await Promise.all([
         setPreferredStaffEntry(userId, mode),
         clearRoleEntrySelectionRequirement(userId),
       ]);
       setPreferredEntry(mode);
-      const target = mode === 'admin' ? '/(admin)' : '/(muezzin)';
+      const target = resolveRoleEntryTarget(roles, mode);
+      if (target === '/role-entry') {
+        throw new Error('The selected workspace is no longer available.');
+      }
       router.replace(resolveRouteTargetHref(target) as any);
+    } catch {
+      setError(
+        'We could not save that workspace choice. Check your connection and try again.'
+      );
     } finally {
       setBusy(null);
     }
@@ -123,27 +163,47 @@ export default function RoleEntryScreen() {
           Choose Workspace
         </AppText>
         <AppText variant="hero" style={styles.title}>
-          Enter as staff
+          Choose your workspace
         </AppText>
         <AppText variant="body" color={tokens.color.text.secondary} style={styles.subtitle}>
-          This account can operate as both Local Admin and Muezzin. Choose the workspace you need for this session.
+          Listener access stays available to every account. Staff workspaces
+          appear from your verified mosque assignments.
         </AppText>
-        {preferredEntry ? (
+        {preferredEntry && availableModes.includes(preferredEntry) ? (
           <AppText variant="caption" color={tokens.color.text.secondary} style={styles.recommendationCopy}>
-            {`Recommended: ${preferredEntry === 'admin' ? 'Admin workspace' : 'Muezzin workspace'} based on your last session.`}
+            {`Recommended: ${workspaceLabel(preferredEntry)} based on your last session.`}
+          </AppText>
+        ) : null}
+        {error ? (
+          <AppText variant="caption" color={tokens.color.status.danger}>
+            {error}
           </AppText>
         ) : null}
       </View>
 
       {orderedCards.map((card) => {
         const recommended = preferredEntry === card.mode;
+        const isListener = card.mode === 'listener';
         const isMuezzin = card.mode === 'muezzin';
         return (
-          <Pressable key={card.mode} onPress={() => handleSelect(card.mode)} style={({ pressed }) => [styles.cardPressable, pressed && styles.pressed]}>
+          <View key={card.mode} style={styles.cardWrapper}>
             <AppCard style={[styles.card, recommended && styles.cardRecommended]}>
               <View style={styles.cardHeader}>
-                <View style={[styles.badge, isMuezzin && styles.badgeAlt]}>
-                  <AppText variant="caption" style={[styles.badgeText, isMuezzin && styles.badgeAltText]}>
+                <View
+                  style={[
+                    styles.badge,
+                    isListener && styles.badgeListener,
+                    isMuezzin && styles.badgeMuezzin,
+                  ]}
+                >
+                  <AppText
+                    variant="caption"
+                    style={[
+                      styles.badgeText,
+                      isListener && styles.badgeListenerText,
+                      isMuezzin && styles.badgeMuezzinText,
+                    ]}
+                  >
                     {card.roleLabel}
                   </AppText>
                 </View>
@@ -166,7 +226,7 @@ export default function RoleEntryScreen() {
                 variant={recommended ? 'primary' : card.defaultVariant ?? 'primary'}
               />
             </AppCard>
-          </Pressable>
+          </View>
         );
       })}
     </ScreenContainer>
@@ -201,11 +261,8 @@ const styles = StyleSheet.create({
   recommendationCopy: {
     marginTop: 2,
   },
-  cardPressable: {
+  cardWrapper: {
     borderRadius: 24,
-  },
-  pressed: {
-    opacity: 0.96,
   },
   card: {
     gap: 12,
@@ -233,14 +290,20 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.pill,
     backgroundColor: '#E0F2FE',
   },
-  badgeAlt: {
+  badgeListener: {
+    backgroundColor: '#F1F5F9',
+  },
+  badgeMuezzin: {
     backgroundColor: '#DCFCE7',
   },
   badgeText: {
     color: '#0369A1',
     fontWeight: tokens.typography.weight.bold,
   },
-  badgeAltText: {
+  badgeListenerText: {
+    color: '#334155',
+  },
+  badgeMuezzinText: {
     color: '#166534',
   },
   recommendedBadge: {

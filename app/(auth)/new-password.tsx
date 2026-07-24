@@ -1,43 +1,18 @@
 import * as Linking from 'expo-linking';
+import {
+  buildAuthCallbackRouteUrl,
+  completeAuthCallbackUrl,
+  consumePasswordRecoveryAuthorization,
+  type AuthCallbackRouteParams,
+} from '@/lib/authCallback';
+import { requireRoleEntrySelection } from '@/lib/roleEntrySession';
 import { supabase } from '@/lib/supabase';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { Appbar, Button, HelperText, Text, TextInput } from 'react-native-paper';
 
 type LinkStatus = 'checking' | 'ready' | 'error';
-
-function parseFragment(fragment: string | null | undefined) {
-  const result: Record<string, string> = {};
-  if (!fragment) return result;
-
-  const parts = fragment.split('&');
-  for (const part of parts) {
-    const [rawKey, rawVal] = part.split('=');
-    if (!rawKey) continue;
-    const key = decodeURIComponent(rawKey);
-    const val = rawVal ? decodeURIComponent(rawVal) : '';
-    result[key] = val;
-  }
-  return result;
-}
-
-function getParams(url: string | null) {
-  if (!url) return {};
-
-  const parsed = Linking.parse(url);
-  const qp = (parsed.queryParams ?? {}) as Record<string, string | undefined>;
-  const hashIndex = url.indexOf('#');
-  if (hashIndex !== -1) {
-    const fragment = url.substring(hashIndex + 1);
-    const fragParams = parseFragment(fragment);
-    for (const [k, v] of Object.entries(fragParams)) {
-      qp[k] = v;
-    }
-  }
-
-  return qp;
-}
 
 function getBrowserUrl() {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
@@ -46,77 +21,81 @@ function getBrowserUrl() {
 
 export default function NewPassword() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams<AuthCallbackRouteParams>();
+  const retainedLinkingUrl = Linking.useLinkingURL();
+  const currentRouteUrl = buildAuthCallbackRouteUrl(
+    '/new-password',
+    routeParams
+  );
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [linkStatus, setLinkStatus] = useState<LinkStatus>('checking');
+  const attemptedUrls = useRef(new Set<string>());
+  const recoveryReady = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
     async function activateRecoverySession() {
+      if (recoveryReady.current) return;
       try {
+        // A dedicated callback screen may already have consumed the credential.
+        // Check its short-lived, one-use handoff before retrying a cold-start URL
+        // that can now contain an already-consumed code.
+        const { data: existingSessionData } = await supabase.auth.getSession();
+        if (!mounted) return;
+        if (
+          consumePasswordRecoveryAuthorization(
+            existingSessionData.session?.user.id ?? null
+          )
+        ) {
+          recoveryReady.current = true;
+          setLinkStatus('ready');
+          return;
+        }
+
         const candidates = Array.from(
           new Set(
-            [await Linking.getInitialURL(), getBrowserUrl()].filter(
+            [currentRouteUrl, getBrowserUrl(), retainedLinkingUrl].filter(
               (value): value is string => Boolean(value)
             )
           )
         );
 
+        let lastError: unknown = null;
         for (const candidate of candidates) {
-          const params = getParams(candidate);
-          const code = params.code;
-          const rawType = (params.type || '') as
-            | 'signup'
-            | 'recovery'
-            | 'magiclink'
-            | 'email_change'
-            | 'invite'
-            | '';
-          const type = rawType.toLowerCase();
-          const tokenHash = params.token_hash || params.token;
-          const accessToken = params.access_token;
-          const refreshToken = params.refresh_token;
-
-          if (code) {
-            const { error } = await supabase.auth.exchangeCodeForSession(code);
-            if (error) throw error;
-            if (mounted) setLinkStatus('ready');
+          if (attemptedUrls.current.has(candidate)) continue;
+          attemptedUrls.current.add(candidate);
+          try {
+            const result = await completeAuthCallbackUrl(candidate);
+            if (
+              !result.handled ||
+              !result.credentialConsumed ||
+              !result.recoveryAuthorized ||
+              result.destination !== 'password'
+            ) {
+              continue;
+            }
+            if (!mounted) return;
+            if (!consumePasswordRecoveryAuthorization(result.userId)) continue;
+            recoveryReady.current = true;
+            setLinkStatus('ready');
             return;
-          }
-
-          if ((type === 'recovery' || type === 'invite') && tokenHash) {
-            const { error } = await supabase.auth.verifyOtp({
-              token_hash: tokenHash,
-              type: type as 'recovery' | 'invite',
-            });
-            if (error) throw error;
-            if (mounted) setLinkStatus('ready');
-            return;
-          }
-
-          if (accessToken && refreshToken) {
-            const { error } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-            if (error) throw error;
-            if (mounted) setLinkStatus('ready');
-            return;
+          } catch (candidateError) {
+            lastError = candidateError;
+            continue;
           }
         }
 
-        const { data } = await supabase.auth.getSession();
         if (!mounted) return;
-        if (data.session) {
-          setLinkStatus('ready');
-          return;
-        }
-
-        setErr('This password reset link is invalid or expired. Request a new one.');
+        setErr(
+          lastError instanceof Error
+            ? lastError.message
+            : 'This password reset link is invalid or expired. Request a new one.'
+        );
         setLinkStatus('error');
       } catch (e: any) {
         if (!mounted) return;
@@ -129,7 +108,7 @@ export default function NewPassword() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [currentRouteUrl, retainedLinkingUrl]);
 
   const onSubmit = async () => {
     setErr(null);
@@ -138,10 +117,14 @@ export default function NewPassword() {
     if (pw !== pw2) return setErr('Passwords do not match.');
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: pw });
+      const { data, error } = await supabase.auth.updateUser({ password: pw });
       if (error) throw error;
+      const { data: sessionData } = await supabase.auth.getSession();
+      await requireRoleEntrySelection(
+        data.user?.id ?? sessionData.session?.user.id ?? null
+      );
       setOk(true);
-      setTimeout(() => router.replace('/listener-home' as any), 800);
+      setTimeout(() => router.replace('/auth-complete' as any), 800);
     } catch (e: any) {
       setErr(e?.message ?? 'Failed to update password.');
     } finally {

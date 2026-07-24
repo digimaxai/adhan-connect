@@ -31,7 +31,9 @@ export default function ManageMosques() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const isMuezzinContext = segments[0] === '(muezzin)';
-  const discoverPath = isMuezzinContext ? '/(muezzin)/discover' : '/(user)/discover';
+  const discoverPath = isMuezzinContext
+    ? '/(muezzin)/mosque-discovery'
+    : '/(user)/discover';
 
   const [items, setItems] = useState<FollowedMosque[]>([]);
   // True only on the very first load so we don't flash a spinner on re-focus.

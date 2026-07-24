@@ -1,10 +1,25 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
-import { View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRoleFlags } from '../../lib/roles';
 import { tokens } from '../../theme/tokens';
 
 export default function MuezzinTabs() {
+  const roles = useRoleFlags();
+
+  if (roles.loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={tokens.color.status.info} />
+      </View>
+    );
+  }
+
+  if (!roles.isMuezzin) {
+    return <Redirect href={'/listener-home' as any} />;
+  }
+
   const pillIcon = (icon: keyof typeof Ionicons.glyphMap) => {
     const Icon = ({ color, focused }: { color: string; focused: boolean }) => (
       <View
@@ -63,23 +78,23 @@ export default function MuezzinTabs() {
         }}
       />
       <Tabs.Screen
-        name="settings"
+        name="muezzin-settings"
         options={{
           title: 'Settings',
           tabBarIcon: pillIcon('settings-outline'),
         }}
       />
-      <Tabs.Screen name="discover" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-discovery" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="live-broadcast" options={{ href: null, headerShown: false }} />
 
       {/* hidden routes for muezzin area */}
       <Tabs.Screen name="muezzin" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="now" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="live-player" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="listener-now" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="listener-live-player" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="muezzin-live" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="live" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="mosque/[id]" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="manage-mosques" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="listener-mosque/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="muezzin-manage-mosques" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

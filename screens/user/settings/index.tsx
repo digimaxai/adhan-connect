@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, useSegments } from 'expo-router';
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useAuth } from '../../../lib/auth';
@@ -70,19 +70,38 @@ function SectionCard({ children, marginTop = 0 }: { children: React.ReactNode; m
 
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
-  const { loading, isAdmin, isMuezzin, isLocalAdmin, isMainAdmin, isUser, role, error, hasDualStaffAccess } = useRoleFlags();
+  const {
+    loading,
+    isMuezzin,
+    isLocalAdmin,
+    isMainAdmin,
+    role,
+    error,
+    hasDualStaffAccess,
+    hasMultipleWorkspaceAccess,
+  } = useRoleFlags();
+  const segments = useSegments();
+  const isMuezzinWorkspace = segments[0] === '(muezzin)';
+  const settingsBase = isMuezzinWorkspace
+    ? '/(muezzin)/muezzin-settings'
+    : '/(user)/settings';
+  const manageMosquesPath = isMuezzinWorkspace
+    ? '/(muezzin)/muezzin-manage-mosques'
+    : '/(user)/manage-mosques';
 
   const displayName = user?.display_name || user?.email?.split('@')[0] || 'User';
 
-  const roleLabels: string[] = [];
+  const roleLabels: string[] = ['Listener'];
   if (isMainAdmin) roleLabels.push('Main admin');
   if (isLocalAdmin) roleLabels.push('Local admin');
   if (isMuezzin) roleLabels.push('Muezzin');
-  if (!isMainAdmin && !isLocalAdmin && !isMuezzin && isUser) {
-    roleLabels.push('Listener');
-  }
 
-  const showStaffTools = !loading && (isAdmin || isMuezzin);
+  const showWorkspaceTools = !loading && hasMultipleWorkspaceAccess;
+  const availableWorkspaceLabels = [
+    'Listener',
+    isMainAdmin ? 'Main Admin' : isLocalAdmin ? 'Local Admin' : null,
+    isMuezzin ? 'Muezzin' : null,
+  ].filter((value): value is string => !!value);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: '#F1F5F9' }} contentContainerStyle={{ paddingBottom: 36 }}>
@@ -132,38 +151,56 @@ export default function SettingsScreen() {
       </View>
 
       <SectionCard>
-        <SettingsRow title="Notifications" subtitle="Adhan alerts, staff updates, and reminders" href="./notifications" />
-        <SettingsRow title="Audio mixer" subtitle="Per-mosque volume and mute settings" href="./mixer" />
-        <SettingsRow title="Mosque subscriptions" subtitle="Manage followed mosques" href="../manage-mosques" last />
+        <SettingsRow
+          title="Account & data"
+          subtitle="Sign-in methods, data export, and account deletion"
+          href={`${settingsBase}/account`}
+        />
+        <SettingsRow
+          title="Notifications"
+          subtitle="Adhan alerts, staff updates, and reminders"
+          href={`${settingsBase}/notifications`}
+        />
+        <SettingsRow
+          title="Audio mixer"
+          subtitle="Per-mosque volume and mute settings"
+          href={`${settingsBase}/mixer`}
+        />
+        <SettingsRow
+          title="Mosque subscriptions"
+          subtitle="Manage followed mosques"
+          href={manageMosquesPath}
+          last
+        />
       </SectionCard>
 
-      {showStaffTools ? (
+      <View style={{ marginTop: 20, marginHorizontal: 18 }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 }}>Privacy & legal</Text>
+        <SectionCard>
+          <SettingsRow
+            title="Privacy notice"
+            subtitle="How Adhan Connect uses and protects data"
+            href="https://www.maksums.com/adhan-connect/privacy/"
+          />
+          <SettingsRow
+            title="Terms of use"
+            subtitle="The rules for using Adhan Connect"
+            href="https://www.maksums.com/adhan-connect/terms/"
+            last
+          />
+        </SectionCard>
+      </View>
+
+      {showWorkspaceTools ? (
         <View style={{ marginTop: 20, marginHorizontal: 18 }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 }}>Staff tools</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 }}>Workspaces</Text>
           <SectionCard>
-            {hasDualStaffAccess ? (
-              <SettingsRow
-                title="Choose workspace"
-                subtitle="Enter Admin or Muezzin for this session"
-                href="/role-entry"
-              />
-            ) : null}
-            {isAdmin ? (
-              <SettingsRow
-                title="Admin workspace"
-                subtitle="Prayer times, rota, muezzins, and mosque settings"
-                href="/(admin)"
-                last={!isMuezzin}
-              />
-            ) : null}
-            {isMuezzin ? (
-              <SettingsRow
-                title="Muezzin workspace"
-                subtitle="Live adhan, rota, and cover requests"
-                href="/(muezzin)"
-                last
-              />
-            ) : null}
+            <SettingsRow
+              title="Switch workspace"
+              subtitle={`Choose ${availableWorkspaceLabels.join(', ')}`}
+              href="/role-entry"
+              last
+            />
           </SectionCard>
         </View>
       ) : null}
@@ -217,6 +254,9 @@ export default function SettingsScreen() {
           <Text style={{ fontSize: 12, color: '#475569' }}>isLocalAdmin: {isLocalAdmin ? 'true' : 'false'}</Text>
           <Text style={{ fontSize: 12, color: '#475569' }}>isMainAdmin: {isMainAdmin ? 'true' : 'false'}</Text>
           <Text style={{ fontSize: 12, color: '#475569' }}>dualStaff: {hasDualStaffAccess ? 'true' : 'false'}</Text>
+          <Text style={{ fontSize: 12, color: '#475569' }}>
+            multipleWorkspaces: {hasMultipleWorkspaceAccess ? 'true' : 'false'}
+          </Text>
           <Text style={{ fontSize: 12, color: '#475569' }}>error: {error ?? 'none'}</Text>
         </View>
       ) : null}

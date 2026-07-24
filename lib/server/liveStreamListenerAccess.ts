@@ -7,6 +7,7 @@ import {
   type MosqueLiveStreamConfigRow,
 } from '../liveStreamProviders';
 import { isFreshLiveStream } from '../liveStreamFreshness';
+import { assertAllowedLiveStreamUpstreamUrl } from './liveStreamUpstreamPolicy';
 
 type LiveStreamRow = {
   id: string;
@@ -58,8 +59,12 @@ export type IssuedMosquePlaybackAccess = {
 };
 
 const DEFAULT_ACCESS_TTL_MS = 10 * 60 * 1000;
+const MIN_ACCESS_TTL_MS = 30 * 1000;
+const PLAYBACK_SUBJECT_VERSION = 'listener-subject-v1';
+const PLAYBACK_TOKEN_VERSION = 'listener-playback-v2';
 export const NEARBY_LIVE_ACCESS_RADIUS_KM = 30;
 const textEncoder = new TextEncoder();
+type PlaybackDelivery = 'proxy';
 
 function safeNormalizePlaybackUrl(value?: string | null) {
   try {
@@ -91,8 +96,47 @@ async function signHmacHex(secret: string, message: string) {
     .join('');
 }
 
-function buildPlaybackTokenMessage(mosqueId: string, streamId: string, expiresAtMs: number) {
-  return `${mosqueId}:${streamId}:${expiresAtMs}`;
+function buildPlaybackSubjectMessage(args: {
+  userId: string;
+  mosqueId: string;
+  streamId: string;
+  expiresAtMs: number;
+  delivery: PlaybackDelivery;
+}) {
+  return JSON.stringify([
+    PLAYBACK_SUBJECT_VERSION,
+    args.userId,
+    args.mosqueId,
+    args.streamId,
+    args.expiresAtMs,
+    args.delivery,
+  ]);
+}
+
+function buildPlaybackTokenMessage(args: {
+  subject: string;
+  mosqueId: string;
+  streamId: string;
+  expiresAtMs: number;
+  delivery: PlaybackDelivery;
+}) {
+  return JSON.stringify([
+    PLAYBACK_TOKEN_VERSION,
+    args.subject,
+    args.mosqueId,
+    args.streamId,
+    args.expiresAtMs,
+    args.delivery,
+  ]);
+}
+
+function constantTimeEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
 }
 
 function normalizeListenerLocation(location?: ListenerLocation | null): NormalizedListenerLocation | null {
@@ -155,14 +199,17 @@ async function fetchListenerPlaybackContext(
     throw new Error('This mosque does not currently have an active live broadcast.');
   }
 
-  const playbackUrl =
+  const configuredPlaybackUrl =
     safeNormalizePlaybackUrl(stream.stream_url) ||
     safeNormalizePlaybackUrl(stream.url) ||
     safeNormalizePlaybackUrl(mosqueRes.data.live_stream_playback_url);
 
-  if (!playbackUrl) {
+  if (!configuredPlaybackUrl) {
     throw new Error('This mosque is live, but no playback URL is configured.');
   }
+  const playbackUrl = assertAllowedLiveStreamUpstreamUrl(configuredPlaybackUrl, {
+    rejectHls: true,
+  }).toString();
 
   const listenerSecret = resolveLiveStreamListenerSecret(mosqueRes.data);
   if (!listenerSecret) {
@@ -257,7 +304,7 @@ export async function issueMosquePlaybackAccessUrl(args: {
   mosqueId: string;
   streamId?: string | null;
   ttlMs?: number;
-  delivery?: 'proxy' | 'redirect';
+  delivery?: 'proxy';
   listenerLocation?: ListenerLocation | null;
 }) {
   await ensureUserCanAccessMosquePlayback(args.supabaseAdmin, args.userId, args.mosqueId, {
@@ -269,19 +316,46 @@ export async function issueMosquePlaybackAccessUrl(args: {
     throw new Error('This live stream has moved on. Refresh and try again.');
   }
 
-  const expiresAtMs = Date.now() + Math.max(30_000, args.ttlMs ?? DEFAULT_ACCESS_TTL_MS);
+  const requestedTtlMs =
+    args.ttlMs != null && Number.isFinite(args.ttlMs)
+      ? args.ttlMs
+      : DEFAULT_ACCESS_TTL_MS;
+  const ttlMs = Math.min(
+    DEFAULT_ACCESS_TTL_MS,
+    Math.max(MIN_ACCESS_TTL_MS, requestedTtlMs)
+  );
+  const expiresAtMs = Date.now() + ttlMs;
+  const delivery: PlaybackDelivery = 'proxy';
+  // The subject is scoped to this one grant. It proves that the token was
+  // derived from the authenticated account without putting its raw UUID in
+  // playback URLs, browser history, proxy logs, or upstream referrers.
+  const subject = await signHmacHex(
+    context.listenerSecret,
+    buildPlaybackSubjectMessage({
+      userId: args.userId,
+      mosqueId: args.mosqueId,
+      streamId: context.stream.id,
+      expiresAtMs,
+      delivery,
+    })
+  );
   const token = await signHmacHex(
     context.listenerSecret,
-    buildPlaybackTokenMessage(args.mosqueId, context.stream.id, expiresAtMs)
+    buildPlaybackTokenMessage({
+      subject,
+      mosqueId: args.mosqueId,
+      streamId: context.stream.id,
+      expiresAtMs,
+      delivery,
+    })
   );
   const playbackUrl = new URL('/api/live-stream-playback', args.request.url);
   playbackUrl.searchParams.set('mosqueId', args.mosqueId);
   playbackUrl.searchParams.set('streamId', context.stream.id);
   playbackUrl.searchParams.set('expires', String(expiresAtMs));
+  playbackUrl.searchParams.set('subject', subject);
+  playbackUrl.searchParams.set('delivery', delivery);
   playbackUrl.searchParams.set('token', token);
-  if (args.delivery === 'redirect') {
-    playbackUrl.searchParams.set('delivery', 'redirect');
-  }
 
   return {
     mosqueId: args.mosqueId,
@@ -298,14 +372,19 @@ export async function validateMosquePlaybackAccess(args: {
   mosqueId: string;
   streamId: string;
   expires: string;
+  subject: string;
+  delivery: PlaybackDelivery;
   token: string;
 }) {
   const expiresAtMs = Number(args.expires);
-  if (!Number.isFinite(expiresAtMs)) {
+  if (!Number.isSafeInteger(expiresAtMs)) {
     throw new Error('Live stream access expiry is invalid.');
   }
-  if (expiresAtMs < Date.now()) {
+  if (expiresAtMs <= Date.now()) {
     throw new Error('Live stream access has expired.');
+  }
+  if (!/^[a-f0-9]{64}$/.test(args.subject) || !/^[a-f0-9]{64}$/.test(args.token)) {
+    throw new Error('Live stream access token is invalid.');
   }
 
   const context = await fetchListenerPlaybackContext(args.supabaseAdmin, args.mosqueId);
@@ -315,10 +394,16 @@ export async function validateMosquePlaybackAccess(args: {
 
   const expected = await signHmacHex(
     context.listenerSecret,
-    buildPlaybackTokenMessage(args.mosqueId, args.streamId, expiresAtMs)
+    buildPlaybackTokenMessage({
+      subject: args.subject,
+      mosqueId: args.mosqueId,
+      streamId: args.streamId,
+      expiresAtMs,
+      delivery: args.delivery,
+    })
   );
 
-  if (expected !== args.token) {
+  if (!constantTimeEqual(expected, args.token)) {
     throw new Error('Live stream access token is invalid.');
   }
 
