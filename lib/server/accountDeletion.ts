@@ -104,7 +104,7 @@ function configuredStorageBuckets() {
   }
   return {
     configured: true,
-    names: uniqueStrings(raw.split(',').map((name) => name.trim())),
+    names: uniqueStrings(raw.split(',').map((name: string) => name.trim())),
   };
 }
 
