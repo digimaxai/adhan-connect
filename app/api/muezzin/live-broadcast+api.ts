@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import {
   normalizeLiveStreamProvider,
@@ -19,7 +19,6 @@ import {
   deleteLiveKitRoom,
   isLiveKitConfigured,
 } from '../../../lib/server/livekitRoom';
-import { requireCurrentAccountConsent } from '../../../lib/server/accountConsentAccess';
 
 type StreamRow = {
   id?: string;
@@ -163,7 +162,7 @@ async function requireMuezzinContext(
     },
   });
 
-  let authUser: User | null = null;
+  let authData: { user?: { id: string } | null } | null = null;
   let authError: unknown = null;
   try {
     const result = await withTimeout(
@@ -171,7 +170,7 @@ async function requireMuezzinContext(
       AUTH_CHECK_BUDGET_MS,
       'Supabase session verification'
     );
-    authUser = result.data.user;
+    authData = result.data;
     authError = result.error;
   } catch (error) {
     console.warn('[live-broadcast] auth verification failed', {
@@ -180,21 +179,14 @@ async function requireMuezzinContext(
     return { response: json({ error: 'Unable to verify your session. Check the local server connection and try again.' }, 503) };
   }
 
-  if (authError || !authUser) {
+  const verifiedUserId = authData?.user?.id ?? null;
+  if (authError || !verifiedUserId) {
     return { response: json({ error: 'Session is invalid or has expired.' }, 401) };
-  }
-
-  const consentAccess = await requireCurrentAccountConsent(
-    supabaseAdmin,
-    authUser
-  );
-  if (!consentAccess.granted) {
-    return { response: consentAccess.response };
   }
 
   return {
     supabaseAdmin,
-    userId: authUser.id,
+    userId: verifiedUserId,
   };
 }
 
@@ -391,7 +383,7 @@ function shouldUseTransactionalStart(mosqueId: string) {
 
   return (process.env.LIVE_BROADCAST_START_RPC_MOSQUE_IDS ?? '')
     .split(',')
-    .map((value) => value.trim().toLowerCase())
+    .map((value: string) => value.trim().toLowerCase())
     .filter(Boolean)
     .includes(mosqueId.toLowerCase());
 }
@@ -403,7 +395,7 @@ function shouldUseTransactionalEnd(mosqueId: string) {
 
   return (process.env.LIVE_BROADCAST_END_RPC_MOSQUE_IDS ?? '')
     .split(',')
-    .map((value) => value.trim().toLowerCase())
+    .map((value: string) => value.trim().toLowerCase())
     .filter(Boolean)
     .includes(mosqueId.toLowerCase());
 }
