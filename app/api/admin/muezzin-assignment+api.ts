@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
+import { requireCurrentAccountConsent } from '../../../lib/server/accountConsentAccess';
 
 type AssignmentPayload = {
   userId?: string;
@@ -62,6 +63,14 @@ async function requireMainAdmin(
   const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
   if (authError || !authData.user) {
     return { response: json({ error: 'Session is invalid or has expired.' }, 401) };
+  }
+
+  const consentAccess = await requireCurrentAccountConsent(
+    supabaseAdmin,
+    authData.user
+  );
+  if (!consentAccess.granted) {
+    return { response: consentAccess.response };
   }
 
   const { data: requesterProfile, error: requesterError } = await supabaseAdmin

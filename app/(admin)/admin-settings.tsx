@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, StyleSheet, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppText } from '@/components/ui/app-text';
@@ -503,6 +503,48 @@ export default function AdminSettingsScreen() {
         )}
       </View>
 
+      {/* ── Account and legal ── */}
+      <View style={styles.section}>
+        <AppText style={styles.sectionLabel}>ACCOUNT & LEGAL</AppText>
+        <View style={styles.groupCard}>
+          <Pressable
+            onPress={() => router.push('/(admin)/admin-account' as any)}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#E0F2FE' }]}>
+              <Ionicons name="person-circle-outline" size={18} color="#0369A1" />
+            </View>
+            <View style={styles.actionCopy}>
+              <AppText style={styles.actionLabel}>Account & data</AppText>
+              <AppText style={styles.actionDescription}>Sign-in methods, export, and deletion</AppText>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={tokens.color.text.muted} />
+          </Pressable>
+          <View style={styles.hairline} />
+          <Pressable
+            onPress={() => Linking.openURL('https://www.maksums.com/adhan-connect/privacy/')}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#F1F5F9' }]}>
+              <Ionicons name="shield-checkmark-outline" size={18} color="#475569" />
+            </View>
+            <AppText style={styles.actionLabel}>Privacy notice</AppText>
+            <Ionicons name="open-outline" size={16} color={tokens.color.text.muted} />
+          </Pressable>
+          <View style={styles.hairline} />
+          <Pressable
+            onPress={() => Linking.openURL('https://www.maksums.com/adhan-connect/terms/')}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#F1F5F9' }]}>
+              <Ionicons name="document-text-outline" size={18} color="#475569" />
+            </View>
+            <AppText style={styles.actionLabel}>Terms of use</AppText>
+            <Ionicons name="open-outline" size={16} color={tokens.color.text.muted} />
+          </Pressable>
+        </View>
+      </View>
+
       {/* ── Sign out ── */}
       <View style={styles.section}>
         <View style={styles.groupCard}>
@@ -599,6 +641,8 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
   actionIcon: { width: 34, height: 34, borderRadius: tokens.radius.sm, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   actionLabel: { flex: 1, fontSize: 15, fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary },
+  actionCopy: { flex: 1, gap: 2 },
+  actionDescription: { fontSize: tokens.typography.size.xs, color: tokens.color.text.secondary },
   actionLabelDanger: { color: '#DC2626' },
 
   // Mosque rows

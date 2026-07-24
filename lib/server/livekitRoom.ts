@@ -12,6 +12,11 @@ type DeleteLiveKitRoomOptions = {
   treatMissingAsSuccess?: boolean;
 };
 
+// Token expiry limits how long a consented request can be used to establish or
+// re-establish a room connection. The token endpoints re-check current consent
+// and role/mosque access before minting every replacement.
+export const LIVEKIT_ACCESS_TOKEN_TTL_SECONDS = 10 * 60;
+
 function getConfig(): LiveKitConfig {
   const apiKey = process.env.LIVEKIT_API_KEY?.trim();
   const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
@@ -49,7 +54,7 @@ export async function createPublisherToken(userId: string, roomName: string): Pr
   const { apiKey, apiSecret } = getConfig();
   const at = new AccessToken(apiKey, apiSecret, {
     identity: userId,
-    ttl: 60 * 60 * 2, // 2 hours
+    ttl: LIVEKIT_ACCESS_TOKEN_TTL_SECONDS,
   });
   at.addGrant({
     roomJoin: true,
@@ -66,7 +71,7 @@ export async function createSubscriberToken(userId: string, roomName: string): P
   const { apiKey, apiSecret } = getConfig();
   const at = new AccessToken(apiKey, apiSecret, {
     identity: `listener-${userId}`,
-    ttl: 60 * 60, // 1 hour
+    ttl: LIVEKIT_ACCESS_TOKEN_TTL_SECONDS,
   });
   at.addGrant({
     roomJoin: true,

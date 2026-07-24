@@ -149,7 +149,7 @@ function nextNDays(n: number) {
 function parseTags(raw: string) {
   return raw
     .split(',')
-    .map((tag) => tag.trim())
+    .map((tag: string) => tag.trim())
     .filter(Boolean)
     .slice(0, 12);
 }

@@ -35,6 +35,10 @@ function storageKey(userId: string) {
   return `session_access:${userId}`;
 }
 
+function inflightKey(userId: string, allowCachedFallback: boolean) {
+  return `${userId}:${allowCachedFallback ? 'cache-fallback' : 'fresh-only'}`;
+}
+
 function normalizeCacheEntry(value: unknown): SessionAccessCacheEntry | null {
   if (!value || typeof value !== 'object') return null;
 
@@ -84,7 +88,8 @@ async function cacheSessionAccess(userId: string, payload: SessionAccessPayload)
 export async function clearSessionAccessCache(userId: string | null) {
   if (!userId) return;
   sessionAccessMemory.delete(userId);
-  sessionAccessInflight.delete(userId);
+  sessionAccessInflight.delete(inflightKey(userId, true));
+  sessionAccessInflight.delete(inflightKey(userId, false));
   try {
     await persistentStorage.removeItem(storageKey(userId));
   } catch {
@@ -108,6 +113,8 @@ function isSessionAccessPayload(value: unknown): value is SessionAccessPayload {
 
 export async function fetchSessionAccess(options?: {
   preferCache?: boolean;
+  /** Keep false for route guards and other authorization decisions. */
+  allowCachedFallback?: boolean;
   maxAgeMs?: number;
   session?: Session | null;
 }): Promise<SessionAccessPayload> {
@@ -131,18 +138,26 @@ export async function fetchSessionAccess(options?: {
 
   const userId = session.user.id;
   const maxAgeMs = options?.maxAgeMs ?? 60_000;
+  const allowCachedFallbackOption = options?.allowCachedFallback ?? true;
   const cached = await readCachedSessionAccess(userId);
-  if (options?.preferCache && cached && Date.now() - cached.cachedAt <= maxAgeMs) {
+  if (
+    options?.preferCache &&
+    allowCachedFallbackOption &&
+    cached &&
+    Date.now() - cached.cachedAt <= maxAgeMs
+  ) {
     return cached.payload;
   }
 
-  const existingInflight = sessionAccessInflight.get(userId);
+  const requestKey = inflightKey(userId, allowCachedFallbackOption);
+  const existingInflight = sessionAccessInflight.get(requestKey);
   if (existingInflight) {
     return existingInflight;
   }
 
   const fetchPromise = (async () => {
     let lastError: string | null = null;
+    let allowCachedFallback = allowCachedFallbackOption;
     for (const endpoint of endpoints) {
       try {
         const response = await fetchServerApi(endpoint, {
@@ -154,6 +169,24 @@ export async function fetchSessionAccess(options?: {
         const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
         const payload = await response.json().catch(() => null);
         if (!response.ok) {
+          const responseCode =
+            payload &&
+            typeof payload === 'object' &&
+            'code' in payload &&
+            typeof (payload as any).code === 'string'
+              ? (payload as any).code
+              : null;
+          if (
+            response.status === 401 ||
+            response.status === 403 ||
+            responseCode === 'ACCOUNT_CONSENT_REQUIRED' ||
+            responseCode === 'ACCOUNT_CONSENT_CONTROL_UNAVAILABLE'
+          ) {
+            // Never revive cached roles after an authentication/consent
+            // denial. The cache is a performance aid, not authorization.
+            allowCachedFallback = false;
+            await clearSessionAccessCache(userId);
+          }
           lastError =
             (payload && typeof payload === 'object' && 'error' in payload && typeof (payload as any).error === 'string'
               ? (payload as any).error
@@ -187,18 +220,20 @@ export async function fetchSessionAccess(options?: {
       }
     }
 
-    const fallbackCached = await readCachedSessionAccess(userId);
-    if (fallbackCached) {
-      return fallbackCached.payload;
+    if (allowCachedFallback) {
+      const fallbackCached = await readCachedSessionAccess(userId);
+      if (fallbackCached) {
+        return fallbackCached.payload;
+      }
     }
 
     throw new Error(lastError || 'Unable to resolve the current session access.');
   })();
 
-  sessionAccessInflight.set(userId, fetchPromise);
+  sessionAccessInflight.set(requestKey, fetchPromise);
   try {
     return await fetchPromise;
   } finally {
-    sessionAccessInflight.delete(userId);
+    sessionAccessInflight.delete(requestKey);
   }
 }

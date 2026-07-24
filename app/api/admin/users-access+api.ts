@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { fetchAllMosqueRows } from '../../../lib/api/admin/mosqueDirectory';
+import { requireCurrentAccountConsent } from '../../../lib/server/accountConsentAccess';
 
 type UserRole = 'user' | 'local_admin' | 'main_admin' | 'muezzin';
 
@@ -53,6 +54,12 @@ export const GET: RequestHandler = async (request) => {
   if (authError || !authData.user) {
     return json({ error: 'Session is invalid or has expired.' }, 401);
   }
+
+  const consentAccess = await requireCurrentAccountConsent(
+    supabaseAdmin,
+    authData.user
+  );
+  if (!consentAccess.granted) return consentAccess.response;
 
   const { data: requesterProfile, error: requesterError } = await supabaseAdmin
     .from('users')

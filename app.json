@@ -11,12 +11,13 @@
     "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "com.maksumsdigitalagency.adhanconnect",
       "buildNumber": "1",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Adhan Connect needs microphone access for live Adhan broadcasts.",
         "NSCameraUsageDescription": "Adhan Connect's live broadcast feature is built on WebRTC, which may request camera access even though video broadcasting is not currently used.",
-        "NSLocationWhenInUseUsageDescription": "Adhan Connect uses your location to find nearby mosques.",
+        "NSLocationWhenInUseUsageDescription": "Adhan Connect uses your location to find nearby mosques, calculate local prayer times, and check access to nearby live Adhan broadcasts.",
         "UIBackgroundModes": [
           "audio"
         ],
@@ -49,6 +50,9 @@
     "plugins": [
       "expo-router",
       "expo-web-browser",
+      "expo-apple-authentication",
+      "expo-font",
+      "expo-secure-store",
       [
         "expo-splash-screen",
         {

@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
+import { requireCurrentAccountConsent } from '../../../lib/server/accountConsentAccess';
 
 type UserProfileRow = {
   id: string;
@@ -86,6 +87,12 @@ export const POST: RequestHandler = async (request) => {
   if (authError || !authData.user) {
     return json({ error: 'Session is invalid or has expired.' }, 401);
   }
+
+  const consentAccess = await requireCurrentAccountConsent(
+    supabaseAdmin,
+    authData.user
+  );
+  if (!consentAccess.granted) return consentAccess.response;
 
   const { data: requesterProfile, error: requesterError } = await supabaseAdmin
     .from('users')
