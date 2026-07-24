@@ -176,7 +176,7 @@ function parseHostRules(rawValue = process.env.LIVE_STREAM_UPSTREAM_ALLOWED_HOST
     );
   }
 
-  return entries.map<HostRule>((entry: string) => {
+  return entries.map((entry: string): HostRule => {
     const isSuffix = entry.startsWith('*.') || entry.startsWith('.');
     const unprefixed = entry.startsWith('*.')
       ? entry.slice(2)
