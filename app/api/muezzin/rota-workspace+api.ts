@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { resolvePrimaryMuezzinMosqueForUser } from '../../../lib/server/muezzinAccess';
+import { requireCurrentAccountConsent } from '../../../lib/server/accountConsentAccess';
 
 type StaffRotaEntry = {
   id: string;
@@ -359,6 +360,12 @@ export const GET: RequestHandler = async (request) => {
   if (authError || !authData.user) {
     return json({ error: 'Session is invalid or has expired.' }, 401);
   }
+
+  const consentAccess = await requireCurrentAccountConsent(
+    supabaseAdmin,
+    authData.user
+  );
+  if (!consentAccess.granted) return consentAccess.response;
 
   const userId = authData.user.id;
   let primaryMosque: { mosqueId: string; name: string; city?: string | null; country?: string | null } | null = null;

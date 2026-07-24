@@ -1,14 +1,15 @@
 // app/(auth)/reset.tsx
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../lib/auth';
+import { getPendingAuthEmail, setPendingAuthEmail } from '../../lib/authFlowState';
 
 export default function ResetScreen() {
   const { resetPassword } = useAuth();
   const router = useRouter();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => getPendingAuthEmail() ?? '');
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async () => {
@@ -24,7 +25,11 @@ export default function ResetScreen() {
       Alert.alert('Failed', error);
       return;
     }
-    Alert.alert('Email sent', 'Check your inbox for a password reset link.');
+    Alert.alert(
+      'Check your email',
+      'If an account matches that email, we sent a password reset link.'
+    );
+    setPendingAuthEmail(email);
     router.replace('/sign-in'); // no group in path
   };
 
@@ -50,7 +55,14 @@ export default function ResetScreen() {
         </TouchableOpacity>
 
         <View style={s.row}>
-          <Link href="/sign-in" style={s.link}>Back to sign in</Link>
+          <TouchableOpacity
+            onPress={() => {
+              setPendingAuthEmail(email);
+              router.replace('/sign-in');
+            }}
+          >
+            <Text style={s.link}>Back to sign in</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -58,7 +70,7 @@ export default function ResetScreen() {
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, padding: 16, backgroundColor: '#F8FAFC', justifyContent: 'center' },
+  screen: { flex: 1, padding: 16, paddingTop: 80, backgroundColor: '#F8FAFC' },
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#E2E8F0' },
   title: { fontSize: 22, fontWeight: '800' },
   subtle: { color: '#64748B', marginTop: 4, marginBottom: 16 },

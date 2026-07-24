@@ -40,7 +40,11 @@ Client-side values, safe to embed in the app binary:
 ```text
 EXPO_PUBLIC_SUPABASE_URL
 EXPO_PUBLIC_SUPABASE_ANON_KEY
-EXPO_PUBLIC_SUPABASE_REDIRECT_URL
+EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB
+EXPO_PUBLIC_SUPABASE_REDIRECT_URL_NATIVE
+EXPO_PUBLIC_APPLE_AUTH_ENABLED=false
+EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=false
+EXPO_PUBLIC_SOCIAL_LINKING_ENABLED=false
 EXPO_PUBLIC_API_BASE_URL
 EXPO_FORCE_WEBCONTAINER_ENV=0
 ```
@@ -53,13 +57,40 @@ SUPABASE_SERVICE_ROLE
 LIVEKIT_URL
 LIVEKIT_API_KEY
 LIVEKIT_API_SECRET
+LIVE_STREAM_UPSTREAM_ALLOWED_HOSTS
 LIVE_BROADCAST_START_MODE
 LIVE_BROADCAST_START_RPC_MOSQUE_IDS
 LIVE_BROADCAST_END_MODE
 LIVE_BROADCAST_END_RPC_MOSQUE_IDS
+ACCOUNT_TRUST_PROXY
+ACCOUNT_DELETION_ENABLED
+ACCOUNT_DELETION_SCHEMA_AUDITED
+ACCOUNT_DELETION_STORAGE_AUDITED
+ACCOUNT_DELETION_ORCHESTRATION_AUDITED
+ACCOUNT_DELETION_STORAGE_BUCKETS
+ACCOUNT_DELETION_APPLE_REVOCATION_READY
+ACCOUNT_DELETION_APPLE_REVOCATION_URL
+ACCOUNT_DELETION_APPLE_REVOCATION_SECRET
 ```
 
 If the API routes are deployed with EAS Hosting, configure those server-only values in the hosting/server environment with **sensitive** visibility. EAS Hosting cannot deploy variables with **secret** visibility. Do not prefix server-only values with `EXPO_PUBLIC_`.
+
+Use exact callback paths (normally `/callback` and `/new-password`) and
+allow-list both web HTTPS and `adhanconnect://` native variants in Supabase.
+The legacy `EXPO_PUBLIC_SUPABASE_REDIRECT_URL` remains a compatibility fallback
+only; do not use one value to overwrite both platforms.
+
+Keep all three social flags false until Apple and Google are enabled and tested
+in Supabase, Apple is present on every iOS build that offers another social
+provider, provider-linking preserves the original Auth UUID for every staff
+role, and current provider branding has been reviewed.
+
+Account deletion must remain disabled unless every audit flag is true, the
+durable account-control migration and cleanup schedule are deployed, and an
+enabled `account-deletion/1.0` row has been deliberately inserted into
+`public.account_deletion_release_approvals`. See
+`docs/auth/account-auth-release-gates.md`; environment flags alone cannot
+enable deletion.
 
 `LIVE_BROADCAST_START_MODE` controls the transactional broadcast-start rollout:
 

@@ -22,8 +22,10 @@ export function RequireMainAdmin({ children, redirectTo }: Props) {
   const roles = useRoleFlags();
   const isMainAdmin = roles.isMainAdmin;
 
-  // Debug log fires for both authorized and unauthorized users so we can inspect role resolution.
+  // Local-only diagnostics. Production logs must not capture callback/query
+  // URLs, account identifiers, email addresses, or browser fingerprints.
   useEffect(() => {
+    if (!__DEV__) return;
     if (typeof window === 'undefined') return;
     if (loading || roles.loading) return;
     try {

@@ -289,7 +289,7 @@ export function parsePrayerScheduleCsv(
   const lines = csv
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
-    .map((line) => line.trimEnd())
+    .map((line: string) => line.trimEnd())
     .filter((line) => line.trim().length > 0);
 
   if (lines.length < 2) {
@@ -1684,8 +1684,8 @@ function normalizeTimeInput(raw: string) {
 }
 
 function compareTimes(left: string, right: string) {
-  const [leftHours, leftMinutes] = left.split(':').map((part) => Number(part));
-  const [rightHours, rightMinutes] = right.split(':').map((part) => Number(part));
+  const [leftHours, leftMinutes] = left.split(':').map((part: string) => Number(part));
+  const [rightHours, rightMinutes] = right.split(':').map((part: string) => Number(part));
   return leftHours * 60 + leftMinutes - (rightHours * 60 + rightMinutes);
 }
 
@@ -1737,15 +1737,15 @@ function validateIqamaOrder(
 
 function toMinutes(value: string | null) {
   if (!value) return null;
-  const [hours, minutes] = value.split(':').map((segment) => Number(segment));
+  const [hours, minutes] = value.split(':').map((segment: string) => Number(segment));
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
   return hours * 60 + minutes;
 }
 
 function toIsoString(dateIso: string, time: string | null) {
   if (!time) return null;
-  const [year, month, day] = dateIso.split('-').map((part) => Number(part));
-  const [hours, minutes] = time.split(':').map((part) => Number(part));
+  const [year, month, day] = dateIso.split('-').map((part: string) => Number(part));
+  const [hours, minutes] = time.split(':').map((part: string) => Number(part));
   const value = new Date(year, month - 1, day, hours, minutes, 0, 0);
   return Number.isNaN(value.getTime()) ? null : value.toISOString();
 }

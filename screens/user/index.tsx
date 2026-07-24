@@ -1196,20 +1196,15 @@ export default function HomeScreen() {
   const openDiscover = useCallback(() => router.push('/(user)/discover'), [router]);
   const manageMosques = useCallback(() => {
     setShowMosquePicker(false);
-    router.push('/manage-mosques');
+    router.push('/(user)/manage-mosques');
   }, [router]);
   const handleListenLive = useCallback(
     (mosqueId: string) =>
       router.push({
         pathname: '/(user)/now',
-        params: {
-          mosqueId,
-          ...(userLocation
-            ? { lat: String(userLocation.latitude), lng: String(userLocation.longitude) }
-            : {}),
-        },
+        params: { mosqueId },
       }),
-    [router, userLocation]
+    [router]
   );
 
   // ── Effects ────────────────────────────────────────────────────────────────
@@ -1522,6 +1517,26 @@ export default function HomeScreen() {
           <Ionicons name="settings-outline" size={22} color="#0F172A" />
         </Pressable>
       </View>
+
+      {!userId ? (
+        <AppCard subtle style={styles.discoveryCard}>
+          <AppText variant="sectionTitle">Browsing as a guest</AppText>
+          <AppText variant="body" style={styles.discoverySubtitle}>
+            Explore public mosque information. Sign in to follow mosques, save
+            attendance plans, use account preferences or listen to live audio.
+          </AppText>
+          <AppButton
+            title="Sign in or create account"
+            onPress={() =>
+              router.push({
+                pathname: '/sign-in',
+                params: { reason: 'required' },
+              } as any)
+            }
+            style={styles.discoveryBtn}
+          />
+        </AppCard>
+      ) : null}
 
       {/* ── Mosque identity bar ── */}
       <MosqueIdentityBar

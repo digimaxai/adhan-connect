@@ -1,213 +1,167 @@
-// app/(auth)/callback.tsx
 import * as Linking from 'expo-linking';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, Text, View } from 'react-native';
-import { supabase } from '../../lib/supabase';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import {
+  buildAuthCallbackRouteUrl,
+  completeAuthCallbackUrl,
+  type AuthCallbackRouteParams,
+} from '../../lib/authCallback';
 import { requireRoleEntrySelection } from '../../lib/roleEntrySession';
+import {
+  validatePendingSocialLink,
+} from '../../lib/socialAuth';
 
-type Status = 'idle' | 'working' | 'done' | 'error';
+type Status = 'waiting' | 'working' | 'error';
 
-function parseFragment(fragment: string | null | undefined) {
-  const result: Record<string, string> = {};
-  if (!fragment) return result;
-
-  const parts = fragment.split('&');
-  for (const part of parts) {
-    const [rawKey, rawVal] = part.split('=');
-    if (!rawKey) continue;
-    const key = decodeURIComponent(rawKey);
-    const val = rawVal ? decodeURIComponent(rawVal) : '';
-    result[key] = val;
-  }
-  return result;
-}
-
-function getParams(url: string | null) {
-  if (!url) return {};
-
-  const parsed = Linking.parse(url);
-  const qp = (parsed.queryParams ?? {}) as Record<string, string | undefined>;
-
-  // Some Supabase flows put tokens in the URL fragment (#...)
-  // e.g. exp://.../callback#access_token=...&refresh_token=...
-  const hashIndex = url.indexOf('#');
-  if (hashIndex !== -1) {
-    const fragment = url.substring(hashIndex + 1);
-    const fragParams = parseFragment(fragment);
-    for (const [k, v] of Object.entries(fragParams)) {
-      qp[k] = v;
-    }
-  }
-
-  return qp;
-}
-
-function getBrowserUrl() {
+function browserUrl() {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
   return window.location.href;
 }
 
-function buildCandidateUrls(initialUrl: string | null) {
-  const urls = [initialUrl, getBrowserUrl()].filter((value): value is string => Boolean(value));
-  return Array.from(new Set(urls));
-}
-
 export default function AuthCallback() {
   const router = useRouter();
-  const [status, setStatus] = useState<Status>('idle');
-  const [err, setErr] = useState<string | null>(null);
-  const [debugUrl, setDebugUrl] = useState<string | null>(null);
-  const [debugParams, setDebugParams] = useState<Record<string, string | undefined> | null>(null);
+  const routeParams = useLocalSearchParams<AuthCallbackRouteParams>();
+  const retainedLinkingUrl = Linking.useLinkingURL();
+  const currentRouteUrl = buildAuthCallbackRouteUrl('/callback', routeParams);
+  const [status, setStatus] = useState<Status>('waiting');
+  const [error, setError] = useState<string | null>(null);
+  const attemptedUrls = useRef(new Set<string>());
+  const completed = useRef(false);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function handleUrl(url: string | null) {
-      if (!mounted) return;
+  const complete = useCallback(
+    async (url: string) => {
+      if (completed.current) return;
+      if (attemptedUrls.current.has(url)) return;
+      attemptedUrls.current.add(url);
       setStatus('working');
+      setError(null);
 
       try {
-        const candidateUrls = buildCandidateUrls(url);
-        let debugSourceUrl: string | null = null;
-        let debugSourceParams: Record<string, string | undefined> | null = null;
-        let shouldRouteToPasswordSetup = false;
-        let handled = false;
+        const result = await completeAuthCallbackUrl(url);
 
-        for (const candidateUrl of candidateUrls) {
-          const params = getParams(candidateUrl);
-          if (!debugSourceUrl) {
-            debugSourceUrl = candidateUrl;
-            debugSourceParams = params;
-          }
-
-          const code = params.code;
-          const token_hash = params.token_hash || params.token;
-          const rawType = (params.type || '') as
-            | 'signup'
-            | 'recovery'
-            | 'magiclink'
-            | 'email_change'
-            | 'invite'
-            | '';
-          const type = rawType.toLowerCase();
-          shouldRouteToPasswordSetup = type === 'recovery' || type === 'invite';
-
-          const access_token = params.access_token;
-          const refresh_token = params.refresh_token;
-          const error = params.error;
-          const error_description = params.error_description;
-
-          if (error || error_description) {
-            throw new Error(
-              error_description ||
-                error ||
-                'Link is invalid or has expired. Please request a new one.'
-            );
-          }
-
-          if (code) {
-            const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
-            if (exErr) throw exErr;
-            handled = true;
-            debugSourceUrl = candidateUrl;
-            debugSourceParams = params;
-            break;
-          }
-
-          if (token_hash && type) {
-            const { error: otpErr } = await supabase.auth.verifyOtp({ token_hash, type: rawType as any });
-            if (otpErr) throw otpErr;
-            handled = true;
-            debugSourceUrl = candidateUrl;
-            debugSourceParams = params;
-            break;
-          }
-
-          if (access_token && refresh_token) {
-            const { error: sessErr } = await supabase.auth.setSession({
-              access_token,
-              refresh_token,
-            });
-            if (sessErr) throw sessErr;
-            handled = true;
-            debugSourceUrl = candidateUrl;
-            debugSourceParams = params;
-            break;
-          }
-
-          if (type === 'signup') {
-            setDebugUrl(candidateUrl);
-            setDebugParams(params);
-            setStatus('done');
-            router.replace('/sign-in' as any);
-            return;
-          }
+        if (!result.handled) {
+          throw new Error('No valid sign-in response was found. Please start again.');
         }
 
-        setDebugUrl(debugSourceUrl);
-        setDebugParams(debugSourceParams);
-
-        if (!handled) {
-          const { data } = await supabase.auth.getSession();
-          if (!data.session) {
-            throw new Error('No auth code or token found in callback URL.');
-          }
-        }
-
-        if (!mounted) return;
-        setStatus('done');
-
-        // Route based on recovery vs normal auth
-        if (shouldRouteToPasswordSetup) {
+        if (result.destination === 'password') {
+          completed.current = true;
           router.replace('/new-password' as any);
-        } else {
-          const { data: sessionData } = await supabase.auth.getSession();
-          await requireRoleEntrySelection(sessionData.session?.user?.id ?? null);
-          router.replace('/listener-home' as any);
+          return;
         }
-      } catch (e: any) {
-        if (!mounted) return;
-        setErr(e?.message ?? 'Failed to complete sign-in.');
-        setStatus('error');
-      }
-    }
+        if (result.destination === 'sign-in' || !result.userId) {
+          completed.current = true;
+          router.replace('/sign-in' as any);
+          return;
+        }
 
-    // Cold start
-    Linking.getInitialURL().then(handleUrl);
-    // Already-open app
-    const sub = Linking.addEventListener('url', (evt) => handleUrl(evt.url));
+        await validatePendingSocialLink(result.userId);
+        await requireRoleEntrySelection(result.userId);
+        completed.current = true;
+        router.replace('/auth-complete' as any);
+      } catch (caught) {
+        setStatus('error');
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : 'We could not complete sign-in. Please try again.'
+        );
+      }
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      const candidates = Array.from(
+        new Set(
+          [currentRouteUrl, browserUrl(), retainedLinkingUrl].filter(
+            (value): value is string => Boolean(value)
+          )
+        )
+      );
+      if (!active) return;
+      if (candidates.length === 0) {
+        setStatus('error');
+        setError('No valid sign-in response was found. Please start again.');
+        return;
+      }
+      for (const candidate of candidates) {
+        if (!active || completed.current) return;
+        await complete(candidate);
+      }
+    })();
 
     return () => {
-      mounted = false;
-      sub.remove();
+      active = false;
     };
-  }, [router]);
+  }, [complete, currentRouteUrl, retainedLinkingUrl]);
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+    <View style={styles.screen}>
       {status !== 'error' ? (
         <>
-          <ActivityIndicator size="large" />
-          <Text style={{ marginTop: 12 }}>
-            {status === 'working' && 'Completing sign-in...'}
-            {status === 'idle' && 'Waiting for callback...'}
-            {status === 'done' && 'Signed in. Redirecting...'}
-          </Text>
-          {__DEV__ && (
-            <View style={{ marginTop: 12 }}>
-              <Text selectable style={{ fontSize: 12, color: '#0f172a' }}>
-                Raw URL: {debugUrl ?? 'none'}
-              </Text>
-              <Text selectable style={{ fontSize: 12, color: '#0f172a', marginTop: 4 }}>
-                Params: {JSON.stringify(debugParams ?? {})}
-              </Text>
-            </View>
-          )}
+          <ActivityIndicator size="large" color="#0284C7" />
+          <Text style={styles.title}>Completing sign-in…</Text>
+          <Text style={styles.helper}>Keep Adhan Connect open for a moment.</Text>
         </>
       ) : (
-        <Text style={{ color: 'red', textAlign: 'center' }}>{err}</Text>
+        <>
+          <Text style={styles.errorTitle}>Sign-in could not be completed</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable
+            onPress={() => router.replace('/sign-in' as any)}
+            style={({ pressed }) => [
+              styles.button,
+              pressed && { opacity: 0.82 },
+            ]}
+          >
+            <Text style={styles.buttonText}>Back to sign in</Text>
+          </Pressable>
+        </>
       )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: '#F8FAFC',
+  },
+  title: { color: '#0F172A', fontWeight: '800', fontSize: 20, marginTop: 16 },
+  helper: { color: '#64748B', marginTop: 6 },
+  errorTitle: {
+    color: '#991B1B',
+    fontWeight: '800',
+    fontSize: 20,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: '#7F1D1D',
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 10,
+    maxWidth: 380,
+  },
+  button: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  buttonText: { color: '#FFFFFF', fontWeight: '800' },
+});
