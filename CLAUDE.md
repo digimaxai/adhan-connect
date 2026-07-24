@@ -1,6 +1,6 @@
 # Adhan Connect - Claude/Codex Handoff
 
-Last audited by Codex: 2026-05-01
+Last audited by Codex: 2026-07-24
 
 This file is a handoff summary for Claude.ai or any second coding agent working alongside Codex. It captures the current app shape, completed functionality, important source-of-truth files, known risks, and remaining work. Do not paste or expose values from `.env` or `.env.local`.
 
@@ -20,8 +20,13 @@ The app is now much further along than `README-dev.md` suggests. Treat `docs/cod
 - Expo SDK 54, Expo Router 6, React 19, React Native 0.81.
 - TypeScript strict mode with path alias `@/*`.
 - Supabase Auth, PostgreSQL, RLS, server API routes via Expo Router server output.
-- Audio playback via `expo-av` on native/mobile and browser `Audio` on web.
-- External live audio providers are supported through playback/ingest config, especially Icecast/AzuraCast-style workflows.
+- Continuous external audio playback via `expo-av` on native/mobile and browser
+  `Audio` on web. Native LiveKit publishing/subscribing provides the in-app
+  microphone path.
+- External live audio providers are supported through playback/ingest config,
+  especially continuous Icecast/AzuraCast-style workflows. External HLS
+  listener playback is deliberately gated until a segment-aware signed proxy
+  exists.
 - UI is mostly React Native components with shared tokens in `theme/tokens.ts`; main-admin web uses HTML/CSS-style components under `components/admin/web`.
 
 ## How To Run And Verify
@@ -35,14 +40,39 @@ Important package scripts:
 - `npm run lint` - Expo lint.
 - `npx tsc --noEmit` - TypeScript check.
 
-Latest verification from this audit:
+Latest verification from the 2026-07-24 auth/account work (Codex, then
+continued same day by Claude Code after Codex hit its usage limit):
 
 - `npx tsc --noEmit` passed.
-- `npm run lint` failed with 3 errors and 4 warnings:
-  - `app/(auth)/reset.tsx:35` has an unescaped apostrophe in JSX text.
-  - `app/(muezzin)/_layout.tsx:9` missing display name for inline tabBarIcon component.
-  - `app/(user)/_layout.tsx:9` missing display name for inline tabBarIcon component.
-  - Warnings in `app/mosque/[id].tsx`: unused `StreamRow`, unused `fallbackTimes`, unused `resolvedId`, and missing effect deps `cityParam`/`countryParam`.
+- `npm run lint` passed.
+- A network-backed `npx expo install --check` passed.
+- `babel-preset-expo` is now declared (`~54.0.10`, installed via
+  `npx expo install babel-preset-expo --dev` by Claude Code). Clean
+  server-output web, iOS and Android exports all completed successfully into
+  fresh temp directories; each was scanned for the literal values of
+  `SUPABASE_SERVICE_ROLE`, `SUPABASE_ACCESS_TOKEN`, `LIVEKIT_API_KEY`, and
+  `LIVEKIT_API_SECRET` with zero matches in any bundle.
+- `npm audit --omit=dev --audit-level=moderate` still reports the same 17
+  inherited moderate Expo/xcode/uuid build-time findings; do not run
+  `--force`.
+- An independent read-only security review of the full changeset (auth/
+  session/consent/roles/navigation, plus account export/deletion/admin-APIs/
+  live-stream access, reviewed separately) found zero findings at high
+  confidence. See `docs/auth/claude-code-continuation-handoff.md` for what was
+  specifically verified.
+- Manual web smoke-testing confirmed: guest browsing and deep-linking,
+  enumeration-resistant sign-in errors (wrong password and unknown email both
+  produce the same neutral response), and the sign-up consent checkbox.
+  Sign-up-to-completion was inconclusive in this pass only because the shared
+  dev Supabase project's own email rate limit tripped after a couple of
+  attempts (no test accounts were left behind). A pre-existing, non-blocking
+  UI issue was found: `screens/user/discover.tsx` nests a `Pressable` (button)
+  inside another `Pressable` on the mosque card (introduced by this diff, see
+  the handoff doc) — event propagation is correctly stopped so it doesn't
+  misbehave functionally, but it's invalid HTML on web and worth a small
+  follow-up fix.
+- Legal-page static link/CSS/HTML checks passed, but the pages have not been
+  deployed and the Terms remain a lawyer-review draft.
 
 There are no test files except `scripts/create_test_users.js`; the project relies on lint/tsc and manual flow testing right now.
 
@@ -52,13 +82,18 @@ Expected env names seen in code:
 
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- `EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB`
+- `EXPO_PUBLIC_SUPABASE_REDIRECT_URL_NATIVE`
 - `EXPO_PUBLIC_SUPABASE_REDIRECT_URL`
+- `EXPO_PUBLIC_APPLE_AUTH_ENABLED`
+- `EXPO_PUBLIC_GOOGLE_AUTH_ENABLED`
+- `EXPO_PUBLIC_SOCIAL_LINKING_ENABLED`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE`
 - `SUPABASE_ACCESS_TOKEN`
 - `EXPO_PUBLIC_API_BASE_URL`
 
-Never print actual env values. Server routes that use admin/service access require `SUPABASE_SERVICE_ROLE`. Native clients need `EXPO_PUBLIC_API_BASE_URL` or Expo dev URL resolution for API routes.
+Never print actual env values. Server routes that use admin/service access require `SUPABASE_SERVICE_ROLE`. Native clients need `EXPO_PUBLIC_API_BASE_URL` or Expo dev URL resolution for API routes. Account-deletion server flags are listed in `.env.example`; they must remain false until `docs/auth/account-auth-release-gates.md` is complete and the matching database approval row exists.
 
 ## Repo Shape
 
@@ -70,7 +105,7 @@ Important directories:
 - `components/` - shared mobile UI and admin web UI.
 - `theme/tokens.ts` - design tokens.
 - `docs/` - architecture docs, admin specs, worklog.
-- `supabase/migrations/` and `migrations/` - SQL migrations. There is overlap between these folders.
+- `supabase/migrations/` - SQL migrations (canonical, single folder as of 2026-07-24; the old duplicated top-level `migrations/` folder was reconciled into this one and removed).
 - `archive/` - old route stack; excluded from TypeScript.
 
 Current git note from audit: `.vscode/extensions.json` and `.vscode/settings.json` had pre-existing local modifications before this summary was added. Do not revert user/editor changes casually.
@@ -84,7 +119,9 @@ Implemented:
 - Supabase Auth provider and session handling in `lib/auth.tsx`.
 - Role resolution in `lib/roles.ts`, with server-first access lookup through `lib/sessionAccess.ts` and `/api/session-access`.
 - Role target resolution in `lib/roleRouting.ts`.
-- Dual local-admin + muezzin users are sent to `app/role-entry.tsx` to choose workspace.
+- Every authenticated account retains the Listener workspace. Any account with
+  an admin or muezzin role is sent to `app/role-entry.tsx` to choose among its
+  authorised workspaces; an account with both staff roles sees all three.
 - Main admins route to `/admin`.
 - Local admins route to `/(admin)` / `/admin-home`.
 - Muezzins route to `/(muezzin)` / `/muezzin-home`.
@@ -97,6 +134,28 @@ Auth screens are implemented:
 - `app/(auth)/reset.tsx`
 - `app/(auth)/new-password.tsx`
 - `app/(auth)/callback.tsx`
+- `app/complete-account.tsx`
+- `app/auth-complete.tsx`
+
+Current auth/account behavior:
+
+- Email-first entry presents explicit sign-in/create choices without an
+  unauthenticated account-existence lookup.
+- Native sessions use chunked device-only SecureStore; web uses localStorage
+  with the browser lock. OAuth/email callbacks use PKCE and explicit callback
+  handling.
+- Guest browsing is read-only and limited to public mosque/content routes.
+- Missing/current-policy consent is resolved once after authentication, so
+  legacy/invited accounts are gated and returning social users do not repeat it
+  every login. Withdrawal is available from Account & data and returns the user
+  to guest mode.
+- Apple, Google and identity-linking UI are off by default. Do not enable them
+  until provider setup, verified redirects, branding, UUID-preservation and
+  deletion revocation tests pass.
+- Export and impact-aware deletion APIs/UI exist for every role workspace.
+  Export is usable after server deployment; hard deletion is intentionally
+  fail-closed behind environment, durable-rate-limit, production-audit and
+  database-approval gates.
 
 ## Listener/User Surface
 
@@ -150,9 +209,15 @@ Completed functionality:
 
 Critical reality:
 
-- The muezzin app currently controls live state only. It does not upload phone microphone audio.
-- Real audio currently comes from AzuraCast Web DJ, Icecast, RTMP, or another external encoder.
-- If muezzin marks live but listeners hear silence, first verify upstream audio in the provider player before editing listener playback.
+- Native muezzin builds can capture and publish phone microphone audio when the
+  mosque is configured for LiveKit. LiveKit publishing is not available from
+  the web muezzin surface.
+- External, Icecast and RTMP provider modes still depend on AzuraCast Web DJ,
+  Icecast, RTMP or another external encoder.
+- If an external-provider broadcast is marked live but listeners hear silence,
+  first verify upstream audio in the provider player before editing listener
+  playback. For LiveKit, verify the server credentials, publisher connection
+  and real-device microphone permission.
 
 ## Local Admin Mobile Surface
 
@@ -163,7 +228,7 @@ Main routes:
 - `app/(admin)/staff-rota/index.tsx`
 - `app/(admin)/muezzins.tsx`
 - `app/(admin)/events.tsx`
-- `app/(admin)/settings.tsx`
+- `app/(admin)/admin-settings.tsx`
 - `app/(admin)/mosque-onboarding.tsx` for main-admin-accessible mobile setup.
 
 Completed functionality:
@@ -240,7 +305,7 @@ Canonical tables used by current code:
 - `prayer_schedule_imports` and `prayer_schedule_import_rows` - import audit/history/rollback.
 - `mosque_live_stream_upstream_states` - provider callback state.
 
-Important migrations are under both `migrations/` and `supabase/migrations/`. The `supabase/migrations/` folder includes later live-stream/provider additions. Reconcile duplicated migration folders before a clean production deployment.
+All migrations live under `supabase/migrations/` (54 files, reconciled 2026-07-24). The CLI is linked to the production project (`yecbsezhwvpdkuzmmziv`); its migration bookkeeping table was repaired to match the actual live schema (verified directly via PostgREST against production, not assumed) for every file except the still-unapplied `20260724090000_account_control_foundation.sql`, which must go through the staging environment first per `docs/auth/account-auth-release-gates.md`.
 
 Canonical backend rules:
 
@@ -258,7 +323,8 @@ Important API route families:
 - `/api/session-access` - resolves current role/access using service role.
 - `/api/prayer-times-daily` - daily prayer-time payload.
 - `/api/live-stream-access` - issues signed playback URL.
-- `/api/live-stream-playback` - validates token and proxies/redirects to upstream.
+- `/api/live-stream-playback` - validates a short-lived signed grant and proxies
+  an approved continuous-audio upstream without exposing its URL.
 - `/api/muezzin/live-broadcast` - muezzin live state/control plane.
 - `/api/muezzin/rota-workspace` - muezzin rota payload.
 - `/api/admin/prayer-times-workspace` and `/api/admin/prayer-times-save`.
@@ -328,17 +394,23 @@ Recommendations for admins:
 
 Implemented:
 
-- Provider config model in `lib/liveStreamProviders.ts` for `external`, `rtmp`, `icecast`, and `test`.
+- Provider config model in `lib/liveStreamProviders.ts` for `external`, `rtmp`,
+  `icecast`, `livekit`, and `test`.
 - Main admin can configure playback URL, ingest URL, mount path, username, stream key/source password, status secret, and listener secret.
 - Muezzin live screen surfaces readiness, health, and copy/reveal actions.
-- Listener playback uses signed short-lived URL access.
-- Web delivery uses redirect for lower latency; native/mobile uses proxy for `expo-av` compatibility.
+- Listener playback uses account-bound, short-lived signed grants and a
+  proxy-only delivery path. External URLs are checked against
+  `LIVE_STREAM_UPSTREAM_ALLOWED_HOSTS`, every redirect is revalidated, and
+  private/local literal addresses fail closed.
+- Native LiveKit publishing and subscribing provide the in-app microphone
+  media path with short-lived server-issued room tokens.
 - Provider status callback exists at `/api/integrations/live-stream-provider-status`.
 
 Not implemented:
 
-- Phone microphone upload from the muezzin app.
-- LiveKit or equivalent real-time media plane.
+- Web LiveKit publishing/subscribing.
+- A segment-aware signed HLS proxy; external HLS listener playback remains
+  rejected. Use LiveKit or an approved continuous Icecast/AAC/MP3/OGG endpoint.
 - Automatic source-of-truth cleanup for stale live rows; listener side filters them defensively.
 
 ## Notifications
@@ -385,24 +457,31 @@ The default `README.md` is still mostly Expo starter text and should be replaced
 
 ## Current Known Risks / Tech Debt
 
-- Lint currently fails; fix before shipping.
 - No automated unit/integration/E2E tests.
 - Supabase generated `Database` types are not present; shared hand-written types exist under `lib/types`.
-- Migration folders are duplicated (`migrations/` and `supabase/migrations/`); production migration history should be reconciled.
 - Some compatibility fallback code supports old schema shapes (`staff_user_id`, `prayer`, missing `adhan_time`/`iqama_time`). Be careful before deleting.
-- `lib/roles.ts` contains a hardcoded fallback user id/email for muezzin access. This should be removed or moved to proper DB-driven access before production.
+- Social providers, reviewed legal pages, the consent/account-control
+  migration, production data audit and deletion orchestration are not deployed.
+- Hard deletion is non-atomic across Storage, Apple, Auth and Postgres. Keep it
+  disabled until retry/audit/postcondition operations are signed off.
 - Some strings show mojibake/encoding artifacts in older files and docs. Prefer ASCII/clean UTF-8 when editing.
-- `app/mosque/[id].tsx` and `screens/user/mosque/[id].tsx` have overlapping functionality; confirm which route is active before editing.
+- Canonical public event, campaign, mosque and jumuah paths resolve through
+  `app/(user)` wrappers. Admin editor and muezzin alias routes use unique names;
+  do not recreate the deleted top-level duplicate wrappers.
 - Expo config references `assets/images/notification-icon.png`, but this file was not listed by `rg --files`; verify before building production notifications.
 - The app has microphone permissions in native config, but current production flow does not actually capture/upload mic audio.
 
 ## Recommended Next Build Steps
 
-1. Fix current lint errors and warnings.
+1. Complete `docs/auth/account-auth-release-gates.md`, legal review, provider
+   setup, production schema/storage audit, and disposable-user account-control
+   testing. Do not enable deletion or social flags early.
 2. Replace starter `README.md` and stale `README-dev.md` with accurate setup, env, and role-flow docs.
 3. Decide live media strategy:
-   - keep external encoder/AzuraCast/Icecast as production path, or
-   - build app-based mic upload with LiveKit/WebRTC/RTMP bridge.
+   - production-harden and real-device-test the existing native LiveKit path;
+     and/or
+   - keep an allowlisted continuous external encoder/AzuraCast/Icecast endpoint
+     as the production path.
 4. Add backend job or admin cleanup action to auto-end stale live rows at the source.
 5. Add real test coverage:
    - pure parser tests for `lib/prayerScheduleImport.ts`;
@@ -410,7 +489,7 @@ The default `README.md` is still mostly Expo starter text and should be replaced
    - role-routing tests for `lib/roleRouting.ts`;
    - E2E smoke tests for sign-in, listener home, muezzin live, and admin prayer-times save.
 6. Add Supabase generated types and replace broad `any`/manual table types where practical.
-7. Reconcile migration folders and document the canonical Supabase deployment path.
+7. Done 2026-07-24: migration folders reconciled into a single `supabase/migrations/`, CLI-linked and drift-verified against production. Follow-on in progress: a separate staging Supabase project + a `main`/`staging` git branching model, so future migrations (starting with `20260724090000_account_control_foundation.sql`) land in staging before production.
 8. Complete notifications:
    - push-token registration;
    - production push sender;

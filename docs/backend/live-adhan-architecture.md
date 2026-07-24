@@ -64,13 +64,13 @@ This document captures the current backend shape (as inferred from repo code), t
 
 ## Migrations Added in Stage 1 (additive, non-breaking)
 
-- **Schema migration** (`migrations/20251206120000_live_adhan_schema_additions.sql`)
+- **Schema migration** (`supabase/migrations/20251206120000_live_adhan_schema_additions.sql`)
   - Adds (if absent) `current_prayer`, `started_at`, `ended_at`, `stream_url`, `is_live`, `mosque_id` FK to `streams`.
   - Adds (if absent) `status`, `started_at`, `ended_at`, `stream_id` FK to `adhans`.
   - Adds safe indexes: `streams(mosque_id)`, `streams(is_live)`, `adhans(mosque_id)`, `adhans(scheduled_at)`, `adhans(status)`.
   - Notes: entirely additive; no UNIQUE constraints introduced to avoid conflicts with existing data.
 
-- **RLS/policy migration** (`migrations/20251206121000_live_adhan_rls_additions.sql`)
+- **RLS/policy migration** (`supabase/migrations/20251206121000_live_adhan_rls_additions.sql`)
   - Adds policies (guarded by existence checks) to allow:
     - Muezzins (active in `muezzins`) to select/update `streams` and `adhans` for their mosque.
     - Listeners to select `streams` where `is_live = true` and `adhans` with non-private statuses (`live`/`completed`).
