@@ -1,1 +1,1 @@
-export { default } from '../../event/[id]';
+export { default } from '../../../screens/user/event/[id]';

@@ -28,7 +28,15 @@ type ToolSectionProps = {
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const { loading: roleLoading, isAdmin, isMuezzin, isLocalAdmin, isMainAdmin, role, hasDualStaffAccess } = useRoleFlags();
+  const {
+    loading: roleLoading,
+    isAdmin,
+    isMuezzin,
+    isLocalAdmin,
+    isMainAdmin,
+    role,
+    hasMultipleWorkspaceAccess,
+  } = useRoleFlags();
   const { mosques, selectedMosque, loading: mosqueLoading, error, setSelectedMosque } = useAdminMosque();
   const { session } = useAuth();
   const [refreshing, setRefreshing] = React.useState(false);
@@ -129,7 +137,7 @@ export default function AdminDashboard() {
     {
       title: 'Admin Settings',
       description: 'Default mosque and account preferences.',
-      href: '/(admin)/settings',
+      href: '/(admin)/admin-settings',
       icon: 'settings-outline',
       iconBg: '#F1F5F9',
       iconColor: '#475569',
@@ -179,13 +187,13 @@ export default function AdminDashboard() {
             Assign a mosque to unlock daily operations.
           </AppText>
         ) : null}
-        {hasDualStaffAccess ? (
+        {hasMultipleWorkspaceAccess ? (
           <Pressable
             onPress={() => router.push('/role-entry' as any)}
             style={({ pressed }) => [styles.switchWorkspaceBtn, pressed && styles.pressed]}
           >
             <Ionicons name="swap-horizontal-outline" size={15} color="#2563EB" />
-            <AppText style={styles.switchWorkspaceBtnText}>Switch to Muezzin view</AppText>
+            <AppText style={styles.switchWorkspaceBtnText}>Switch workspace</AppText>
           </Pressable>
         ) : null}
       </View>

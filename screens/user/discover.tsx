@@ -1,10 +1,21 @@
 // app/(tabs)/discover.tsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Location from 'expo-location';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  type GestureResponderEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '../../lib/auth';
+import { promptForSignIn } from '../../lib/guestAccess';
+import { FOLLOWED_MOSQUE_LIMIT } from '../../lib/subscriptionLimits';
 import { supabase } from '../../lib/supabase';
 
 type MosqueRow = {
@@ -23,7 +34,6 @@ type UserLocation = {
   longitude: number;
 };
 
-const MAX_FOLLOW = 3;
 const MOSQUE_SELECT = 'id,name,city,country,lat,lng';
 
 const toRadians = (degrees: number) => degrees * (Math.PI / 180);
@@ -69,7 +79,12 @@ export default function DiscoverMosques() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const isMuezzinContext = segments[0] === '(muezzin)';
-  const manageMosquesPath = isMuezzinContext ? '/(muezzin)/manage-mosques' : '/(user)/manage-mosques';
+  const manageMosquesPath = isMuezzinContext
+    ? '/(muezzin)/muezzin-manage-mosques'
+    : '/(user)/manage-mosques';
+  const mosqueDetailPath = isMuezzinContext
+    ? '/(muezzin)/listener-mosque/[id]'
+    : '/(user)/mosque/[id]';
 
   const [query, setQuery] = useState('');
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
@@ -79,7 +94,7 @@ export default function DiscoverMosques() {
   const [isLoading, setIsLoading] = useState(false);
 
   const followedCount = useMemo(() => followingIds.size, [followingIds]);
-  const atLimit = followedCount >= MAX_FOLLOW;
+  const atLimit = followedCount >= FOLLOWED_MOSQUE_LIMIT;
   const contextHeader = userLocation ? 'Nearby Mosques' : 'All Mosques';
   const locationChipText =
     locationStatus === 'loading'
@@ -93,7 +108,10 @@ export default function DiscoverMosques() {
       : 'Near me';
 
   const fetchFollowing = useCallback(async () => {
-    if (!userId) return;
+    if (!userId) {
+      setFollowingIds(new Set());
+      return;
+    }
     const { data } = await supabase.from('subscriptions').select('mosque_id').eq('user_id', userId);
     if (Array.isArray(data)) {
       setFollowingIds(new Set(data.map((d) => d.mosque_id)));
@@ -222,10 +240,13 @@ export default function DiscoverMosques() {
   };
 
   const onFollow = async (id: string) => {
-    if (!userId) return;
+    if (!userId) {
+      promptForSignIn(router, 'follow mosques');
+      return;
+    }
     const isFollowed = followingIds.has(id);
-    if (!isFollowed && followedCount >= MAX_FOLLOW) {
-      Alert.alert('Maximum Reached', 'You can follow up to 10 mosques. Unfollow a mosque to follow a new one.', [
+    if (!isFollowed && followedCount >= FOLLOWED_MOSQUE_LIMIT) {
+      Alert.alert('Maximum Reached', `You can follow up to ${FOLLOWED_MOSQUE_LIMIT} mosques. Unfollow a mosque to follow a new one.`, [
         { text: 'Manage My Mosques', onPress: () => router.push(manageMosquesPath as any) },
         { text: 'Cancel', style: 'cancel' },
       ]);
@@ -240,6 +261,23 @@ export default function DiscoverMosques() {
       next.add(id);
     }
     setFollowingIds(next);
+  };
+
+  const openMosque = (mosque: MosqueRow) => {
+    router.push({
+      pathname: mosqueDetailPath,
+      params: {
+        id: mosque.id,
+        name: mosque.name,
+        city: mosque.city ?? '',
+        country: mosque.country ?? '',
+      },
+    } as any);
+  };
+
+  const onFollowPress = (event: GestureResponderEvent, mosqueId: string) => {
+    event.stopPropagation();
+    void onFollow(mosqueId);
   };
 
   const emptyState = !isLoading && mosques.length === 0;
@@ -284,13 +322,26 @@ export default function DiscoverMosques() {
           <Text style={styles.locationText}>{locationChipText}</Text>
         </Pressable>
 
-        <View style={[styles.followStrip, atLimit && styles.followStripMax]}>
-          <Text style={styles.followStripText}>{`⭐ Following ${followedCount} / ${MAX_FOLLOW} mosques`}</Text>
-          {atLimit && <Text style={styles.followStripNote}>You have reached the maximum of 10 followed mosques.</Text>}
-          <Pressable onPress={() => router.push(manageMosquesPath as any)} hitSlop={8} style={{ marginTop: 6, alignSelf: 'flex-start' }}>
-            <Text style={styles.manageLink}>Manage my mosques</Text>
-          </Pressable>
-        </View>
+        {userId ? (
+          <View style={[styles.followStrip, atLimit && styles.followStripMax]}>
+            <Text style={styles.followStripText}>{`⭐ Following ${followedCount} / ${FOLLOWED_MOSQUE_LIMIT} mosques`}</Text>
+            {atLimit ? (
+              <Text style={styles.followStripNote}>
+                {`You have reached the maximum of ${FOLLOWED_MOSQUE_LIMIT} followed mosques.`}
+              </Text>
+            ) : null}
+            <Pressable onPress={() => router.push(manageMosquesPath as any)} hitSlop={8} style={styles.manageButton}>
+              <Text style={styles.manageLink}>Manage my mosques</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.followStrip}>
+            <Text style={styles.followStripText}>Browsing as a guest</Text>
+            <Text style={styles.guestStripNote}>
+              {`Open any mosque page. Sign in to follow up to ${FOLLOWED_MOSQUE_LIMIT} mosques.`}
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.contextHeader}>{contextHeader}</Text>
 
@@ -307,7 +358,17 @@ export default function DiscoverMosques() {
             const disabled = !isFollowed && atLimit;
             const distanceLabel = formatDistance(m.distance_km);
             return (
-              <View key={m.id} style={[styles.rowCard, styles.shadow]}>
+              <Pressable
+                key={m.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${m.name}`}
+                onPress={() => openMosque(m)}
+                style={({ pressed }) => [
+                  styles.rowCard,
+                  styles.shadow,
+                  pressed && styles.rowCardPressed,
+                ]}
+              >
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowHeader}>
                     <Text style={styles.rowTitle} numberOfLines={1}>
@@ -325,16 +386,24 @@ export default function DiscoverMosques() {
                   {distanceLabel && <Text style={styles.rowMeta}>{distanceLabel}</Text>}
                 </View>
                 <Pressable
-                  onPress={() => onFollow(m.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    userId
+                      ? `${isFollowed ? 'Unfollow' : 'Follow'} ${m.name}`
+                      : `Sign in to follow ${m.name}`
+                  }
+                  onPress={(event) => onFollowPress(event, m.id)}
                   style={({ pressed }) => [
                     isFollowed ? styles.btnOutline : styles.btnPrimary,
                     disabled && styles.btnDisabled,
                     { opacity: pressed ? 0.85 : 1 },
                   ]}
                 >
-                  <Text style={isFollowed ? styles.btnOutlineText : styles.btnPrimaryText}>{isFollowed ? 'Following' : 'Follow'}</Text>
+                  <Text style={isFollowed ? styles.btnOutlineText : styles.btnPrimaryText}>
+                    {userId ? (isFollowed ? 'Following' : 'Follow') : 'Sign in to follow'}
+                  </Text>
                 </Pressable>
-              </View>
+              </Pressable>
             );
           })}
         </View>
@@ -385,6 +454,8 @@ const styles = StyleSheet.create({
   followStripMax: { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' },
   followStripText: { color: '#0F172A', fontWeight: '700', fontSize: 13 },
   followStripNote: { color: '#B45309', fontSize: 12, marginTop: 4 },
+  guestStripNote: { color: '#475569', fontSize: 12, marginTop: 4, lineHeight: 17 },
+  manageButton: { marginTop: 6, alignSelf: 'flex-start' },
   manageLink: { color: '#0EA5E9', fontWeight: '800', fontSize: 12 },
   contextHeader: { marginTop: 12, fontSize: 14, fontWeight: '800', color: '#0F172A' },
   list: { marginTop: 12, gap: 10 },
@@ -396,6 +467,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  rowCardPressed: { opacity: 0.84 },
   rowHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rowTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A', flexShrink: 1 },
   rowSub: { color: '#475569', fontSize: 13, marginTop: 2 },
@@ -407,7 +479,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 12,
-    minWidth: 88,
+    minWidth: 110,
     alignItems: 'center',
   },
   btnPrimaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
@@ -417,7 +489,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 12,
-    minWidth: 88,
+    minWidth: 110,
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
   },

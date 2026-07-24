@@ -118,7 +118,7 @@ function EventsList({ events, router }: { events: EventItem[]; router: ReturnTyp
         return (
           <React.Fragment key={ev.id}>
             <Pressable
-              onPress={() => router.push({ pathname: '/(admin)/event/[id]', params: { id: ev.id } } as any)}
+              onPress={() => router.push({ pathname: '/(admin)/event-editor/[id]', params: { id: ev.id } } as any)}
               style={({ pressed }) => [styles.listRow, pressed && styles.rowPressed]}
             >
               <View style={styles.eventDateBadge}>
@@ -176,7 +176,7 @@ function CampaignsList({ campaigns, router }: { campaigns: CampaignItem[]; route
         return (
           <React.Fragment key={c.id}>
             <Pressable
-              onPress={() => router.push({ pathname: '/(admin)/campaign/[id]', params: { id: c.id } } as any)}
+              onPress={() => router.push({ pathname: '/(admin)/campaign-editor/[id]', params: { id: c.id } } as any)}
               style={({ pressed }) => [styles.listRow, pressed && styles.rowPressed]}
             >
               <View style={styles.campaignIconWrap}>
@@ -365,8 +365,8 @@ export default function ContentHubScreen() {
   }, [tab, loadTab]);
 
   const handleNew = () => {
-    if (tab === 'events') router.push({ pathname: '/(admin)/event/[id]', params: { id: 'new' } } as any);
-    else if (tab === 'campaigns') router.push({ pathname: '/(admin)/campaign/[id]', params: { id: 'new' } } as any);
+    if (tab === 'events') router.push({ pathname: '/(admin)/event-editor/[id]', params: { id: 'new' } } as any);
+    else if (tab === 'campaigns') router.push({ pathname: '/(admin)/campaign-editor/[id]', params: { id: 'new' } } as any);
     else router.push({ pathname: '/(admin)/announcement/[id]', params: { id: 'new' } } as any);
   };
 

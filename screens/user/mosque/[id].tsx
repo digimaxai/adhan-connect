@@ -10,6 +10,8 @@ import { supabase } from '../../lib/supabase';
 import { useLiveStreamForMosque } from '../../shared/hooks/useLiveStreamForMosque';
 import { usePrayerTimesRealtime } from '../../shared/hooks/usePrayerTimesRealtime';
 import { getDailyPrayerTimes } from '../../../lib/api/prayerTimesUnified';
+import { promptForSignIn } from '../../../lib/guestAccess';
+import { FOLLOWED_MOSQUE_LIMIT } from '../../../lib/subscriptionLimits';
 import {
   crowdState,
   formatJumuahTime,
@@ -52,8 +54,6 @@ type AnnouncementRow = {
   is_urgent?: boolean | null;
   is_pinned?: boolean | null;
 };
-const FOLLOW_LIMIT = 10;
-
 function startOfTodayIso() {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
@@ -371,9 +371,13 @@ export default function MosquePage() {
 
   const toggleFollow = async () => {
     const targetMosqueId = resolvedId || (id && isUuid(id) ? id : null);
-    if (!targetMosqueId || !userId || actionLoading) return;
-    if (!following && subCount >= FOLLOW_LIMIT) {
-      alert(`Maximum Reached\n\nYou can follow up to ${FOLLOW_LIMIT} mosques. Unfollow a mosque to add a new one.\n\nChoose "Manage My Mosques" in Settings.`);
+    if (!userId) {
+      promptForSignIn(router, 'follow mosques');
+      return;
+    }
+    if (!targetMosqueId || actionLoading) return;
+    if (!following && subCount >= FOLLOWED_MOSQUE_LIMIT) {
+      alert(`Maximum Reached\n\nYou can follow up to ${FOLLOWED_MOSQUE_LIMIT} mosques. Unfollow a mosque to add a new one.\n\nChoose "Manage My Mosques" in Settings.`);
       return;
     }
     setActionLoading(true);
@@ -543,6 +547,12 @@ export default function MosquePage() {
             <Text style={styles.identityCity} numberOfLines={1}>{city || 'City, Country'}</Text>
           </View>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              userId
+                ? `${following ? 'Unfollow' : 'Follow'} ${mosque?.name ?? 'mosque'}`
+                : `Sign in to follow ${mosque?.name ?? 'this mosque'}`
+            }
             onPress={toggleFollow}
             disabled={actionLoading}
             style={({ pressed }) => [
@@ -551,14 +561,18 @@ export default function MosquePage() {
               (pressed || actionLoading) && { opacity: 0.8 },
             ]}
           >
-            <Ionicons name={following ? 'checkmark' : 'add'} size={14} color={following ? '#0369A1' : '#64748B'} />
+            <Ionicons
+              name={!userId ? 'log-in-outline' : following ? 'checkmark' : 'add'}
+              size={14}
+              color={following ? '#0369A1' : '#64748B'}
+            />
             <Text style={[styles.followPillText, following && styles.followPillTextActive]}>
-              {following ? 'Following' : 'Follow'}
+              {userId ? (following ? 'Following' : 'Follow') : 'Sign in to follow'}
             </Text>
           </Pressable>
         </View>
-        {!following && subCount >= FOLLOW_LIMIT && (
-          <Text style={styles.limitNote}>{`You are following ${FOLLOW_LIMIT} mosques (maximum).`}</Text>
+        {userId && !following && subCount >= FOLLOWED_MOSQUE_LIMIT && (
+          <Text style={styles.limitNote}>{`You are following ${FOLLOWED_MOSQUE_LIMIT} mosques (maximum).`}</Text>
         )}
 
         {/* ── Live broadcast ── */}
