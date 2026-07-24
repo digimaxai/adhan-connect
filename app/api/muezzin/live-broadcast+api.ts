@@ -383,7 +383,7 @@ function shouldUseTransactionalStart(mosqueId: string) {
 
   return (process.env.LIVE_BROADCAST_START_RPC_MOSQUE_IDS ?? '')
     .split(',')
-    .map((value) => value.trim().toLowerCase())
+    .map((value: string) => value.trim().toLowerCase())
     .filter(Boolean)
     .includes(mosqueId.toLowerCase());
 }
@@ -395,7 +395,7 @@ function shouldUseTransactionalEnd(mosqueId: string) {
 
   return (process.env.LIVE_BROADCAST_END_RPC_MOSQUE_IDS ?? '')
     .split(',')
-    .map((value) => value.trim().toLowerCase())
+    .map((value: string) => value.trim().toLowerCase())
     .filter(Boolean)
     .includes(mosqueId.toLowerCase());
 }
