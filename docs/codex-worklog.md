@@ -1,6 +1,6 @@
 # Codex Worklog
 
-Last updated: 2026-07-21
+Last updated: 2026-07-24
 
 ## Purpose
 
@@ -910,3 +910,161 @@ Residual risk / follow-up:
   from the completed database migration
 - each new mosque still requires a controlled two-device private canary before
   approval and production launch
+
+### 2026-07-24 to 2026-07-25: Claude Code picks up Codex's handoff, builds a real staging environment, lands the auth/GDPR changeset there
+
+Problem:
+
+- Codex's session ended (usage limit) mid-way through the sign-in
+  simplification + GDPR account-controls work, with a large uncommitted
+  changeset and an unapplied migration
+  (`supabase/migrations/20260724090000_account_control_foundation.sql`)
+- `preview` and `production` EAS environments shared one Supabase project,
+  so there was no safe place to test that migration, or anything else,
+  without risking the real production database
+- `migrations/` and `supabase/migrations/` were duplicated top-level
+  folders with an actual gap: 14 core tables (`users`, `mosques`, `streams`,
+  `muezzins`, `adhans`, `adhan_broadcasts`, `campaigns`, `donations`,
+  `events`, `follows`, `mosque_prayer_times`, `recorded_adhans`,
+  `subscriptions`, `user_mosque_prefs`) and 13 enum types had no creating
+  migration anywhere — they predated migration tracking (2025-12-06)
+  entirely and were never captured
+
+Root cause:
+
+- the migration-folder duplication and untracked genesis tables were
+  historical (predate this session); nobody had ever tried a from-scratch
+  replay before, so the gap was invisible until this work specifically
+  tried to reproduce the schema on a new project
+- there was no CI and no branch protection at all before this session, so
+  `main` had been receiving direct pushes since the repo's first commit
+
+Files changed (representative, not exhaustive — see the actual PR diffs on
+GitHub for the full list):
+
+- `supabase/migrations/20251206000000_genesis_core_schema.sql` (new)
+- `supabase/migrations/` — 10 files moved in from the old `migrations/`
+  folder, which was then deleted
+- `supabase/.gitignore` (new)
+- `.github/workflows/ci.yml` (new)
+- `docs/mobile/beta-release-builds.md` — added the staging/production
+  promotion runbook
+- `app/api/muezzin/live-broadcast+api.ts` — recovered after an accidental
+  over-commit (see below), now correctly has the `accountConsentAccess`
+  integration plus two unrelated fixes
+- 11 files across `lib/`, `app/(admin)/`, `screens/` — explicit `: string`
+  parameter types added to `.split(',').map(...)`-style callbacks (CI-only
+  implicit-any errors, see Verification)
+- `lib/server/liveStreamUpstreamPolicy.ts` — one `.map<T>()` generic call
+  changed to a return-type-annotated callback for the same reason
+- the entire pending auth/GDPR changeset (111 files) merged into `staging`
+  via PR #3 on top of the above
+
+Fix:
+
+- reconciled the migration folders: verified byte-identical overlap,
+  merged the 10 missing files in, linked the Supabase CLI to production,
+  and confirmed no real drift directly against the live schema (via
+  PostgREST, since Docker wasn't available yet) before retiring
+  `migrations/`
+- wrote and validated a genesis migration for the 14 untracked tables —
+  deliberately scoped to tables/types only (not the ~20 untracked
+  functions, which are a documented follow-up), verified end-to-end by
+  applying it to a disposable Supabase-flavoured Postgres container via
+  Docker before committing
+- created a new `adhan-connect-staging` Supabase project (same org/region
+  as production), schema-cloned from production via `pg_dump`/`db query`
+  (not `db diff`/replay, since the genesis gap made replay fail on a truly
+  blank database), seeded with synthetic test users only
+- split `SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`,
+  `EXPO_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE` in EAS from
+  one shared record across all three environments into independent
+  per-environment records — this was not obvious from the CLI and caused a
+  near-miss (see Residual risk)
+- created the `staging` branch, added `.github/workflows/ci.yml` (tsc +
+  lint on PRs into `staging`/`main` and on push to `staging`), protected
+  `main` via the GitHub API (PR required, 0 required reviewers, required
+  `checks` status, no force-push/deletion, `enforce_admins: false` as a
+  deliberate owner escape hatch)
+- landed the full pending auth/GDPR changeset as
+  `feature/auth-gdpr-account-controls`, merged into `staging` via PR,
+  applied `20260724090000_account_control_foundation.sql` to staging
+- cut EAS `preview`-profile builds (Android and iOS) from `staging` for
+  real-device testing; iOS additionally required registering a test device
+  (`eas device:create`) and enabling Developer Mode on the physical device
+
+Verification:
+
+- `npx tsc --noEmit`, `npm run lint`, `npx expo export` (web/iOS/Android)
+  all clean before continuing Codex's work; independent two-pass security
+  review of the full pending changeset found zero high-confidence findings
+- migration reconciliation verified against production's actual live
+  schema (table/function existence checks via PostgREST), not assumed from
+  the migration files alone
+- genesis migration applied successfully end-to-end to a disposable
+  Postgres container (Docker), then to both staging and production
+  bookkeeping (`migration repair --status applied`) since the schema
+  already existed in both
+- staging's full schema diffed against production's table list: exact
+  match
+- CI failures were real and were each root-caused against actual CI output
+  rather than guessed at: an accidental over-commit that broke `tsc` on
+  `main` (see below), then a set of CI-only implicit-any errors on
+  `.split(',').map(...)` callbacks that could not be reproduced locally
+  despite ruling out Node version, OS, and CPU architecture one at a time
+  via Docker — fixed with explicit type annotations, confirmed green
+  against real CI, not local reproduction
+- after the full changeset merged into staging: `migration list --linked`
+  showed 55/55 matched on staging, and separately confirmed production
+  still shows exactly one unmatched migration
+  (`20260724090000`, i.e. correctly still unapplied there)
+
+Residual risk / follow-up:
+
+- **near-miss, self-corrected:** partway through, an `eas env:set` update
+  intended for `preview`/`development` only briefly changed
+  `production`'s Supabase URL too, because those variables were originally
+  a single record shared across all three environments rather than
+  separate per-environment ones. Caught immediately via `eas env:list
+  --format long` (check the `Environments:` field before trusting a
+  variable is actually scoped the way it looks), fixed by splitting each
+  into independent records, verified production correct afterward. No
+  build was cut with the bad values in between.
+- **near-miss, self-corrected:** a git commit intended to fix one stale
+  comment in `app/api/muezzin/live-broadcast+api.ts` accidentally staged
+  that file's entire pending Codex diff instead, because the file already
+  had uncommitted changes sitting in the tree at commit time. This broke
+  `main`'s `tsc` build; caught by the newly-added CI on the very next PR,
+  reverted via a follow-up PR, and Codex's actual intended change (the
+  `accountConsentAccess` integration) was recovered via a 3-way merge
+  against commit `35c0382` since it was no longer present in any stash.
+  Lesson: always check `git status` on a specific file before `git add`ing
+  it, even mid-unrelated-task, if the working tree might already have
+  unrelated pending changes.
+- ~20 functions in production (some superseded/legacy broadcast RPCs, some
+  still-used trigger/helper functions like `handle_new_auth_user`,
+  `ensure_profile_exists`, `search_mosques`) have no creating migration
+  anywhere, and neither do the RLS policies on the 14 genesis tables that
+  depend on those functions or on `mosque_admins`. Deliberately deferred,
+  not guessed at — needs its own pass to triage dead vs. needed before
+  writing a follow-up migration.
+- separately, a pre-existing bug unrelated to this session's work:
+  `20251207100000_prayer_times_and_staff_rota.sql` (already applied to
+  production) references a `profiles` table that isn't created until
+  `20251207101500`, 15 minutes later. Only surfaced because this was the
+  first time anyone tried replaying the full migration history from
+  scratch. Not fixed — editing an already-applied production migration
+  file needs its own deliberate follow-up.
+- the exact reason `tsc` produced different implicit-any errors in GitHub
+  Actions than in every local reproduction attempt (matched Node version,
+  OS, and CPU architecture one at a time) was never conclusively
+  identified. The specific errors are fixed and verified; the underlying
+  "why" is not understood.
+- still blocked, per `docs/auth/account-auth-release-gates.md`: production
+  RLS migration, legal review of the draft Privacy/Terms pages, Apple/Google
+  provider setup, and hard-deletion enablement. None of today's work
+  changes any of those gates.
+- staging is live and UAT-ready; promoting `staging` into `main` and
+  applying the migration to production both remain explicitly gated on the
+  product owner's sign-off after real-device testing, not an automated
+  next step.
