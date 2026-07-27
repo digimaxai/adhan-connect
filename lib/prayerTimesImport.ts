@@ -20,12 +20,12 @@ const BATCH_SIZE = 200;
 function parsePrayerCsv(csv: string): PrayerCsvRow[] {
   const lines = csv
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    .map((l: string) => l.trim())
     .filter((l) => l.length > 0);
 
   if (lines.length < 2) return [];
 
-  const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const header = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
   const idx = {
     date: header.indexOf('date'),
     fajr: header.indexOf('fajr'),
@@ -52,7 +52,7 @@ function parsePrayerCsv(csv: string): PrayerCsvRow[] {
   const rows: PrayerCsvRow[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',').map((c) => c.trim());
+    const cols = lines[i].split(',').map((c: string) => c.trim());
     if (!cols[idx.date]) continue;
 
     rows.push({
@@ -72,7 +72,7 @@ function parsePrayerCsv(csv: string): PrayerCsvRow[] {
 // Normalise times like "6:5" → "06:05:00"
 function toPgTime(t: string | undefined): string | null {
   if (!t) return null;
-  const parts = t.split(':').map((p) => p.trim());
+  const parts = t.split(':').map((p: string) => p.trim());
   if (parts.length < 2) return null;
   const [h, m] = parts;
   const hh = h.padStart(2, '0');
