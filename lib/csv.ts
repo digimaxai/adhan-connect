@@ -12,12 +12,12 @@ export type PrayerCsvRow = {
 export function parsePrayerCsv(csv: string): PrayerCsvRow[] {
   const lines = csv
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    .map((l: string) => l.trim())
     .filter((l) => l.length > 0);
 
   if (lines.length < 2) return [];
 
-  const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const header = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
   const idx = {
     date: header.indexOf('date'),
     fajr: header.indexOf('fajr'),
@@ -36,7 +36,7 @@ export function parsePrayerCsv(csv: string): PrayerCsvRow[] {
   const rows: PrayerCsvRow[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',').map((c) => c.trim());
+    const cols = lines[i].split(',').map((c: string) => c.trim());
     if (!cols[idx.date]) continue;
 
     rows.push({
