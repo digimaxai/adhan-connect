@@ -98,7 +98,7 @@ function isTransactionalForMosque(modeValue: string | undefined, idsValue: strin
   if (mode !== 'allowlist') return false;
   return (idsValue ?? '')
     .split(',')
-    .map((value) => value.trim().toLowerCase())
+    .map((value: string) => value.trim().toLowerCase())
     .filter(Boolean)
     .includes(mosqueId.toLowerCase());
 }

@@ -129,7 +129,7 @@ export default function MuezzinLiveScreen() {
     const fromTimes = effectivePrayerKey ? prayerTimes.times?.[effectivePrayerKey] : null;
     if (fromTimes) {
       const resolvedPrayerKey = effectivePrayerKey as PrayerName;
-      const [h, m] = fromTimes.split(':').map((v) => parseInt(v, 10));
+      const [h, m] = fromTimes.split(':').map((v: string) => parseInt(v, 10));
       const d = new Date();
       d.setHours(h, m, 0, 0);
       return {
