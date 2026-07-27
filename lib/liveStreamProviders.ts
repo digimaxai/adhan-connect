@@ -98,7 +98,7 @@ const PROVIDER_PROFILES: Record<LiveStreamProvider, LiveStreamProviderProfile> =
   external: {
     provider: 'external',
     label: 'External',
-    summary: 'Playback is managed outside the app. Encoder details are optional when your vendor provides them.',
+    summary: 'Use an approved continuous HTTP(S) audio endpoint. External HLS listener playback is not currently supported.',
     ingestProtocols: ['http:', 'https:', 'rtmp:', 'rtmps:'],
     ingestProtocolHint: 'http(s) or rtmp(s)',
     supportsExternalEncoder: true,
@@ -110,12 +110,12 @@ const PROVIDER_PROFILES: Record<LiveStreamProvider, LiveStreamProviderProfile> =
     usernameLabel: null,
     credentialLabel: 'Stream key',
     encoderInstructions:
-      'Use external mode when your provider manages ingest separately. Add ingest details only if your upstream vendor gave mosque-specific encoder credentials.',
+      'Use external mode when your provider manages ingest separately. Listener playback must be a continuous audio endpoint on the server allowlist, not an HLS playlist.',
   },
   rtmp: {
     provider: 'rtmp',
-    label: 'RTMP / HLS',
-    summary: 'Use RTMP or RTMPS ingest from the encoder and publish an HTTP playback URL for listeners.',
+    label: 'RTMP / external encoder',
+    summary: 'Use RTMP or RTMPS ingest from the encoder and an approved continuous HTTP(S) audio endpoint for listeners.',
     ingestProtocols: ['rtmp:', 'rtmps:'],
     ingestProtocolHint: 'rtmp(s)',
     supportsExternalEncoder: true,
@@ -127,7 +127,7 @@ const PROVIDER_PROFILES: Record<LiveStreamProvider, LiveStreamProviderProfile> =
     usernameLabel: null,
     credentialLabel: 'Stream key',
     encoderInstructions:
-      'Connect the mosque encoder to the RTMP ingest URL with the stream key. Your provider should expose the configured playback URL for follower listening.',
+      'Connect the encoder to the RTMP ingest URL with the stream key. RTMP remains ingest-only; configure a continuous audio listener URL because external HLS playback is gated.',
   },
   icecast: {
     provider: 'icecast',

@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import {
   normalizeLiveStreamProvider,
@@ -162,7 +162,7 @@ async function requireMuezzinContext(
     },
   });
 
-  let authData: { user?: { id: string } | null } | null = null;
+  let authUser: User | null = null;
   let authError: unknown = null;
   try {
     const result = await withTimeout(
@@ -170,7 +170,7 @@ async function requireMuezzinContext(
       AUTH_CHECK_BUDGET_MS,
       'Supabase session verification'
     );
-    authData = result.data;
+    authUser = result.data.user;
     authError = result.error;
   } catch (error) {
     console.warn('[live-broadcast] auth verification failed', {
@@ -179,14 +179,13 @@ async function requireMuezzinContext(
     return { response: json({ error: 'Unable to verify your session. Check the local server connection and try again.' }, 503) };
   }
 
-  const verifiedUserId = authData?.user?.id ?? null;
-  if (authError || !verifiedUserId) {
+  if (authError || !authUser) {
     return { response: json({ error: 'Session is invalid or has expired.' }, 401) };
   }
 
   return {
     supabaseAdmin,
-    userId: verifiedUserId,
+    userId: authUser.id,
   };
 }
 
