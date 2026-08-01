@@ -24,7 +24,10 @@ export default function ResetScreen() {
       Alert.alert('Failed', error);
       return;
     }
-    Alert.alert('Email sent', 'Check your inbox for a password reset link.');
+    Alert.alert(
+      'Check your email',
+      'If an account matches that email, we sent a password reset link.'
+    );
     router.replace('/sign-in'); // no group in path
   };
 
