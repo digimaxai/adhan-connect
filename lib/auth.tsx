@@ -52,6 +52,17 @@ const describeAuthError = (message: string | null | undefined) => {
   return fallback;
 };
 
+const describePasswordResetError = (message: string | null | undefined) => {
+  const fallback = message?.trim() ?? '';
+  if (/network request failed|failed to fetch|networkerror/i.test(fallback)) {
+    return 'We could not reach the sign-in service. Check your connection and try again.';
+  }
+  if (/rate limit|too many requests|over_email_send_rate_limit/i.test(fallback)) {
+    return 'Too many attempts were made. Please wait a moment and try again.';
+  }
+  return 'We could not process that request right now. Please try again later.';
+};
+
 /* ------------------------------------------------------------------
    Types
 ------------------------------------------------------------------- */
@@ -304,10 +315,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: getPasswordResetRedirectUrl(),
       });
-      if (error) return { error: error.message };
+      if (error) return { error: describePasswordResetError(error.message) };
       return {};
     } catch (e: any) {
-      return { error: e?.message ?? 'Unknown error' };
+      return { error: describePasswordResetError(e?.message) };
     }
   };
 
