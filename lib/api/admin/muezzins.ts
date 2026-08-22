@@ -1,6 +1,7 @@
 import { supabase } from '../../supabase';
 import type { MuezzinCoverRequest } from '../../types/muezzin';
 import { fetchServerApi, resolveApiUrls, supportsServerApi } from '../apiBaseUrl';
+import { fetchProfiles, displayNameForProfile } from '../profiles';
 
 export type MosqueMuezzinMember = {
   userId: string;
@@ -11,36 +12,6 @@ export type MosqueMuezzinMember = {
   createdAt: string | null;
 };
 
-type ProfileLookup = {
-  id: string;
-  full_name?: string | null;
-  display_name?: string | null;
-  email?: string | null;
-};
-
-async function fetchProfileMap(userIds: string[]) {
-  if (!userIds.length) return {} as Record<string, ProfileLookup>;
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, full_name, display_name, email')
-    .in('id', userIds);
-
-  if (error && error.code !== 'PGRST116') {
-    console.warn('[fetchProfileMap]', error);
-    return {} as Record<string, ProfileLookup>;
-  }
-
-  const map: Record<string, ProfileLookup> = {};
-  (data ?? []).forEach((row: any) => {
-    map[row.id] = row as ProfileLookup;
-  });
-  return map;
-}
-
-function displayNameForProfile(profile?: ProfileLookup | null) {
-  return profile?.display_name ?? profile?.full_name ?? profile?.email ?? 'Muezzin';
-}
 
 async function getAccessToken() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -87,7 +58,7 @@ export async function getMosqueMuezzinMembers(mosqueId: string): Promise<MosqueM
 
   const safeRows = rows ?? [];
   const [profileMap, defaultMuezzinUserId] = await Promise.all([
-    fetchProfileMap(safeRows.map((row) => row.user_id)),
+    fetchProfiles(safeRows.map((row) => row.user_id)),
     getDefaultMuezzinUserId(mosqueId),
   ]);
 
@@ -188,7 +159,7 @@ export async function getMosqueCoverRequests(mosqueId: string): Promise<MuezzinC
         .filter(Boolean) as string[]
     )
   );
-  const profileMap = await fetchProfileMap(relatedIds);
+  const profileMap = await fetchProfiles(relatedIds);
 
   return rows.map((row) => ({
     ...row,
