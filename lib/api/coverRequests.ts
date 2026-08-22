@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { insertAppNotifications } from './appNotifications';
+import { fetchProfileNames } from './profiles';
 import type {
   CoverRequestStatus,
   MuezzinCoverRequest,
@@ -39,24 +40,6 @@ function activeStatuses(): CoverRequestStatus[] {
   return ['open', 'volunteered', 'provisional_cover'];
 }
 
-async function fetchProfileNameMap(userIds: string[]) {
-  if (!userIds.length) return {} as Record<string, string>;
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, display_name, full_name, email')
-    .in('id', userIds);
-
-  if (error && error.code !== 'PGRST116') {
-    console.warn('[fetchProfileNameMap]', error);
-    return {} as Record<string, string>;
-  }
-
-  const map: Record<string, string> = {};
-  (data ?? []).forEach((row: any) => {
-    map[row.id] = row.display_name ?? row.full_name ?? row.email ?? row.id;
-  });
-  return map;
-}
 
 async function enrichRequests(rows: MuezzinCoverRequest[]) {
   const userIds = Array.from(
@@ -66,7 +49,7 @@ async function enrichRequests(rows: MuezzinCoverRequest[]) {
         .filter(Boolean) as string[]
     )
   );
-  const nameMap = await fetchProfileNameMap(userIds);
+  const nameMap = await fetchProfileNames(userIds);
   return rows.map((row) => ({
     ...row,
     requester_name: nameMap[row.requester_user_id] ?? null,
