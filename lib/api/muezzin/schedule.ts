@@ -3,6 +3,7 @@ import { LiveStatus, MuezzinSchedule, MuezzinSlot, PrayerName, RotaPrayerName, S
 import { getDailyPrayerTimes } from '../prayerTimesUnified';
 import { getMuezzinPrimaryMosque } from '../../liveAdhan';
 import { fetchServerApi, resolveApiUrls, supportsServerApi } from '../apiBaseUrl';
+import { fetchProfileNames } from '../profiles';
 
 function logMuezzinApiTrace(stage: string, details?: Record<string, unknown>) {
   if (!__DEV__) return;
@@ -204,25 +205,6 @@ async function fetchCoverOverrideMap(
   return overrides;
 }
 
-async function fetchProfileNameMap(userIds: string[]) {
-  if (!userIds.length) return {} as Record<string, string>;
-  const { data: profiles, error: profilesErr } = await supabase
-    .from('profiles')
-    .select('id, full_name, display_name, email')
-    .in('id', Array.from(new Set(userIds)));
-
-  if (profilesErr && profilesErr.code !== 'PGRST116') {
-    console.warn('[fetchProfileNameMap]', profilesErr.message);
-    return {};
-  }
-
-  const profileNames: Record<string, string> = {};
-  (profiles ?? []).forEach((p: any) => {
-    const display = p?.display_name || p?.full_name || p?.email;
-    if (display) profileNames[p.id] = display;
-  });
-  return profileNames;
-}
 
 async function fetchDefaultMuezzinUserId(mosqueId: string) {
   const { data: mosqueRow, error: mosqueError } = await supabase
@@ -497,7 +479,7 @@ export async function getMuezzinRotaForRange(
           .filter(Boolean) as string[]
       )
     );
-    const profileNames = await fetchProfileNameMap(userIds);
+    const profileNames = await fetchProfileNames(userIds);
 
     if (!mosqueName) {
       try {
@@ -640,7 +622,7 @@ async function buildSlotsForDate(
       )
     );
 
-    Object.assign(nameMap, await fetchProfileNameMap(userIds));
+    Object.assign(nameMap, await fetchProfileNames(userIds));
   }
 
   const missingProfileIds = Array.from(
@@ -652,7 +634,7 @@ async function buildSlotsForDate(
     )
   );
   if (missingProfileIds.length) {
-    Object.assign(nameMap, await fetchProfileNameMap(missingProfileIds));
+    Object.assign(nameMap, await fetchProfileNames(missingProfileIds));
   }
 
   const now = new Date();

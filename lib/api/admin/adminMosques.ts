@@ -28,19 +28,7 @@ export async function getAdminMosquesForCurrentUser(): Promise<{ mosques: AdminM
       console.warn('[adminMosques] server access fallback', serverError?.message ?? serverError);
     }
 
-    const { data: userRow, error: userError } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', userId)
-      .maybeSingle<{ role?: string | null }>();
-
-    const resolvedRole = userRow?.role ?? appMetadataRole ?? null;
-
-    if (userError) {
-      console.warn('[adminMosques] role lookup error', userError);
-    }
-
-    if (resolvedRole === 'main_admin') {
+    if (appMetadataRole === 'main_admin') {
       const { data: mosquesData, error: mosquesError } = await fetchAllMosqueRows<any>(
         supabase,
         'id, name, city, country'
