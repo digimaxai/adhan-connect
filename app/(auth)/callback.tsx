@@ -56,6 +56,11 @@ export default function AuthCallback() {
           router.replace('/new-password' as any);
           return;
         }
+        if (result.destination === 'signup-step2') {
+          completed.current = true;
+          router.replace('/sign-up-step2' as any);
+          return;
+        }
         if (result.destination === 'sign-in' || !result.userId) {
           completed.current = true;
           router.replace('/sign-in' as any);
