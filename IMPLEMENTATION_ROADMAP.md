@@ -17,8 +17,120 @@ Transform Adhan Connect from prayer-timer to complete Islamic platform with:
 - ✅ Smart live adhan discovery (all broadcasts, not just followed)
 - ✅ Traveler mode (location-aware, auto-detect)
 - ✅ Zero breaking changes (all current features preserved)
+- ✅ **Supabase cost optimization** (reduce queries + bandwidth)
 
 **Delivery**: Production-ready in 4 weeks
+
+---
+
+## 💰 Baseline: Existing Cost Optimization (Already Deployed)
+
+**Commit 945b958** (Aug 22, deployed to production):
+"Optimize: consolidate profile fetching, remove redundant queries"
+
+### What Was Done:
+- Consolidated 3 duplicate profile-fetching utilities across coverRequests, admin/muezzins, admin/staffRota
+- Created shared `lib/api/profiles.ts` with `fetchProfiles()` and `fetchProfileNames()`
+- Removed redundant `users.role` query in `getAdminMosquesForCurrentUser()`
+
+### Cost Impact:
+- **15-25% reduction in profile queries** ✅
+- **Fewer admin queries overall** ✅
+- Already benefiting production users now
+
+### For Codex Max (Week 1-4):
+- Follow this same pattern: **consolidate, don't duplicate**
+- When building new APIs, check if a similar query exists elsewhere
+- Reuse shared utilities (e.g., `lib/api/profiles.ts`)
+- Avoid redundant user/role lookups
+- **Goal: Keep API query count low** (critical for Supabase cost)
+
+### Example Pattern to Follow:
+```typescript
+// BAD (what we had before):
+async function getAdminMuezzins(adminId) {
+  const muezzins = await supabase
+    .from('muezzins')
+    .select('id, mosque_id, user_id')  // ← redundant query
+    .eq('user_id', adminId);
+    
+  const profiles = await supabase
+    .from('users')
+    .select('id, username, email')  // ← separate query
+    .in('id', muezzins.map(m => m.user_id));
+}
+
+// GOOD (what we do now):
+import { fetchProfiles } from '@/lib/api/profiles';
+
+async function getAdminMuezzins(adminId) {
+  const muezzins = await supabase
+    .from('muezzins')
+    .select('id, mosque_id, user_id')
+    .eq('user_id', adminId);
+  
+  const profiles = await fetchProfiles(muezzins.map(m => m.user_id));
+  // ↑ Reuses shared utility, consolidated query
+}
+```
+
+---
+
+## 📊 Supabase Cost Reduction Strategy (Week 1-4)
+
+### What We're Optimizing For:
+1. **Query count** (fewer = cheaper)
+2. **Bandwidth** (don't fetch unnecessary columns)
+3. **Real-time subscriptions** (only what's needed)
+4. **Caching** (reduce repeated queries)
+
+### Codex Max's Responsibility (Week 1):
+When designing APIs, prioritize:
+
+```
+1. Minimal query count
+   ✅ Use JOINs instead of separate queries
+   ✅ Select only needed columns
+   ✅ Batch queries with Promise.all()
+   
+2. Reuse shared utilities
+   ✅ lib/api/profiles.ts for user lookups
+   ✅ lib/api/prayerTimesUnified.ts for times
+   ✅ lib/liveStreamFreshness.ts for stream freshness
+   
+3. Cache strategically
+   ✅ 24h cache: Verse of day
+   ✅ 7d cache: Reciter list
+   ✅ 30s cache: Live streams
+   ✅ Session cache: User preferences
+   
+4. Monitor API efficiency
+   ✅ Log query count per API call
+   ✅ Alert if queries exceed 3 per call
+   ✅ Weekly review of API efficiency
+```
+
+### Example APIs (Codex Max, Week 1):
+```typescript
+// GET /api/mosques/nearby
+// ❌ BAD: 5 queries (mosque, prayer times, users, streams, subscriptions)
+// ✅ GOOD: 2 queries (mosques JOIN prayer_times, mosque JOIN streams)
+async function getNearbyMosques(lat, lng, radius) {
+  // 1 query: Get nearby mosques with prayer times joined
+  const mosques = await supabase
+    .from('mosques')
+    .select(`id, name, city, 
+      prayer_times!inner(fajr, dhuhr),
+      streams(is_live)`)
+    .match({ within_radius: true });
+  
+  // Cache result for 1 hour
+  return cache.set('nearby', mosques, 3600);
+}
+// ✅ Result: 1 query, cached, reusable
+```
+
+---
 
 ---
 
@@ -61,15 +173,23 @@ WEEK 1:
 │  ├─ Add: location_aware_mosques indexes
 │  └─ NO breaking changes to existing schema
 │
-├─ [ ] New API endpoints
+├─ [ ] New API endpoints (OPTIMIZED for cost)
 │  ├─ GET /api/mosques/nearby (location-based)
+│  │   └─ OPTIMIZE: <2 queries, use JOIN for prayer times
 │  ├─ GET /api/mosques/search (city search)
+│  │   └─ OPTIMIZE: <2 queries, reuse fetchProfiles()
 │  ├─ GET /api/quran/reciters (list all)
+│  │   └─ OPTIMIZE: Cache 7 days (no DB calls after cache hit)
 │  ├─ GET /api/quran/verse-audio (single verse with audio)
+│  │   └─ OPTIMIZE: External API only, no DB lookup needed
 │  ├─ GET /api/quran/chapter-audio (full chapter)
+│  │   └─ OPTIMIZE: External API only, cache 24h
 │  ├─ GET /api/duas/daily (time-aware)
+│  │   └─ OPTIMIZE: Hardcoded (no DB), cache 24h
 │  ├─ GET /api/live-adhans/location (nearby broadcasts)
+│  │   └─ OPTIMIZE: 2 queries max (streams + adhans), reuse isFreshLiveStream()
 │  └─ GET /api/tips/daily (rotating)
+│     └─ OPTIMIZE: Hardcoded (no DB), cache 24h
 │
 └─ [ ] Quran.com API wrapper
    ├─ lib/api/quran.ts (complete)
@@ -96,6 +216,13 @@ READY FOR FRONTEND: By EOD Friday Week 1
 - [ ] Quran.com API integration works
 - [ ] Location APIs tested (London + other cities)
 - [ ] Error handling verified
+- [ ] **COST OPTIMIZATION** ← Critical
+  - [ ] Query count logged per API call
+  - [ ] No endpoint exceeds 3 queries
+  - [ ] Caching works (verify cache hits)
+  - [ ] Supabase usage baseline documented
+  - [ ] Reuses shared utilities (fetchProfiles, etc.)
+  - [ ] No N+1 queries in list endpoints
 
 ---
 
