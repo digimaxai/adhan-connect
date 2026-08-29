@@ -168,34 +168,33 @@ WEEK 4: Traveler Features + Launch
 
 ```
 WEEK 1:
-├─ [ ] DB migrations
-│  ├─ Add: user_location, preferred_reciters columns
-│  ├─ Add: location_aware_mosques indexes
-│  └─ NO breaking changes to existing schema
+├─ [x] DB migrations (DONE)
+│  ├─ [x] Add: user_location, preferred_reciters, signup_completed_steps
+│  ├─ [x] Add: indexes for location queries
+│  ├─ [x] Migration file: 20260829000000_add_username_location_reciters.sql
+│  └─ [x] NO breaking changes to existing schema ✅
 │
-├─ [ ] New API endpoints (OPTIMIZED for cost)
-│  ├─ GET /api/mosques/nearby (location-based)
-│  │   └─ OPTIMIZE: <2 queries, use JOIN for prayer times
-│  ├─ GET /api/mosques/search (city search)
-│  │   └─ OPTIMIZE: <2 queries, reuse fetchProfiles()
-│  ├─ GET /api/quran/reciters (list all)
-│  │   └─ OPTIMIZE: Cache 7 days (no DB calls after cache hit)
-│  ├─ GET /api/quran/verse-audio (single verse with audio)
-│  │   └─ OPTIMIZE: External API only, no DB lookup needed
-│  ├─ GET /api/quran/chapter-audio (full chapter)
-│  │   └─ OPTIMIZE: External API only, cache 24h
-│  ├─ GET /api/duas/daily (time-aware)
-│  │   └─ OPTIMIZE: Hardcoded (no DB), cache 24h
-│  ├─ GET /api/live-adhans/location (nearby broadcasts)
-│  │   └─ OPTIMIZE: 2 queries max (streams + adhans), reuse isFreshLiveStream()
-│  └─ GET /api/tips/daily (rotating)
-│     └─ OPTIMIZE: Hardcoded (no DB), cache 24h
+├─ [x] New API endpoints (COST-OPTIMIZED) (DONE)
+│  ├─ [x] GET /api/mosques/nearby ✅ (1 JOIN, 1h cache)
+│  ├─ [x] GET /api/mosques/search ✅ (1 query, 1h cache)
+│  ├─ [x] GET /api/quran/reciters ✅ (external, 7d cache)
+│  ├─ [ ] GET /api/quran/verse-audio (hook needed: useQuranVerseAudio)
+│  ├─ [ ] GET /api/quran/chapter-audio (Week 2)
+│  ├─ [x] GET /api/duas/daily ✅ (hardcoded, 24h cache)
+│  ├─ [ ] GET /api/live-adhans/location (Week 1.5)
+│  └─ [x] GET /api/tips/daily ✅ (hardcoded, 24h cache)
 │
-└─ [ ] Quran.com API wrapper
-   ├─ lib/api/quran.ts (complete)
-   ├─ Error handling + fallbacks
-   ├─ Caching strategy (24h verses, 7d reciters)
-   └─ Rate limiting handled
+├─ [x] Quran.com API wrapper (DONE)
+│  ├─ [x] lib/api/quranAudio.ts (complete) ✅
+│  ├─ [x] Error handling + fallbacks ✅
+│  ├─ [x] Caching (24h verses, 7d reciters) ✅
+│  └─ [x] Rate limiting strategy documented ✅
+│
+└─ [x] React hooks for API consumption (DONE)
+   ├─ [x] lib/hooks/useMosquesNearby.ts ✅
+   ├─ [x] lib/hooks/useQuranReciters.ts ✅
+   ├─ [x] lib/hooks/useDailyDua.ts ✅
+   └─ [x] lib/hooks/useDailyTip.ts ✅
 
 WEEK 2:
 ├─ [ ] Location services
@@ -232,21 +231,26 @@ READY FOR FRONTEND: By EOD Friday Week 1
 
 ```
 WEEK 1 (Auth):
-├─ [ ] Simplified sign-up flow
-│  ├─ Step 1: Email + Password (2 screens max)
-│  ├─ Step 2: Username + Location (auto-detect)
-│  ├─ Auto-subscribe to 3 nearest mosques
-│  └─ Direct to Listener home (no completion modal)
+├─ [x] Simplified sign-up flow (DONE)
+│  ├─ [x] Step 1: Email + Password (existing, modified callback)
+│  ├─ [x] Step 2: Username + Location (new sign-up-step2.tsx)
+│  ├─ [x] Auto-detect location via expo-location
+│  └─ [x] Route new signups to step2 after email verification
+│
+├─ [ ] Auto-subscribe to 3 nearest mosques
+│  ├─ [ ] Fetch nearby mosques in step2
+│  ├─ [ ] Auto-follow 3 nearest
+│  └─ [ ] Direct to Listener home
 │
 ├─ [ ] Sign-in flow
-│  ├─ Email + password only
-│  ├─ Neutral error messages
-│  └─ Direct redirect to home
+│  ├─ [ ] Email + password only
+│  ├─ [ ] Neutral error messages
+│  └─ [ ] Direct redirect to home
 │
 └─ [ ] Session management
-   ├─ Update lib/supabaseAuthStorage.ts
-   ├─ Store user location preference
-   └─ Remember reciter choice
+   ├─ [ ] Update user location pref on step2
+   ├─ [ ] Store reciter choice via preferred_reciters
+   └─ [ ] Restore on next login
 
 WEEK 2 (Navigation):
 ├─ [ ] Bottom tab bar implementation
