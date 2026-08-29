@@ -1,7 +1,7 @@
 import * as Linking from 'expo-linking';
 import { supabase } from './supabase';
 
-export type AuthCallbackDestination = 'app' | 'password' | 'sign-in';
+export type AuthCallbackDestination = 'app' | 'password' | 'sign-in' | 'signup-step2';
 
 export type AuthCallbackResult = {
   credentialConsumed: boolean;
@@ -193,6 +193,29 @@ export async function completeAuthCallbackUrl(url: string): Promise<AuthCallback
       recoveryAuthorized,
       userId: null,
     };
+  }
+
+  // Check if this is a new signup that needs step 2 completion
+  if (verifiedType === 'signup' && data.session) {
+    try {
+      const { data: userProfile } = await supabase
+        .from('users')
+        .select('username, signup_completed_steps')
+        .eq('id', data.session.user.id)
+        .single();
+
+      if (userProfile && (!userProfile.username || !userProfile.signup_completed_steps?.step2)) {
+        return {
+          credentialConsumed,
+          handled: true,
+          destination: 'signup-step2',
+          recoveryAuthorized: false,
+          userId: data.session.user.id,
+        };
+      }
+    } catch {
+      // If we can't check, proceed to normal flow
+    }
   }
 
   const result = {
