@@ -1,0 +1,132 @@
+
+> adhan-connect@1.0.0 web:portal
+> node ./scripts/start-web-fast.js --server
+
+Starting Expo web in server output mode.
+React Compiler is disabled in this mode to reduce local startup cost.
+Server mode keeps Expo Router API routes enabled for the web portal.
+env: load .env
+env: export SUPABASE_URL EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE SUPABASE_ACCESS_TOKEN EXPO_FORCE_WEBCONTAINER_ENV EXPO_PUBLIC_API_BASE_URL LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET
+Starting project at /Users/mzk/PROJECTS/adhan-connect
+Starting Metro Bundler
+Unable to run simctl:
+Error: xcrun simctl help exited with non-zero code: 72
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+λ Bundled 770ms node_modules/expo-router/node/render.js (1642 modules)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
+Web Bundled 1738ms node_modules/expo-router/entry.js (1162 modules)
+Web Bundled 253ms node_modules/expo-router/entry.js (1497 modules)
+ LOG  [web] Logs will appear in the browser console
+Web node_modules/expo-router/entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 39ms node_modules/expo-router/node/render.js (1 module)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
+Web Bundled 351ms node_modules/expo-router/entry.js (1 module)
+Web Bundled 23ms node_modules/expo-router/entry.js (1 module)
+ LOG  [web] Logs will appear in the browser console
+Web node_modules/expo-router/entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 34ms node_modules/expo-router/node/render.js (1 module)
+"shadow*" style props are deprecated. Use "boxShadow".
+[expo-av]: Expo AV has been deprecated and will be removed in SDK 54. Use the `expo-audio` and `expo-video` packages to replace the required functionality.
+λ  WARN  props.pointerEvents is deprecated. Use style.pointerEvents 
+Web Bundled 317ms node_modules/expo-router/entry.js (1 module)
+Web Bundled 20ms node_modules/expo-router/entry.js (1 module)
+ LOG  [web] Logs will appear in the browser console
+λ app/api/session-access+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 256ms app/api/session-access+api.ts (1 module)
+λ app/api/admin/prayer-times-workspace+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 64ms app/api/admin/prayer-times-workspace+api.ts (1 module)
+λ app/api/admin/prayer-times-save+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 53ms app/api/admin/prayer-times-save+api.ts (1 module)
+Error: Premature close
+    at onclose (node:internal/streams/end-of-stream:171:30)
+    at processTicksAndRejections (node:internal/process/task_queues:84:11)
+TypeError: fetch failed
+    at node:internal/deps/undici/undici:15141:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at _handleRequest (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/lib/fetch.js:101:18)
+    at _request (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/lib/fetch.js:91:18)
+    at SupabaseAuthClient._getUser (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:1192:24)
+    at SupabaseAuthClient.getUser (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:1181:20)
+    at GET (/Users/mzk/PROJECTS/adhan-connect/app/api/session-access+api.ts:47:48)
+    at respondAPI (/Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/vendor/abstract.ts:297:22)
+    at requestHandler (/Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/vendor/abstract.ts:154:14)
+    at /Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/runtime/index.ts:83:13 {
+  [cause]: Error: getaddrinfo ENOTFOUND yecbsezhwvpdkuzmmziv.supabase.co
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+      at GetAddrInfoReqWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'yecbsezhwvpdkuzmmziv.supabase.co'
+  }
+}
+TypeError: fetch failed
+    at node:internal/deps/undici/undici:15141:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at _handleRequest (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/lib/fetch.js:101:18)
+    at _request (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/lib/fetch.js:91:18)
+    at SupabaseAuthClient._getUser (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:1192:24)
+    at SupabaseAuthClient.getUser (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:1181:20)
+    at GET (/Users/mzk/PROJECTS/adhan-connect/app/api/session-access+api.ts:47:48)
+    at respondAPI (/Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/vendor/abstract.ts:297:22)
+    at requestHandler (/Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/vendor/abstract.ts:154:14)
+    at /Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/runtime/index.ts:83:13 {
+  [cause]: Error: getaddrinfo ENOTFOUND yecbsezhwvpdkuzmmziv.supabase.co
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+      at GetAddrInfoReqWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'yecbsezhwvpdkuzmmziv.supabase.co'
+  }
+}
+TypeError: fetch failed
+    at node:internal/deps/undici/undici:15141:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at _handleRequest (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/lib/fetch.js:101:18)
+    at _request (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/lib/fetch.js:91:18)
+    at SupabaseAuthClient._getUser (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:1192:24)
+    at SupabaseAuthClient.getUser (/Users/mzk/PROJECTS/adhan-connect/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:1181:20)
+    at GET (/Users/mzk/PROJECTS/adhan-connect/app/api/session-access+api.ts:47:48)
+    at respondAPI (/Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/vendor/abstract.ts:297:22)
+    at requestHandler (/Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/vendor/abstract.ts:154:14)
+    at /Users/mzk/PROJECTS/adhan-connect/node_modules/expo-server/src/runtime/index.ts:83:13 {
+  [cause]: Error: getaddrinfo ENOTFOUND yecbsezhwvpdkuzmmziv.supabase.co
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+      at GetAddrInfoReqWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'yecbsezhwvpdkuzmmziv.supabase.co'
+  }
+}
+λ app/api/admin/users-access+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 58ms app/api/admin/users-access+api.ts (1 module)
+λ app/api/admin/local-admin-assignment+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 45ms app/api/admin/local-admin-assignment+api.ts (1 module)
+λ app/api/admin/muezzin-assignment+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 49ms app/api/admin/muezzin-assignment+api.ts (1 module)
+λ app/api/admin/mosque-workspace+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 48ms app/api/admin/mosque-workspace+api.ts (1 module)
+λ Bundled 309ms app/api/admin/broadcast-readiness+api.ts (1 module)
+λ app/api/session-access+api.ts ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 10ms app/api/session-access+api.ts (1 module)
+λ Bundled 1ms app/api/admin/users-access+api.ts (1 module)
+λ Bundled 1ms app/api/admin/mosque-workspace+api.ts (1 module)
+Web node_modules/expo-router/entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+λ Bundled 1000ms node_modules/expo-router/node/render.js (1 module)
+
+Metro error: ENOENT: no such file or directory, open '/Users/mzk/PROJECTS/adhan-connect/node_modules/@expo/cli/build/metro-require/require.js'
+
+Call Stack
+  Object.openSync (node:fs)
+  Object.readFileSync (node:fs)
+  new Promise (<anonymous>)
+Web Bundled 1023ms node_modules/expo-router/entry.js (1 module)
+Web Bundled 91ms .expo/static-tmp/_error.js (1 module)
+ LOG  [web] Logs will appear in the browser console
