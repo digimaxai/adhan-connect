@@ -50,11 +50,24 @@ export default function UserTabs() {
       <Tabs.Screen
         name="listener-home"
         options={{
-          title: 'Home',
+          title: 'Listener',
           tabBarIcon: pillIcon('home-outline'),
         }}
       />
-      <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen
+        name="quran"
+        options={{
+          title: 'Quran',
+          tabBarIcon: pillIcon('book-outline'),
+        }}
+      />
+      <Tabs.Screen
+        name="duas"
+        options={{
+          title: 'Duas',
+          tabBarIcon: pillIcon('heart-outline'),
+        }}
+      />
       <Tabs.Screen
         name="discover"
         options={{
@@ -69,6 +82,7 @@ export default function UserTabs() {
           tabBarIcon: pillIcon('settings-outline'),
         }}
       />
+      <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
 
       {/* hidden routes for user area */}
       <Tabs.Screen name="now" options={{ href: null, headerShown: false }} />
