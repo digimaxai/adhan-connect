@@ -88,11 +88,13 @@ function RootNavigator() {
     let cancelled = false;
     void isGuestBrowsingEnabled().then((enabled) => {
       if (cancelled) return;
-      setGuestBrowsing(enabled);
+      // TESTING: Disable guest access - force authentication
+      setGuestBrowsing(false);
       setGuestBrowsingLoaded(true);
     });
     const unsubscribe = subscribeGuestBrowsing((enabled) => {
-      setGuestBrowsing(enabled);
+      // TESTING: Disable guest access - force authentication
+      setGuestBrowsing(false);
       setGuestBrowsingLoaded(true);
     });
     return () => {
