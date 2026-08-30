@@ -98,6 +98,38 @@ export default function SignUpStep2Screen() {
     return true;
   };
 
+  const autoSubscribeToNearestMosques = async (lat: number, lon: number, userId: string) => {
+    try {
+      // Fetch nearby mosques from our new API
+      const response = await fetch(
+        `/api/mosques/nearby?lat=${lat}&lon=${lon}&radius=20`
+      );
+      if (!response.ok) return; // Fail silently, subscription is optional
+
+      const data = (await response.json()) as { mosques: Array<{ id: string }> };
+      const nearestMosques = data.mosques.slice(0, 3); // Top 3 nearest
+
+      // Subscribe user to each mosque
+      if (nearestMosques.length > 0) {
+        const subscriptions = nearestMosques.map((mosque) => ({
+          user_id: userId,
+          mosque_id: mosque.id,
+          subscribed_at: new Date().toISOString(),
+        }));
+
+        await supabase
+          .from('subscriptions')
+          .insert(subscriptions)
+          .then(() => {
+            console.log(`Auto-subscribed to ${subscriptions.length} mosques`);
+          });
+      }
+    } catch (err) {
+      console.error('Auto-subscribe failed:', err);
+      // Fail silently - user can manually follow mosques
+    }
+  };
+
   const submit = async () => {
     setError(null);
     if (!validateUsername() || !validateCity()) return;
@@ -134,6 +166,11 @@ export default function SignUpStep2Screen() {
         }
         setBusy(false);
         return;
+      }
+
+      // Auto-subscribe to 3 nearest mosques if location available
+      if (latitude && longitude) {
+        await autoSubscribeToNearestMosques(latitude, longitude, session!.user!.id);
       }
 
       clearPendingAuthEmail();
