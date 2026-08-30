@@ -3,7 +3,7 @@
 // Query count: 1 (with subscriptions count)
 // Cache: 1 hour
 
-import { type NextRequest, NextResponse } from 'next/server';
+// Removed Next.js imports
 import { supabase } from '../../../lib/supabase';
 
 export const runtime = 'nodejs';
@@ -18,13 +18,13 @@ interface SearchMosque {
 const cacheMap = new Map<string, { data: SearchMosque[]; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const query = (searchParams.get('q') || '').trim().toLowerCase();
 
     if (!query || query.length < 2) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Search query must be at least 2 characters' },
         { status: 400 }
       );
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     // Check cache
     const cached = cacheMap.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      return NextResponse.json(
+      return Response.json(
         { mosques: cached.data, cached: true },
         { headers: { 'Cache-Control': 'public, max-age=3600' } }
       );
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('[API] GET /api/mosques/search error:', error);
-      return NextResponse.json(
+      return Response.json(
         { error: 'Failed to search mosques' },
         { status: 500 }
       );
@@ -79,13 +79,13 @@ export async function GET(request: NextRequest) {
     // Metrics logging
     console.log(`[METRIC] GET /api/mosques/search | Queries: 1 | Cache: false | Results: ${results.length}`);
 
-    return NextResponse.json(
+    return Response.json(
       { mosques: results, cached: false },
       { headers: { 'Cache-Control': 'public, max-age=3600' } }
     );
   } catch (error) {
     console.error('[API] GET /api/mosques/search exception:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Internal server error' },
       { status: 500 }
     );

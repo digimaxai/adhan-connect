@@ -170,29 +170,24 @@ export default function SignUpScreen() {
           <Text style={styles.verificationText}>
             {`We sent a confirmation link to ${verificationEmail}. Open it to finish signing in.`}
           </Text>
-          <View style={styles.limitedNotice}>
-            <Text style={styles.limitedNoticeTitle}>Your account is not signed in yet</Text>
-            <Text style={styles.limitedNoticeText}>
-              You can browse public mosque information as a guest while you wait.
-              Following mosques, attendance plans, account preferences and live
-              audio remain unavailable until you verify and sign in.
-            </Text>
-          </View>
-          <Pressable
-            disabled={busy}
-            onPress={continueAsGuest}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              busy && styles.buttonDisabled,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            {busy ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Continue as guest</Text>
-            )}
-          </Pressable>
+          {/* TESTING: Guest browsing disabled - comment out to re-enable */}
+          {false && (
+            <Pressable
+              disabled={busy}
+              onPress={continueAsGuest}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                busy && styles.buttonDisabled,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryButtonText}>Continue as guest</Text>
+              )}
+            </Pressable>
+          )}
           <Pressable
             disabled={busy || resending || resendCooldown > 0}
             onPress={resendConfirmation}

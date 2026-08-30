@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Slider,
   ActivityIndicator,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -102,17 +101,6 @@ export default function QuranPlayer({
     }
   };
 
-  const handleSliderChange = async (value: number) => {
-    if (!sound) return;
-
-    try {
-      await sound.setPositionAsync(value);
-      setCurrentTime(value);
-    } catch (err) {
-      console.error('Seek error:', err);
-    }
-  };
-
   const formatTime = (ms: number): string => {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -140,12 +128,12 @@ export default function QuranPlayer({
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator color={tokens.color.primary} />
+            <ActivityIndicator color={tokens.color.text.accent} />
           ) : (
             <Ionicons
               name={isPlaying ? 'pause-circle' : 'play-circle'}
               size={60}
-              color={tokens.color.primary}
+              color={tokens.color.text.accent}
             />
           )}
         </Pressable>
@@ -153,16 +141,14 @@ export default function QuranPlayer({
         {/* Progress Bar */}
         {sound && (
           <View style={styles.progressContainer}>
-            <Slider
-              style={styles.slider}
-              minimumValue={0}
-              maximumValue={duration || 1}
-              value={currentTime}
-              onSlidingComplete={handleSliderChange}
-              minimumTrackTintColor={tokens.color.primary}
-              maximumTrackTintColor={tokens.color.border.light}
-              thumbTintColor={tokens.color.primary}
-            />
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' },
+                ]}
+              />
+            </View>
             <View style={styles.timeDisplay}>
               <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
@@ -207,7 +193,7 @@ export default function QuranPlayer({
 const styles = StyleSheet.create({
   container: {
     padding: tokens.spacing.md,
-    backgroundColor: tokens.color.bg.page,
+    backgroundColor: tokens.color.bg.app,
   },
   verseInfo: {
     marginBottom: tokens.spacing.lg,
@@ -216,7 +202,7 @@ const styles = StyleSheet.create({
   verseKey: {
     fontSize: tokens.typography.size.sm,
     fontWeight: tokens.typography.weight.bold,
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
     marginBottom: tokens.spacing.xs,
   },
   verseText: {
@@ -235,10 +221,10 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.lg,
     padding: tokens.spacing.lg,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
   },
   error: {
-    color: tokens.color.error,
+    color: tokens.color.status.danger,
     fontSize: tokens.typography.size.sm,
     marginBottom: tokens.spacing.md,
     textAlign: 'center',
@@ -251,9 +237,16 @@ const styles = StyleSheet.create({
   progressContainer: {
     marginVertical: tokens.spacing.md,
   },
-  slider: {
-    height: 40,
+  progressBar: {
+    height: 4,
     width: '100%',
+    backgroundColor: tokens.color.border.muted,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: tokens.color.text.accent,
   },
   timeDisplay: {
     flexDirection: 'row',
@@ -271,7 +264,7 @@ const styles = StyleSheet.create({
     marginTop: tokens.spacing.md,
     paddingTop: tokens.spacing.md,
     borderTopWidth: 1,
-    borderTopColor: tokens.color.border.light,
+    borderTopColor: tokens.color.border.muted,
   },
   controlButton: {
     alignItems: 'center',

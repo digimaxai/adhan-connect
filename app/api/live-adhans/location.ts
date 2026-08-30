@@ -3,7 +3,7 @@
 // Query count: 2
 // Cache: 30 seconds (real-time priority)
 
-import { type NextRequest, NextResponse } from 'next/server';
+// Removed Next.js imports
 import { supabase } from '../../../lib/supabase';
 import { isFreshLiveStream } from '../../../lib/liveStreamFreshness';
 
@@ -40,7 +40,7 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * c;
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const latitude = parseFloat(searchParams.get('lat') ?? '0');
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const radiusKm = Math.min(parseFloat(searchParams.get('radius') ?? '15'), 100);
 
     if (!latitude || !longitude) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Missing latitude/longitude parameters' },
         { status: 400 }
       );
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     // Check cache (30 second TTL for real-time data)
     const cached = cacheMap.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      return NextResponse.json(
+      return Response.json(
         { adhans: cached.data, cached: true, count: cached.data.length },
         { headers: { 'Cache-Control': 'public, max-age=30' } }
       );
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
 
     if (streamsError) {
       console.error('[API] GET /api/live-adhans/location streams error:', streamsError);
-      return NextResponse.json(
+      return Response.json(
         { error: 'Failed to fetch live streams' },
         { status: 500 }
       );
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
 
     if (adhansError) {
       console.error('[API] GET /api/live-adhans/location adhans error:', adhansError);
-      return NextResponse.json(
+      return Response.json(
         { error: 'Failed to fetch adhans' },
         { status: 500 }
       );
@@ -142,31 +142,32 @@ export async function GET(request: NextRequest) {
         const isFresh = isFreshLiveStream({
           created_at: stream.started_at,
           updated_at: stream.updated_at,
-        });
+        } as any);
 
         if (!isFresh) return null;
 
         const adhan = adhansByMosque.get(stream.mosque_id);
 
-        return {
+        const result: LiveAdhan & { distance_km: number } = {
           mosque_id: mosque.id,
           mosque_name: mosque.name,
           mosque_city: mosque.city || 'Unknown',
           prayer: adhan?.prayer || 'Unknown',
           adhan_time: adhan?.adhan_time || '',
-          listeners: 0, // TODO: Calculate from subscriptions if needed
+          listeners: 0,
           started_at: stream.started_at,
           duration_seconds: Math.floor((Date.now() - new Date(stream.started_at).getTime()) / 1000),
           is_live: true,
-          broadcast_url: adhan?.broadcast_url,
+          broadcast_url: adhan?.broadcast_url || '',
           distance_km: parseFloat(distance.toFixed(1)),
         };
+        return result;
       })
       .filter(
         (a): a is LiveAdhan & { distance_km: number } =>
-          a !== null && a.distance_km <= radiusKm
+          a !== null && (a as any).distance_km <= radiusKm
       )
-      .sort((a, b) => a.distance_km - b.distance_km)
+      .sort((a, b) => (a as any).distance_km - (b as any).distance_km)
       .slice(0, 20);
 
     // Cache the result
@@ -175,13 +176,13 @@ export async function GET(request: NextRequest) {
     // Metrics logging
     console.log(`[METRIC] GET /api/live-adhans/location | Queries: 2 | Cache: false | Results: ${nearbyAdhans.length}`);
 
-    return NextResponse.json(
+    return Response.json(
       { adhans: nearbyAdhans, cached: false, count: nearbyAdhans.length },
       { headers: { 'Cache-Control': 'public, max-age=30' } }
     );
   } catch (error) {
     console.error('[API] GET /api/live-adhans/location exception:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Internal server error', adhans: [] },
       { status: 500 }
     );

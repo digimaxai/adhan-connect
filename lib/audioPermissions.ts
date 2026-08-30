@@ -10,8 +10,6 @@ export async function initializeAudio(): Promise<boolean> {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: true,
-      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DUCK_OTHERS,
-      interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DUCK_OTHERS,
       shouldDuckAndroid: true,
     });
     return true;
@@ -112,8 +110,6 @@ export async function cleanupAudio(): Promise<void> {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: false,
-      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DEFAULT,
-      interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DEFAULT,
       shouldDuckAndroid: false,
     });
   } catch (error) {

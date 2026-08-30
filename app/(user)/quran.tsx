@@ -43,7 +43,7 @@ export default function QuranScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🎵 Select Reciter</Text>
         {loadingReciters ? (
-          <ActivityIndicator color={tokens.color.primary} size="large" style={styles.loader} />
+          <ActivityIndicator color={tokens.color.text.accent} size="large" style={styles.loader} />
         ) : reciterError ? (
           <Text style={styles.error}>Failed to load reciters</Text>
         ) : (
@@ -104,9 +104,9 @@ export default function QuranScreen() {
             // TODO: Navigate to chapter browser
           }}
         >
-          <Ionicons name="book-outline" size={20} color={tokens.color.primary} />
+          <Ionicons name="book-outline" size={20} color={tokens.color.text.accent} />
           <Text style={styles.ctaButtonText}>Browse All 114 Chapters</Text>
-          <Ionicons name="chevron-forward" size={20} color={tokens.color.primary} />
+          <Ionicons name="chevron-forward" size={20} color={tokens.color.text.accent} />
         </Pressable>
       </View>
 
@@ -119,9 +119,9 @@ export default function QuranScreen() {
             // TODO: Navigate to learning resources
           }}
         >
-          <Ionicons name="school-outline" size={20} color={tokens.color.secondary} />
+          <Ionicons name="school-outline" size={20} color={tokens.color.text.secondary} />
           <Text style={styles.ctaButtonText}>Tafsir (Explanation)</Text>
-          <Ionicons name="chevron-forward" size={20} color={tokens.color.secondary} />
+          <Ionicons name="chevron-forward" size={20} color={tokens.color.text.secondary} />
         </Pressable>
       </View>
     </ScrollView>
@@ -129,7 +129,7 @@ export default function QuranScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: tokens.color.bg.page },
+  screen: { flex: 1, backgroundColor: tokens.color.bg.app },
   content: { padding: tokens.spacing.md, paddingBottom: 100 },
   section: { marginBottom: tokens.spacing.lg },
   sectionTitle: {
@@ -143,12 +143,12 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.lg,
     padding: tokens.spacing.md,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
   },
   verseArabic: {
     fontSize: 18,
     fontWeight: '600',
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
     textAlign: 'center',
     marginBottom: tokens.spacing.sm,
   },
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   loader: { marginVertical: tokens.spacing.lg },
-  error: { color: tokens.color.error, fontSize: tokens.typography.size.sm },
+  error: { color: tokens.color.status.danger, fontSize: tokens.typography.size.sm },
   hintText: {
     fontSize: tokens.typography.size.xs,
     color: tokens.color.text.muted,
@@ -172,15 +172,15 @@ const styles = StyleSheet.create({
   },
   reciterItem: {
     padding: tokens.spacing.md,
-    backgroundColor: tokens.color.bg.page,
+    backgroundColor: tokens.color.bg.app,
     borderRadius: tokens.radius.md,
     marginBottom: tokens.spacing.sm,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
   },
   reciterItemSelected: {
     backgroundColor: tokens.color.bg.tintSoft,
-    borderColor: tokens.color.primary,
+    borderColor: tokens.color.text.accent,
     borderWidth: 2,
   },
   reciterName: {
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     color: tokens.color.text.primary,
   },
   reciterNameSelected: {
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
   },
   reciterStyle: {
     fontSize: tokens.typography.size.xs,
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
   duaTitle: {
     fontSize: tokens.typography.size.md,
     fontWeight: tokens.typography.weight.bold,
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
     marginBottom: tokens.spacing.sm,
   },
   duaArabic: {
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.bg.surface,
     borderRadius: tokens.radius.md,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
   },
   ctaButtonText: {
     flex: 1,

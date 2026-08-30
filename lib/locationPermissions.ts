@@ -39,10 +39,9 @@ export async function getCurrentLocation(): Promise<LocationCoordinates | null> 
       return null;
     }
 
-    // Get current position with timeout
+    // Get current position
     const location = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
-      timeout: 10000, // 10 second timeout
     });
 
     return {

@@ -3,7 +3,7 @@
 // Query count: 1 (with prayer_times JOIN)
 // Cache: 1 hour (slow-changing reference data)
 
-import { type NextRequest, NextResponse } from 'next/server';
+// Removed Next.js imports - using standard Web APIs
 import { supabase } from '../../../lib/supabase';
 import { isFreshLiveStream } from '../../../lib/liveStreamFreshness';
 
@@ -43,15 +43,16 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * c;
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
+    const url = new URL(request.url);
+    const searchParams = url.searchParams;
     const latitude = parseFloat(searchParams.get('lat') ?? '0');
     const longitude = parseFloat(searchParams.get('lon') ?? '0');
     const radiusKm = Math.min(parseFloat(searchParams.get('radius') ?? '10'), 100); // Cap at 100km
 
     if (!latitude || !longitude) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Missing latitude/longitude parameters' },
         { status: 400 }
       );
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
     // Check cache
     const cached = cacheMap.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      return NextResponse.json(
+      return Response.json(
         { mosques: cached.data, cached: true },
         { headers: { 'Cache-Control': 'public, max-age=3600' } }
       );
@@ -94,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     if (mosquesError) {
       console.error('[API] GET /api/mosques/nearby error:', mosquesError);
-      return NextResponse.json(
+      return Response.json(
         { error: 'Failed to fetch mosques' },
         { status: 500 }
       );
@@ -143,13 +144,13 @@ export async function GET(request: NextRequest) {
     // Metrics logging (for Week 1 testing)
     console.log(`[METRIC] GET /api/mosques/nearby | Queries: 2 | Cache: false | Results: ${nearbyMosques.length}`);
 
-    return NextResponse.json(
+    return Response.json(
       { mosques: nearbyMosques, cached: false },
       { headers: { 'Cache-Control': 'public, max-age=3600' } }
     );
   } catch (error) {
     console.error('[API] GET /api/mosques/nearby exception:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Internal server error' },
       { status: 500 }
     );

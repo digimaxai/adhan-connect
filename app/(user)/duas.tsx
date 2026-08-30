@@ -44,9 +44,9 @@ export default function DuasScreen() {
 
       {/* Today's Tip */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>💡 Today's Tip</Text>
+        <Text style={styles.sectionTitle}>💡 Today&apos;s Tip</Text>
         {loading ? (
-          <ActivityIndicator color={tokens.color.primary} size="large" style={styles.loader} />
+          <ActivityIndicator color={tokens.color.text.accent} size="large" style={styles.loader} />
         ) : error ? (
           <Text style={styles.error}>Failed to load tip</Text>
         ) : tip ? (
@@ -66,7 +66,7 @@ export default function DuasScreen() {
               style={styles.refreshButton}
               onPress={() => refetch()}
             >
-              <Ionicons name="refresh-outline" size={16} color={tokens.color.primary} />
+              <Ionicons name="refresh-outline" size={16} color={tokens.color.text.accent} />
               <Text style={styles.refreshButtonText}>Get another tip</Text>
             </Pressable>
           </View>
@@ -106,7 +106,7 @@ export default function DuasScreen() {
 
         <View style={[styles.card, styles.collectionCard]}>
           <Pressable style={styles.collectionItem}>
-            <Ionicons name="arrow-forward-outline" size={20} color={tokens.color.primary} />
+            <Ionicons name="arrow-forward-outline" size={20} color={tokens.color.text.accent} />
             <View style={styles.collectionItemText}>
               <Text style={styles.collectionItemTitle}>Morning Adhkar</Text>
               <Text style={styles.collectionItemSubtitle}>Protect yourself throughout the day</Text>
@@ -116,7 +116,7 @@ export default function DuasScreen() {
 
         <View style={[styles.card, styles.collectionCard]}>
           <Pressable style={styles.collectionItem}>
-            <Ionicons name="arrow-forward-outline" size={20} color={tokens.color.primary} />
+            <Ionicons name="arrow-forward-outline" size={20} color={tokens.color.text.accent} />
             <View style={styles.collectionItemText}>
               <Text style={styles.collectionItemTitle}>Evening Adhkar</Text>
               <Text style={styles.collectionItemSubtitle}>Seek forgiveness and protection at night</Text>
@@ -126,7 +126,7 @@ export default function DuasScreen() {
 
         <View style={[styles.card, styles.collectionCard]}>
           <Pressable style={styles.collectionItem}>
-            <Ionicons name="arrow-forward-outline" size={20} color={tokens.color.primary} />
+            <Ionicons name="arrow-forward-outline" size={20} color={tokens.color.text.accent} />
             <View style={styles.collectionItemText}>
               <Text style={styles.collectionItemTitle}>After Prayer Adhkar</Text>
               <Text style={styles.collectionItemSubtitle}>Glorify Allah after each prayer</Text>
@@ -139,11 +139,11 @@ export default function DuasScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>📖 Learn More</Text>
         <Pressable style={styles.resourceButton}>
-          <Ionicons name="open-outline" size={20} color={tokens.color.secondary} />
+          <Ionicons name="open-outline" size={20} color={tokens.color.text.secondary} />
           <Text style={styles.resourceButtonText}>Understanding the 99 Names of Allah</Text>
         </Pressable>
         <Pressable style={styles.resourceButton}>
-          <Ionicons name="open-outline" size={20} color={tokens.color.secondary} />
+          <Ionicons name="open-outline" size={20} color={tokens.color.text.secondary} />
           <Text style={styles.resourceButtonText}>The Five Pillars Explained</Text>
         </Pressable>
       </View>
@@ -152,7 +152,7 @@ export default function DuasScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: tokens.color.bg.page },
+  screen: { flex: 1, backgroundColor: tokens.color.bg.app },
   content: { padding: tokens.spacing.md, paddingBottom: 100 },
   header: { marginBottom: tokens.spacing.lg },
   title: {
@@ -177,10 +177,10 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.lg,
     padding: tokens.spacing.md,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
   },
   loader: { marginVertical: tokens.spacing.lg },
-  error: { color: tokens.color.error, fontSize: tokens.typography.size.sm },
+  error: { color: tokens.color.status.danger, fontSize: tokens.typography.size.sm },
   tipHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   tipMeta: { flex: 1 },
   tipCategory: {
     fontSize: tokens.typography.size.xs,
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
     fontWeight: tokens.typography.weight.bold,
     textTransform: 'uppercase',
   },
@@ -221,12 +221,12 @@ const styles = StyleSheet.create({
     paddingVertical: tokens.spacing.sm,
     marginTop: tokens.spacing.md,
     borderTopWidth: 1,
-    borderTopColor: tokens.color.border.light,
+    borderTopColor: tokens.color.border.muted,
   },
   refreshButtonText: {
     marginLeft: tokens.spacing.xs,
     fontSize: tokens.typography.size.sm,
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
     fontWeight: tokens.typography.weight.semibold,
   },
   categoryGrid: {
@@ -238,16 +238,16 @@ const styles = StyleSheet.create({
     flex: 0.47,
     paddingVertical: tokens.spacing.sm,
     paddingHorizontal: tokens.spacing.sm,
-    backgroundColor: tokens.color.bg.page,
+    backgroundColor: tokens.color.bg.app,
     borderRadius: tokens.radius.md,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   categoryButtonActive: {
     backgroundColor: tokens.color.bg.tintSoft,
-    borderColor: tokens.color.primary,
+    borderColor: tokens.color.text.accent,
     borderWidth: 2,
   },
   categoryIcon: { fontSize: 24, marginBottom: 4 },
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     color: tokens.color.text.secondary,
   },
   categoryLabelActive: {
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
   },
   collectionCard: { marginBottom: tokens.spacing.md },
   collectionItem: {
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.bg.surface,
     borderRadius: tokens.radius.md,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
     marginBottom: tokens.spacing.sm,
   },
   resourceButtonText: {

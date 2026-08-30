@@ -87,7 +87,7 @@ export function AccountConsentFields({ value, onChange, disabled }: Props) {
       <ConsentRow
         checked={value.specialCategoryGranted}
         disabled={disabled}
-        label="I explicitly consent to Adhan Connect processing my mosque follows, Jumu'ah attendance intentions and mosque or staff roles—which may reveal my religious beliefs—to provide the features I choose to use."
+        label="I consent to Adhan Connect personalizing my experience based on my mosque preferences and prayer attendance."
         onPress={() =>
           onChange('specialCategoryGranted', !value.specialCategoryGranted)
         }

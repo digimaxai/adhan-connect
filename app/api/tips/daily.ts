@@ -3,8 +3,6 @@
 // Query count: 0 (no DB query)
 // Cache: 24 hours
 
-import { type NextRequest, NextResponse } from 'next/server';
-
 export const runtime = 'nodejs';
 
 interface IslamicTip {
@@ -74,9 +72,10 @@ const tips: IslamicTip[] = [
   },
 ];
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
+    const url = new URL(request.url);
+    const searchParams = url.searchParams;
     const category = (searchParams.get('category') || '').toLowerCase();
 
     let result: IslamicTip | IslamicTip[];
@@ -98,13 +97,13 @@ export async function GET(request: NextRequest) {
     // Metrics logging
     console.log('[METRIC] GET /api/tips/daily | Queries: 0 | Source: Hardcoded');
 
-    return NextResponse.json(
+    return Response.json(
       { tip: result },
       { headers: { 'Cache-Control': 'public, max-age=86400' } } // 24 hours
     );
   } catch (error) {
     console.error('[API] GET /api/tips/daily exception:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to fetch tip', tip: tips[0] },
       { status: 500 }
     );

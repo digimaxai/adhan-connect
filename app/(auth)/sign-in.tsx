@@ -257,19 +257,22 @@ export default function SignInScreen() {
                     <Text style={styles.primaryButtonText}>Continue</Text>
                   </Pressable>
 
-                  <Pressable
-                    disabled={busy}
-                    onPress={continueAsGuest}
-                    style={styles.guestButton}
-                  >
-                    <Text style={styles.guestButtonText}>
-                      {busy ? 'Opening guest mode…' : 'Browse as guest'}
-                    </Text>
-                    <Text style={styles.guestHelper}>
-                      Browsing only. Following, attendance plans, account preferences
-                      and live audio require sign-in.
-                    </Text>
-                  </Pressable>
+                  {/* TESTING: Guest browsing disabled - comment out to re-enable */}
+                  {false && (
+                    <Pressable
+                      disabled={busy}
+                      onPress={continueAsGuest}
+                      style={styles.guestButton}
+                    >
+                      <Text style={styles.guestButtonText}>
+                        {busy ? 'Opening guest mode…' : 'Browse as guest'}
+                      </Text>
+                      <Text style={styles.guestHelper}>
+                        Browsing only. Following, attendance plans, account preferences
+                        and live audio require sign-in.
+                      </Text>
+                    </Pressable>
+                  )}
                 </>
               ) : null}
 

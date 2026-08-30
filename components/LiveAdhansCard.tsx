@@ -43,14 +43,14 @@ export default function LiveAdhansCard({
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Ionicons name="radio-outline" size={20} color={tokens.color.primary} />
+          <Ionicons name="radio-outline" size={20} color={tokens.color.text.accent} />
           <Text style={styles.title}>Live Broadcasts Now</Text>
           <View style={styles.liveBadge}>
             <Text style={styles.liveBadgeText}>LIVE</Text>
           </View>
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color={tokens.color.primary} size="small" />
+          <ActivityIndicator color={tokens.color.text.accent} size="small" />
           <Text style={styles.loadingText}>Finding nearby broadcasts...</Text>
         </View>
       </View>
@@ -61,11 +61,11 @@ export default function LiveAdhansCard({
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Ionicons name="radio-outline" size={20} color={tokens.color.muted} />
+          <Ionicons name="radio-outline" size={20} color={tokens.color.text.muted} />
           <Text style={styles.title}>Live Broadcasts</Text>
         </View>
         <View style={styles.emptyContainer}>
-          <Ionicons name="radio-off-outline" size={40} color={tokens.color.border.light} />
+          <Ionicons name="radio-button-off" size={40} color={tokens.color.border.muted} />
           <Text style={styles.emptyText}>
             {error ? 'Could not load broadcasts' : 'No live broadcasts nearby'}
           </Text>
@@ -81,7 +81,7 @@ export default function LiveAdhansCard({
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <Ionicons name="radio-outline" size={20} color={tokens.color.primary} />
+          <Ionicons name="radio-outline" size={20} color={tokens.color.text.accent} />
           <Text style={styles.title}>Live Broadcasts Now</Text>
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
@@ -90,7 +90,7 @@ export default function LiveAdhansCard({
         </View>
         {onRefresh && (
           <Pressable onPress={onRefresh}>
-            <Ionicons name="refresh-outline" size={20} color={tokens.color.primary} />
+            <Ionicons name="refresh-outline" size={20} color={tokens.color.text.accent} />
           </Pressable>
         )}
       </View>
@@ -137,7 +137,7 @@ export default function LiveAdhansCard({
 
             {/* Action */}
             <Pressable style={styles.listenButton}>
-              <Ionicons name="play-circle" size={20} color={tokens.color.primary} />
+              <Ionicons name="play-circle" size={20} color={tokens.color.text.accent} />
               <Text style={styles.listenButtonText}>Listen Now</Text>
             </Pressable>
           </Pressable>
@@ -147,7 +147,7 @@ export default function LiveAdhansCard({
       {adhans.length > 3 && (
         <Pressable style={styles.viewMoreButton}>
           <Text style={styles.viewMoreText}>View all {adhans.length} broadcasts</Text>
-          <Ionicons name="chevron-forward-outline" size={16} color={tokens.color.primary} />
+          <Ionicons name="chevron-forward-outline" size={16} color={tokens.color.text.accent} />
         </Pressable>
       )}
     </View>
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     padding: tokens.spacing.md,
     marginBottom: tokens.spacing.md,
     borderWidth: 1,
-    borderColor: tokens.color.border.light,
+    borderColor: tokens.color.border.muted,
   },
   header: {
     flexDirection: 'row',
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   adhanItem: {
-    backgroundColor: tokens.color.bg.page,
+    backgroundColor: tokens.color.bg.app,
     borderRadius: tokens.radius.md,
     padding: tokens.spacing.md,
     marginBottom: tokens.spacing.sm,
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: tokens.typography.size.xs,
     fontWeight: tokens.typography.weight.bold,
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
   },
   itemDetails: {
     flexDirection: 'row',
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   listenButtonText: {
     fontSize: tokens.typography.size.sm,
     fontWeight: tokens.typography.weight.bold,
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
   },
   viewMoreButton: {
     flexDirection: 'row',
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.xs,
     paddingVertical: tokens.spacing.md,
     borderTopWidth: 1,
-    borderTopColor: tokens.color.border.light,
+    borderTopColor: tokens.color.border.muted,
     marginHorizontal: -tokens.spacing.md,
     marginBottom: -tokens.spacing.md,
     paddingHorizontal: tokens.spacing.md,
@@ -309,6 +309,6 @@ const styles = StyleSheet.create({
   viewMoreText: {
     fontSize: tokens.typography.size.sm,
     fontWeight: tokens.typography.weight.semibold,
-    color: tokens.color.primary,
+    color: tokens.color.text.accent,
   },
 });

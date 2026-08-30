@@ -3,8 +3,6 @@
 // Query count: 0 (no DB query)
 // Cache: 24 hours
 
-import { type NextRequest, NextResponse } from 'next/server';
-
 export const runtime = 'nodejs';
 
 interface DailyDua {
@@ -53,10 +51,10 @@ const duas: DailyDua[] = [
   },
 ];
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const prayer = (searchParams.get('prayer') || '').toLowerCase();
+    const url = new URL(request.url);
+    const prayer = (url.searchParams.get('prayer') || '').toLowerCase();
 
     let result: DailyDua | DailyDua[];
 
@@ -76,13 +74,13 @@ export async function GET(request: NextRequest) {
     // Metrics logging
     console.log('[METRIC] GET /api/duas/daily | Queries: 0 | Source: Hardcoded');
 
-    return NextResponse.json(
+    return Response.json(
       { dua: result },
       { headers: { 'Cache-Control': 'public, max-age=86400' } } // 24 hours
     );
   } catch (error) {
     console.error('[API] GET /api/duas/daily exception:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to fetch dua', dua: duas[0] },
       { status: 500 }
     );
