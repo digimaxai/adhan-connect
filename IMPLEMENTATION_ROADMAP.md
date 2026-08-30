@@ -237,40 +237,44 @@ WEEK 1 (Auth):
 │  ├─ [x] Auto-detect location via expo-location
 │  └─ [x] Route new signups to step2 after email verification
 │
-├─ [ ] Auto-subscribe to 3 nearest mosques
-│  ├─ [ ] Fetch nearby mosques in step2
-│  ├─ [ ] Auto-follow 3 nearest
-│  └─ [ ] Direct to Listener home
+├─ [x] Auto-subscribe to 3 nearest mosques (DONE)
+│  ├─ [x] Fetch nearby mosques in step2 via API
+│  ├─ [x] Auto-follow 3 nearest (fail-silent)
+│  └─ [x] Direct to Listener home
 │
-├─ [ ] Sign-in flow
-│  ├─ [ ] Email + password only
-│  ├─ [ ] Neutral error messages
-│  └─ [ ] Direct redirect to home
+├─ [ ] Sign-in flow (existing flow, may enhance)
+│  ├─ [ ] Email + password only (mostly done)
+│  ├─ [ ] Neutral error messages (existing)
+│  └─ [ ] Direct redirect to home (existing)
 │
 └─ [ ] Session management
    ├─ [ ] Update user location pref on step2
    ├─ [ ] Store reciter choice via preferred_reciters
    └─ [ ] Restore on next login
 
-WEEK 2 (Navigation):
-├─ [ ] Bottom tab bar implementation
-│  ├─ 5 tabs: Listener | Quran | Duas | Discover | Settings
-│  ├─ Tab switching + persistence
-│  └─ Active tab indicator
+WEEK 1.5-2 (Navigation + Content):
+├─ [x] Bottom tab bar implementation (DONE)
+│  ├─ [x] 5 tabs: Listener | Quran | Duas | Discover | Settings ✅
+│  ├─ [x] Tab switching + persistence (via Expo Router Tabs)
+│  └─ [x] Icons + visual indicator (pill style)
 │
-├─ [ ] Split screens into tabs
-│  ├─ screens/user/listener-home.tsx (KEEP, move to tab)
-│  ├─ screens/user/quran-browse.tsx (NEW)
-│  ├─ screens/user/duas-screen.tsx (NEW)
-│  ├─ screens/user/discover-screen.tsx (NEW)
-│  └─ screens/user/settings-screen.tsx (moved from deep route)
+├─ [x] New screens created (DONE)
+│  ├─ [x] app/(user)/quran.tsx - Quran browser
+│  ├─ [x] app/(user)/duas.tsx - Islamic wisdom
+│  ├─ [x] All screens using new hooks + APIs
+│  └─ [x] All existing routes preserved (100% backward compat)
 │
-└─ [ ] Route structure updates
-   ├─ app/(user)/_layout.tsx (bottom tabs)
-   ├─ Remove old (user)/settings/[tab].tsx
-   └─ Preserve all existing routes (backward compat)
+├─ [x] Live Adhans endpoint (DONE)
+│  ├─ [x] GET /api/live-adhans/location (2 queries, 30s cache)
+│  ├─ [x] Real-time broadcast discovery by proximity
+│  └─ [x] Hook: useLiveAdhansNearby() with auto-refresh
+│
+└─ [x] Search & Discovery (DONE)
+   ├─ [x] Hook: useMosqueSearch() for city search
+   ├─ [x] Enhanced Discover tab with location awareness
+   └─ [x] All APIs cost-optimized (<3 queries)
 
-READY FOR CONTENT: By EOD Friday Week 2
+READY FOR TESTING: By EOD Week 1.5
 ```
 
 **Testing Checklist** (Claude):
