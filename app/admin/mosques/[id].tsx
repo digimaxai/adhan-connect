@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../lib/supabaseClient';
-import { mosqueServiceLabel } from '../../../lib/mosqueServices';
+import { mosqueServiceLabel, MOSQUE_SERVICE_OPTIONS } from '../../../lib/mosqueServices';
 import { RequireMainAdmin } from '../../../components/admin/web/RequireMainAdmin';
 import { AdminContextProvider, useAdminContext } from '../../../lib/admin-web/adminContext';
 import { AdminFeedbackProvider, useAdminFeedback } from '../../../lib/admin-web/adminFeedback';
@@ -167,25 +167,7 @@ async function loadMosqueWorkspaceViaServer(mosqueId: string): Promise<MosqueWor
   };
 }
 
-const MOSQUE_SERVICES = [
-  "Friday Jumu'ah Prayer",
-  "Friday Jumu'ah Prayer (at another location)",
-  'Daily congregation prayers (5 daily)',
-  'Eid prayers',
-  'Ramadan programs / Tarawih',
-  'Islamic education / Madrasah',
-  'Quran classes',
-  'Youth programs',
-  "Women's prayer area",
-  'Convert / new Muslim support',
-  'Funeral services (Janazah)',
-  'Wedding ceremonies (Nikah)',
-  'Food bank / welfare support',
-  'Parking available',
-  'Wheelchair accessible',
-  'Wudu facilities',
-  'Online services / live stream',
-] as const;
+const MOSQUE_SERVICES = MOSQUE_SERVICE_OPTIONS;
 
 export default function MosqueProfilePage() {
   return (

@@ -161,6 +161,15 @@ export default function AdminDashboard() {
       requiresMosque: true,
     },
     {
+      title: 'Prayer Availability & Services',
+      description: 'Mark prayers not offered, add a reason, and list your services.',
+      href: '/(admin)/mosque-services',
+      icon: 'list-outline',
+      iconBg: '#FFF7ED',
+      iconColor: '#C2410C',
+      requiresMosque: true,
+    },
+    {
       title: 'Jumuah',
       description: 'Manage Friday slots, capacity guidance, and attendance planning.',
       href: '/(admin)/jumuah',
