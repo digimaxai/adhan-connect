@@ -3,13 +3,20 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { EventEngagement } from '../../../components/EventEngagement';
+import { ContentDetailHero } from '../../../components/ContentDetailHero';
+import { ContentDocumentsList } from '../../../components/ContentDocumentsList';
+import {
+  getAttachmentPublicUrl,
+  listContentAttachments,
+  type ContentAttachment,
+} from '../../../lib/api/admin/contentAttachments';
 import { supabase } from '../../../lib/supabase';
 
 type EventRow = {
@@ -32,6 +39,7 @@ export default function EventDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [event, setEvent] = useState<EventRow | null>(null);
+  const [attachments, setAttachments] = useState<ContentAttachment[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,14 +47,17 @@ export default function EventDetail() {
       if (!id) return;
       setLoading(true);
       try {
-        const { data } = await supabase
-          .from('events')
-          .select('id,title,start_at,location,capacity,description,mosques(name)')
-          .eq('id', id)
-          .eq('status', 'published')
-          .eq('is_public', true)
-          .gte('start_at', startOfTodayIso())
-          .maybeSingle();
+        const [{ data }, { attachments: rows }] = await Promise.all([
+          supabase
+            .from('events')
+            .select('id,title,start_at,location,capacity,description,mosques(name)')
+            .eq('id', id)
+            .eq('status', 'published')
+            .eq('is_public', true)
+            .gte('start_at', startOfTodayIso())
+            .maybeSingle(),
+          listContentAttachments('event', id),
+        ]);
         setEvent(
           data
             ? {
@@ -60,6 +71,7 @@ export default function EventDetail() {
               }
             : null
         );
+        setAttachments(rows);
       } finally {
         setLoading(false);
       }
@@ -68,74 +80,87 @@ export default function EventDetail() {
   }, [id]);
 
   const starts = event?.start_at ? new Date(event.start_at) : null;
+  const coverImage = attachments.find((item) => item.kind === 'image') ?? null;
+  const documents = attachments.filter((item) => item.kind === 'document');
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.body}>
-        <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} hitSlop={10}>
-            <Ionicons name="chevron-back" size={24} color="#111111" />
-          </Pressable>
-          <Text style={styles.title}>Event Details</Text>
-          <View style={{ width: 24 }} />
+    <SafeAreaView style={styles.screen} edges={['left', 'right']}>
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color="#1E7BF6" />
         </View>
-
-        {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color="#1E7BF6" />
-          </View>
-        ) : event ? (
-          <View style={[styles.card, styles.shadow]}>
-            <Text style={styles.eventTitle}>{event.title ?? 'Event'}</Text>
-            {event.mosque_name ? (
-              <Text style={styles.subtle}>{event.mosque_name}</Text>
-            ) : null}
-            <View style={styles.infoBox}>
-              <Info
-                label="Date"
-                value={
-                  starts
-                    ? starts.toLocaleDateString([], {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric',
-                      })
-                    : '--'
-                }
-              />
-              <Info
-                label="Time"
-                value={
-                  starts
-                    ? starts.toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '--'
-                }
-              />
-              <Info
-                label="Location"
-                value={event.location ?? 'To be confirmed'}
-              />
-              <Info
-                label="Capacity"
-                value={event.capacity ? `${event.capacity}` : 'Open'}
-              />
+      ) : event ? (
+        <ScrollView contentContainerStyle={styles.scrollBody}>
+          <ContentDetailHero
+            imageUrl={coverImage ? getAttachmentPublicUrl(coverImage.storage_path) : null}
+            icon="calendar-outline"
+            title={event.title}
+            onBack={() => router.back()}
+            shareTitle={event.title ? `${event.title}${event.mosque_name ? ` — ${event.mosque_name}` : ''}` : null}
+          />
+          <View style={styles.body}>
+            <View style={[styles.card, styles.shadow]}>
+              <Text style={styles.eventTitle}>{event.title ?? 'Event'}</Text>
+              {event.mosque_name ? (
+                <Text style={styles.subtle}>{event.mosque_name}</Text>
+              ) : null}
+              <View style={styles.infoBox}>
+                <Info
+                  label="Date"
+                  value={
+                    starts
+                      ? starts.toLocaleDateString([], {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : '--'
+                  }
+                />
+                <Info
+                  label="Time"
+                  value={
+                    starts
+                      ? starts.toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '--'
+                  }
+                />
+                <Info
+                  label="Location"
+                  value={event.location ?? 'To be confirmed'}
+                />
+                <Info
+                  label="Capacity"
+                  value={event.capacity ? `${event.capacity}` : 'Open'}
+                />
+              </View>
+              {event.description ? (
+                <Text style={styles.desc}>{event.description}</Text>
+              ) : null}
             </View>
-            {event.description ? (
-              <Text style={styles.desc}>{event.description}</Text>
-            ) : null}
+
+            <EventEngagement key={event.id} eventId={event.id} startsAt={event.start_at} />
+            <ContentDocumentsList documents={documents} />
           </View>
-        ) : (
+        </ScrollView>
+      ) : (
+        <ScrollView contentContainerStyle={styles.body}>
+          <View style={styles.topBar}>
+            <Ionicons name="chevron-back" size={24} color="#111111" onPress={() => router.back()} />
+            <Text style={styles.title}>Event Details</Text>
+            <View style={{ width: 24 }} />
+          </View>
           <View style={[styles.card, styles.shadow]}>
             <Text style={styles.eventTitle}>Event unavailable</Text>
             <Text style={styles.desc}>
               This event may be private, cancelled, or no longer upcoming.
             </Text>
           </View>
-        )}
-      </ScrollView>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -151,8 +176,9 @@ function Info({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8F8F9' },
-  body: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
-  centered: { paddingVertical: 48, alignItems: 'center' },
+  scrollBody: { paddingBottom: 24 },
+  body: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8, gap: 0 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -166,7 +192,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.05)',
-    marginTop: 8,
+    marginTop: 14,
   },
   eventTitle: { fontSize: 20, fontWeight: '800', color: '#111111' },
   subtle: { color: '#585858', marginTop: 4 },

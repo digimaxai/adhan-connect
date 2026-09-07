@@ -1,4 +1,4 @@
-// GET /api/tips/daily
+// Expo Router API route: GET /api/tips/daily
 // Cost-optimized: Hardcoded array, 24h cache
 // Query count: 0 (no DB query)
 // Cache: 24 hours
@@ -77,13 +77,26 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const searchParams = url.searchParams;
     const category = (searchParams.get('category') || '').toLowerCase();
+    const offsetValue = Number(searchParams.get('offset') ?? '0');
+    const offset =
+      Number.isInteger(offsetValue) && offsetValue >= 0
+        ? Math.min(offsetValue, 1000)
+        : 0;
 
-    let result: IslamicTip | IslamicTip[];
+    let result: IslamicTip;
 
     if (category) {
-      // Get tips for specific category
-      result = tips.filter((t) => t.category.toLowerCase() === category);
-      if (result.length === 0) result = tips[0];
+      const matchingTip = tips.find((tip) => tip.category.toLowerCase() === category);
+      if (!matchingTip) {
+        return Response.json(
+          {
+            error: 'Unknown category.',
+            categories: tips.map((tip) => tip.category),
+          },
+          { status: 400 }
+        );
+      }
+      result = matchingTip;
     } else {
       // Get tip of day (deterministic based on day of year)
       const now = new Date();
@@ -91,14 +104,14 @@ export async function GET(request: Request) {
       const diff = now.getTime() - startOfYear.getTime();
       const oneDay = 1000 * 60 * 60 * 24;
       const dayOfYear = Math.floor(diff / oneDay);
-      result = tips[dayOfYear % tips.length];
+      result = tips[(dayOfYear + offset) % tips.length];
     }
 
     // Metrics logging
     console.log('[METRIC] GET /api/tips/daily | Queries: 0 | Source: Hardcoded');
 
     return Response.json(
-      { tip: result },
+      { tip: result, categories: tips.map((tip) => tip.category) },
       { headers: { 'Cache-Control': 'public, max-age=86400' } } // 24 hours
     );
   } catch (error) {

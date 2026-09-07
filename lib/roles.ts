@@ -58,6 +58,12 @@ export type RoleFlags = {
 export type UseRoleFlagsOptions = {
   enabled?: boolean;
   /**
+   * For screens already protected by RootNavigator's authoritative role
+   * check. Reusing that session cache prevents duplicate access requests from
+   * disagreeing transiently during a workspace transition.
+   */
+  reuseResolvedSessionAccess?: boolean;
+  /**
    * Changing this value forces a fresh authoritative access check. This is
    * used by the root access-error screen without weakening the fail-closed
    * behavior or falling back to cached roles.
@@ -106,6 +112,7 @@ function noAccessRoleFlags({
 export function useRoleFlags(options: UseRoleFlagsOptions = {}): RoleFlags {
   const { session } = useAuth();
   const enabled = options.enabled ?? true;
+  const reuseResolvedSessionAccess = options.reuseResolvedSessionAccess ?? false;
   const refreshKey = options.refreshKey ?? 0;
   const sessionUserId = session?.user?.id ?? null;
   const sessionAccessToken = session?.access_token ?? null;
@@ -142,7 +149,9 @@ export function useRoleFlags(options: UseRoleFlagsOptions = {}): RoleFlags {
       try {
         const uid = sessionUserId;
         const access = await fetchSessionAccess({
-          allowCachedFallback: false,
+          preferCache: reuseResolvedSessionAccess,
+          allowCachedFallback: reuseResolvedSessionAccess,
+          maxAgeMs: reuseResolvedSessionAccess ? Number.MAX_SAFE_INTEGER : undefined,
           session,
         });
         if (cancelled) return;
@@ -206,7 +215,14 @@ export function useRoleFlags(options: UseRoleFlagsOptions = {}): RoleFlags {
     return () => {
       cancelled = true;
     };
-  }, [enabled, refreshKey, session, sessionAccessToken, sessionUserId]);
+  }, [
+    enabled,
+    refreshKey,
+    reuseResolvedSessionAccess,
+    session,
+    sessionAccessToken,
+    sessionUserId,
+  ]);
 
   if (!enabled) {
     return noAccessRoleFlags({ loading: false, ready: false });

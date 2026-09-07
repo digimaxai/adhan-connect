@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppText } from '@/components/ui/app-text';
+import { ContentAttachmentsEditor } from '@/components/admin/ContentAttachmentsEditor';
 import { tokens } from '@/theme/tokens';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { supabase } from '@/lib/supabase';
@@ -290,6 +291,22 @@ export default function AdminAnnouncementForm() {
             </View>
           </View>
 
+          {/* Cover image & attachments — kept last so the core fields above stay quick to reach */}
+          {!isNew && selectedMosque ? (
+            <ContentAttachmentsEditor mosqueId={selectedMosque.mosqueId} contentType="announcement" contentId={id!} />
+          ) : (
+            <View style={styles.section}>
+              <AppText variant="caption" style={styles.sectionLabel}>COVER IMAGE</AppText>
+              <View style={styles.fieldCard}>
+                <View style={styles.row}>
+                  <AppText variant="body" color={tokens.color.text.muted} style={styles.rowLabel}>
+                    Save the notice to add a cover image and attachments.
+                  </AppText>
+                </View>
+              </View>
+            </View>
+          )}
+
           {/* Save */}
           <Pressable
             onPress={handleSave}
@@ -379,6 +396,9 @@ const styles = StyleSheet.create({
     fontWeight: tokens.typography.weight.medium,
   },
   multiline: { minHeight: 120, paddingTop: 14 },
+
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  rowLabel: { flex: 1, fontSize: 15, fontWeight: tokens.typography.weight.medium, color: tokens.color.text.primary },
 
   switchRow: {
     flexDirection: 'row',

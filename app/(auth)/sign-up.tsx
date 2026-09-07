@@ -28,6 +28,17 @@ import { supabase } from '../../lib/supabase';
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
+const describeResendFailure = (message: string | null | undefined) => {
+  const detail = message?.trim() ?? '';
+  if (/rate limit|too many requests|over_email_send_rate_limit/i.test(detail)) {
+    return 'Too many confirmation emails were requested. Please wait a few minutes before trying again.';
+  }
+  if (/network request failed|failed to fetch|networkerror/i.test(detail)) {
+    return 'We could not reach the email service. Check your connection and try again.';
+  }
+  return 'We could not resend the confirmation email. Please try again shortly.';
+};
+
 export default function SignUpScreen() {
   const router = useRouter();
   const { signUp } = useAuth();
@@ -134,18 +145,30 @@ export default function SignUpScreen() {
     setResendCooldown(RESEND_COOLDOWN_SECONDS);
     setResendMessage(null);
     try {
-      await supabase.auth.resend({
+      const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
         email: verificationEmail,
         options: { emailRedirectTo: getAuthRedirectUrl() },
       });
-    } catch {
-      // Keep this response neutral so the screen does not reveal auth state.
+
+      if (resendError) {
+        setResendMessage(describeResendFailure(resendError.message));
+        if (!/rate limit|too many requests|over_email_send_rate_limit/i.test(resendError.message)) {
+          setResendCooldown(0);
+        }
+        return;
+      }
+
+      setResendMessage(
+        'A new confirmation link was requested. Check your inbox and spam or junk folder.'
+      );
+    } catch (resendError: unknown) {
+      setResendCooldown(0);
+      setResendMessage(
+        describeResendFailure(resendError instanceof Error ? resendError.message : null)
+      );
     } finally {
       setResending(false);
-      setResendMessage(
-        'If this account is waiting for verification, a new confirmation link will arrive shortly.'
-      );
     }
   };
 
@@ -169,6 +192,9 @@ export default function SignUpScreen() {
           <Text style={[styles.title, { textAlign: 'center' }]}>Check your email</Text>
           <Text style={styles.verificationText}>
             {`We sent a confirmation link to ${verificationEmail}. Open it to finish signing in.`}
+          </Text>
+          <Text style={styles.verificationText}>
+            If it is not in your inbox, check spam or junk for mail from noreply@mail.adhanconnect.com.
           </Text>
           {/* TESTING: Guest browsing disabled - comment out to re-enable */}
           {false && (

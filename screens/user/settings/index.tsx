@@ -1,20 +1,27 @@
-import { Link, useSegments } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Link, useRouter, useSegments } from 'expo-router';
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useAuth } from '../../../lib/auth';
+import { requireRoleEntrySelection } from '../../../lib/roleEntrySession';
 import { useRoleFlags } from '../../../lib/roles';
 
 type RowProps = {
   title: string;
   subtitle?: string;
-  href: string;
+  href?: string;
+  onPress?: () => void;
+  disabled?: boolean;
+  icon?: keyof typeof Ionicons.glyphMap;
   last?: boolean;
 };
 
-function SettingsRow({ title, subtitle, href, last }: RowProps) {
-  return (
-    <Link href={href as any} asChild>
-      <Pressable
+function SettingsRow({ title, subtitle, href, onPress, disabled, icon, last }: RowProps) {
+  const row = (
+    <Pressable
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={onPress}
         style={{
           paddingVertical: 16,
           paddingHorizontal: 16,
@@ -23,8 +30,24 @@ function SettingsRow({ title, subtitle, href, last }: RowProps) {
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'center',
+          opacity: disabled ? 0.55 : 1,
         }}
       >
+        {icon ? (
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#E0F2FE',
+              marginRight: 12,
+            }}
+          >
+            <Ionicons name={icon} size={18} color="#0284C7" />
+          </View>
+        ) : null}
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>{title}</Text>
           {subtitle ? (
@@ -39,10 +62,19 @@ function SettingsRow({ title, subtitle, href, last }: RowProps) {
             </Text>
           ) : null}
         </View>
-        <Text style={{ color: '#94A3B8', fontSize: 18, marginLeft: 10 }}>{'>'}</Text>
+        <Ionicons name="chevron-forward" size={18} color="#94A3B8" style={{ marginLeft: 10 }} />
       </Pressable>
-    </Link>
   );
+
+  if (href) {
+    return (
+      <Link href={href as any} asChild>
+        {row}
+      </Link>
+    );
+  }
+
+  return row;
 }
 
 function SectionCard({ children, marginTop = 0 }: { children: React.ReactNode; marginTop?: number }) {
@@ -70,6 +102,8 @@ function SectionCard({ children, marginTop = 0 }: { children: React.ReactNode; m
 
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
+  const router = useRouter();
+  const [switchingWorkspace, setSwitchingWorkspace] = React.useState(false);
   const {
     loading,
     isMuezzin,
@@ -79,16 +113,12 @@ export default function SettingsScreen() {
     error,
     hasDualStaffAccess,
     hasMultipleWorkspaceAccess,
-  } = useRoleFlags();
+  } = useRoleFlags({ reuseResolvedSessionAccess: true });
   const segments = useSegments();
   const isMuezzinWorkspace = segments[0] === '(muezzin)';
   const settingsBase = isMuezzinWorkspace
     ? '/(muezzin)/muezzin-settings'
     : '/(user)/settings';
-  const manageMosquesPath = isMuezzinWorkspace
-    ? '/(muezzin)/muezzin-manage-mosques'
-    : '/(user)/manage-mosques';
-
   const displayName = user?.display_name || user?.email?.split('@')[0] || 'User';
 
   const roleLabels: string[] = ['Listener'];
@@ -103,13 +133,26 @@ export default function SettingsScreen() {
     isMuezzin ? 'Muezzin' : null,
   ].filter((value): value is string => !!value);
 
+  const openWorkspaceChooser = async () => {
+    if (!user?.id || switchingWorkspace) return;
+    setSwitchingWorkspace(true);
+    try {
+      await requireRoleEntrySelection(user.id);
+      router.replace('/role-entry' as any);
+    } finally {
+      setSwitchingWorkspace(false);
+    }
+  };
+
   return (
     <ScrollView style={{ flex: 1, backgroundColor: '#F1F5F9' }} contentContainerStyle={{ paddingBottom: 36 }}>
       <View style={{ paddingHorizontal: 18, paddingTop: 56, paddingBottom: 18 }}>
         <Text style={{ fontSize: 14, fontWeight: '700', color: '#475569', letterSpacing: 0.2 }}>Your account</Text>
         <Text style={{ fontSize: 27, fontWeight: '800', color: '#0F172A', marginTop: 6 }}>Settings</Text>
         <Text style={{ fontSize: 15, color: '#475569', marginTop: 6 }}>
-          Keep your listener preferences and staff tools in one consistent place.
+          {isMuezzinWorkspace
+            ? 'Operational settings for your duties. Your Listener workspace remains available for personal listening preferences.'
+            : 'Personal listening and account preferences. Staff tools stay in their own workspace.'}
         </Text>
         <View
           style={{
@@ -155,50 +198,96 @@ export default function SettingsScreen() {
           title="Account & data"
           subtitle="Sign-in methods, data export, and account deletion"
           href={`${settingsBase}/account`}
+          icon="person-outline"
         />
         <SettingsRow
           title="Notifications"
-          subtitle="Adhan alerts, staff updates, and reminders"
+          subtitle={isMuezzinWorkspace
+            ? 'Duty reminders, rota updates, and LIVE status'
+            : 'Adhan and current-area alerts'}
           href={`${settingsBase}/notifications`}
+          icon="notifications-outline"
+          last={isMuezzinWorkspace}
         />
-        <SettingsRow
-          title="Audio mixer"
-          subtitle="Per-mosque volume and mute settings"
-          href={`${settingsBase}/mixer`}
-        />
-        <SettingsRow
-          title="Mosque subscriptions"
-          subtitle="Manage followed mosques"
-          href={manageMosquesPath}
-          last
-        />
+        {!isMuezzinWorkspace ? (
+          <>
+            <SettingsRow
+              title="Audio mixer"
+              subtitle="Per-mosque volume and mute settings"
+              href={`${settingsBase}/mixer`}
+              icon="options-outline"
+            />
+            <SettingsRow
+              title="Mosque subscriptions"
+              subtitle="Manage followed mosques"
+              href="/(user)/manage-mosques"
+              icon="business-outline"
+              last
+            />
+          </>
+        ) : null}
       </SectionCard>
 
-      <View style={{ marginTop: 20, marginHorizontal: 18 }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 }}>Privacy & legal</Text>
+      {!isMuezzinWorkspace ? (
+        <View style={{ marginTop: 20 }}>
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: '700',
+              color: '#64748B',
+              marginBottom: 8,
+              marginHorizontal: 18,
+            }}
+          >
+            Help your mosque join
+          </Text>
+          <SectionCard>
+            <SettingsRow
+              title="Invite a mosque"
+              subtitle="Share the management team's contact details"
+              href="/(user)/invite-mosque"
+              icon="paper-plane-outline"
+            />
+            <SettingsRow
+              title="Request a missing mosque"
+              subtitle="Tell us about a mosque you cannot find"
+              href="/(user)/request-mosque"
+              icon="add-circle-outline"
+              last
+            />
+          </SectionCard>
+        </View>
+      ) : null}
+
+      <View style={{ marginTop: 20 }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8, marginHorizontal: 18 }}>Privacy & legal</Text>
         <SectionCard>
           <SettingsRow
             title="Privacy notice"
             subtitle="How Adhan Connect uses and protects data"
             href="https://www.maksums.com/adhan-connect/privacy/"
+            icon="shield-checkmark-outline"
           />
           <SettingsRow
             title="Terms of use"
             subtitle="The rules for using Adhan Connect"
             href="https://www.maksums.com/adhan-connect/terms/"
+            icon="document-text-outline"
             last
           />
         </SectionCard>
       </View>
 
       {showWorkspaceTools ? (
-        <View style={{ marginTop: 20, marginHorizontal: 18 }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 }}>Workspaces</Text>
+        <View style={{ marginTop: 20 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8, marginHorizontal: 18 }}>Workspaces</Text>
           <SectionCard>
             <SettingsRow
-              title="Switch workspace"
-              subtitle={`Choose ${availableWorkspaceLabels.join(', ')}`}
-              href="/role-entry"
+              title={switchingWorkspace ? 'Opening workspaces…' : 'Switch workspace'}
+              subtitle={`Listener is included · Choose ${availableWorkspaceLabels.join(', ')}`}
+              onPress={() => void openWorkspaceChooser()}
+              disabled={switchingWorkspace}
+              icon="swap-horizontal-outline"
               last
             />
           </SectionCard>

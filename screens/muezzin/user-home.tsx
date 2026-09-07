@@ -35,7 +35,7 @@ const initialBroadcastTestResult: BroadcastTestResult = {
 export default function MuezzinToolsScreen() {
   const router = useRouter();
   const { schedule, loading, refresh } = useMuezzinSchedule();
-  const roles = useRoleFlags();
+  const roles = useRoleFlags({ reuseResolvedSessionAccess: true });
   const [broadcastTest, setBroadcastTest] = useState<BroadcastTestResult>(initialBroadcastTestResult);
   const primaryMuezzinMosque = roles.muezzinMosques[0] ?? null;
   const hasSchedulePayload = !!schedule?.mosqueId || !!schedule?.mosqueName || !!schedule?.slots.length;

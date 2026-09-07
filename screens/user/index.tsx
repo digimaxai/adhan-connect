@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -14,7 +15,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { fetchAladhanTimes, type AladhanTimings } from '../../lib/api/aladhan';
 import { useAuth } from '../../lib/auth';
 import {
   AdhanBroadcast,
@@ -25,8 +25,7 @@ import {
   PrayerName,
   statusBadge,
 } from '../../lib/adhans';
-import { formatJumuahTime, isFridayToday, type JumuahSlot } from '../../lib/jumuah';
-import { useRoleFlags } from '../../lib/roles';
+import type { JumuahSlot } from '../../lib/jumuah';
 import { supabase } from '../../lib/supabase';
 import { AppLogo } from '../../components/AppLogo';
 import { AppButton } from '../../components/ui/app-button';
@@ -43,12 +42,16 @@ import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/p
 import { computeNextPrayerSummaryAcrossDays } from '../../lib/prayerTimesDisplay';
 import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
 import { tokens } from '../../theme/tokens';
+import { NearYouNowCard } from '../../components/NearYouNowCard';
+import { NearbyHomeSummary } from '../../components/NearbyHomeSummary';
+import { HomeJumuahStrip } from '../../components/HomeJumuahStrip';
+import { useMosquesNearby, type NearbyMosque } from '../../lib/hooks/useMosquesNearby';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Mosque = {
   id: string; name: string; city?: string | null; country?: string | null;
-  status?: string | null; lat?: number | null; lng?: number | null;
+  status?: string | null; lat?: number | null; lng?: number | null; prayers_not_offered?: string[] | null; prayers_not_offered_reasons?: Record<string, string> | null;
 };
 type UserLocation = { latitude: number; longitude: number };
 type Subscription = { mosque_id: string };
@@ -74,6 +77,12 @@ type CrossMosqueAlert = { announcement: RawAnnouncement; mosque: Mosque };
 
 const LIVE_REFRESH_MS = 15000;
 const HOME_REFRESH_TIMEOUT_MS = 7000;
+
+function formatHomeCountdown(target: Date, nowMs: number) {
+  const minutes = Math.max(0, Math.ceil((target.getTime() - nowMs) / 60000));
+  const hours = Math.floor(minutes / 60);
+  return hours ? `${hours} hr ${minutes % 60} min` : `${minutes} min`;
+}
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -392,13 +401,11 @@ type PrimaryMosqueContentProps = {
   announcements: RawAnnouncement[];
   events: RawEvent[];
   campaigns: RawCampaign[];
-  jumuahSlots: JumuahSlot[];
-  dayOfWeek: number;
   router: ReturnType<typeof useRouter>;
 };
 
 const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
-  mosqueId, announcements, events, campaigns, jumuahSlots, dayOfWeek, router,
+  mosqueId, announcements, events, campaigns, router,
 }: PrimaryMosqueContentProps) {
   const urgentNotices = announcements.filter((a) => a.is_urgent).slice(0, 2);
   const pinned = announcements.find((a) => a.is_pinned && !a.is_urgent) ?? null;
@@ -406,15 +413,12 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
   const notice = pinned ?? recent;
   const visibleEvents = events.slice(0, 3);
   const visibleCampaigns = campaigns.slice(0, 2);
-  const activeSlots = jumuahSlots.slice(0, 3);
-  const showJumuah = activeSlots.length > 0 && dayOfWeek >= 3 && dayOfWeek <= 5;
 
   const hasContent =
     urgentNotices.length > 0 ||
     notice ||
     visibleEvents.length > 0 ||
-    visibleCampaigns.length > 0 ||
-    showJumuah;
+    visibleCampaigns.length > 0;
   if (!hasContent) return null;
 
   const getRaisedPct = (campaign: RawCampaign) =>
@@ -422,7 +426,6 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
       ? Math.min(100, Math.round(((campaign.raised_cents ?? 0) / campaign.goal_cents) * 100))
       : null;
 
-  const fridayLabel = isFridayToday() ? "Jumu'ah today" : "Jumu'ah this Friday";
 
   const navigateTo = (focus: string) => {
     router.push({
@@ -468,35 +471,6 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
           </Pressable>
         ))}
 
-        {showJumuah ? (
-          <Pressable
-            onPress={() => router.push({ pathname: '/(user)/jumuah/[id]', params: { id: mosqueId } } as any)}
-            style={({ pressed }) => [styles.contentRow, styles.contentRowJumuah, pressed && styles.contentRowPressed]}
-          >
-            <View style={[styles.contentIcon, styles.contentIconJumuah]}>
-              <Ionicons name="moon-outline" size={16} color="#0369A1" />
-            </View>
-            <View style={{ flex: 1, gap: 5 }}>
-              <AppText style={styles.contentTitle}>{fridayLabel}</AppText>
-              <View style={styles.jumuahSlotRow}>
-                {activeSlots.map((slot) => (
-                  <View key={slot.id} style={styles.jumuahSlotChip}>
-                    <AppText style={styles.jumuahSlotTime}>
-                      {formatJumuahTime(slot.salah_at) ?? '--:--'}
-                    </AppText>
-                    {slot.venue ? (
-                      <AppText variant="caption" style={styles.jumuahSlotVenue} numberOfLines={1}>
-                        {slot.venue}
-                      </AppText>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={14} color="#0369A1" />
-          </Pressable>
-        ) : null}
-
         {visibleEvents.map((event) => {
           const eventDate = formatEventDateParts(event.start_at);
           return (
@@ -510,7 +484,14 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
                 <AppText style={styles.eventDateDay}>{eventDate.day}</AppText>
               </View>
               <View style={{ flex: 1 }}>
-                <AppText style={styles.contentTitle} numberOfLines={1}>{event.title}</AppText>
+                <AppText
+                  style={styles.contentTitle}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  {event.title}
+                </AppText>
                 <AppText variant="caption" style={styles.contentSub} numberOfLines={1}>
                   {eventDate.time}
                   {event.location ? ` - ${event.location}` : ''}
@@ -533,7 +514,14 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
                 <Ionicons name="heart-outline" size={16} color="#0369A1" />
               </View>
               <View style={{ flex: 1, gap: 6 }}>
-                <AppText style={styles.contentTitle} numberOfLines={1}>{campaign.title}</AppText>
+                <AppText
+                  style={styles.contentTitle}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  {campaign.title}
+                </AppText>
                 {raisedPct !== null ? (
                   <View style={{ gap: 3 }}>
                     <View style={styles.campaignTrack}>
@@ -566,7 +554,14 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
               />
             </View>
             <View style={{ flex: 1 }}>
-              <AppText style={styles.contentTitle} numberOfLines={1}>{notice.title}</AppText>
+              <AppText
+                style={styles.contentTitle}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
+                {notice.title}
+              </AppText>
               {notice.summary ? (
                 <AppText variant="caption" style={styles.contentSub} numberOfLines={1}>{notice.summary}</AppText>
               ) : null}
@@ -592,6 +587,8 @@ type RemainingPrayersStripProps = {
   prayerTimes: NormalizedPrayerTimes | null;
   nextDayPrayerTimes: NormalizedPrayerTimes | null;
   nextPrayerName: PrayerName | null;
+  notOffered: readonly string[];
+  reasons: Record<string, string>;
   clockMs: number;
   loading: boolean;
 };
@@ -602,26 +599,30 @@ const PRAYER_DISPLAY_NAMES: Record<PrayerName, string> = {
 const ALL_PRAYERS: PrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
 const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
-  prayerTimes, nextDayPrayerTimes, nextPrayerName, clockMs, loading,
+  prayerTimes, nextDayPrayerTimes, nextPrayerName, clockMs, loading, notOffered, reasons,
 }: RemainingPrayersStripProps) {
+  const [expandedPrayer, setExpandedPrayer] = useState<PrayerName | null>(null);
   const now = new Date(clockMs);
 
   const { items, tomorrowFajrLabel } = useMemo(() => {
-    if (!prayerTimes) return { items: [], tomorrowFajrLabel: null };
+    if (!prayerTimes && !notOffered.length) return { items: [], tomorrowFajrLabel: null };
 
     const allItems = ALL_PRAYERS.map((p) => {
-      const adhan = prayerTimes[p].adhan;
+      const excluded = notOffered.includes(p);
+      const adhan = excluded ? null : prayerTimes?.[p]?.adhan;
       const passed = adhan ? adhan.getTime() < now.getTime() : true;
-      const isNext = p === nextPrayerName && !passed;
+      const isNext = !excluded && p === nextPrayerName && !passed;
       const timeLabel = adhan
         ? adhan.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : null;
-      return { name: p, passed, isNext, timeLabel };
+      const iqama = excluded ? null : prayerTimes?.[p]?.iqama;
+      const iqamaLabel = iqama ? iqama.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
+      return { name: p, passed: !excluded && passed, isNext, timeLabel, iqamaLabel, excluded };
     });
 
-    const allDone = allItems.every((i) => i.passed);
+    const allDone = allItems.every((i) => i.passed || i.excluded);
     let tomorrowFajr: string | null = null;
-    if (allDone && nextDayPrayerTimes) {
+    if (allDone && nextDayPrayerTimes && !notOffered.includes('fajr')) {
       const fajrAdhan = nextDayPrayerTimes.fajr?.adhan;
       if (fajrAdhan) {
         tomorrowFajr = fajrAdhan.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -630,7 +631,7 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
 
     return { items: allItems, tomorrowFajrLabel: tomorrowFajr };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prayerTimes, nextDayPrayerTimes, nextPrayerName, clockMs]);
+  }, [prayerTimes, nextDayPrayerTimes, nextPrayerName, clockMs, notOffered]);
 
   if (!loading && !items.length) return null;
 
@@ -649,10 +650,18 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
       <View style={styles.remainingScroll}>
         {loading
           ? [1, 2, 3, 4, 5].map((i) => <View key={i} style={styles.prayerPillSkeleton} />)
-          : items.map(({ name, passed, isNext, timeLabel }) => (
-              <View key={name} style={[
+          : items.map(({ name, passed, isNext, timeLabel, excluded }) => (
+              <Pressable key={name}
+                disabled={!excluded}
+                accessible={excluded}
+                accessibilityRole={excluded ? 'button' : undefined}
+                accessibilityLabel={`${PRAYER_DISPLAY_NAMES[name]}: ${excluded ? 'Not offered. More information' : timeLabel ?? 'Time unavailable'}`}
+                accessibilityState={excluded ? { expanded: expandedPrayer === name } : undefined}
+                onPress={() => setExpandedPrayer(current => current === name ? null : name)}
+                style={[
                 styles.prayerPill,
                 passed && styles.prayerPillPassed,
+                excluded && styles.prayerPillExcluded,
                 isNext && styles.prayerPillNext,
               ]}>
                 <Text
@@ -662,25 +671,57 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
                     isNext && styles.prayerPillNameNext,
                   ]}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
                 >
                   {PRAYER_DISPLAY_NAMES[name]}
                 </Text>
-                <Text
+                {excluded ? <View style={styles.notOfferedLabel}>
+                  <Text style={styles.prayerPillUnavailable} numberOfLines={1} adjustsFontSizeToFit>Not</Text>
+                  <Text style={styles.prayerPillUnavailable} numberOfLines={1} adjustsFontSizeToFit>offered</Text>
+                  <Ionicons name="information-circle-outline" size={14} color="#64748B" style={{ marginTop: 3 }} />
+                </View> : <Text
+                  numberOfLines={1}
                   style={[
                     styles.prayerPillTime,
                     passed && styles.prayerPillTimePassed,
+                    excluded && styles.prayerPillUnavailable,
                     isNext && styles.prayerPillTimeNext,
                   ]}
-                  numberOfLines={1}
                   adjustsFontSizeToFit
-                  minimumFontScale={0.75}
+                  minimumFontScale={0.85}
                 >
                   {timeLabel ?? '--:--'}
-                </Text>
+                </Text>}
                 {isNext ? <View style={styles.prayerPillDot} /> : null}
-              </View>
+              </Pressable>
             ))}
       </View>
+      {!loading && items.some(item => item.iqamaLabel) ? <>
+        <Text style={styles.iqamaHeading}>Iqamah</Text>
+        <View style={styles.remainingScroll}>
+          {items.map(item => <View key={item.name} style={[styles.iqamaPill, item.excluded && styles.prayerPillExcluded, item.isNext && styles.prayerPillNext]}>
+            <Text style={styles.iqamaTime} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+              accessibilityLabel={`${PRAYER_DISPLAY_NAMES[item.name]} Iqamah: ${item.excluded ? 'Not offered' : item.iqamaLabel ?? 'Not set'}`}>
+              {item.iqamaLabel ?? '—'}
+            </Text>
+          </View>)}
+        </View>
+      </> : null}
+      {expandedPrayer && notOffered.includes(expandedPrayer) ? (
+        <View style={styles.prayerAvailabilityInfo} accessibilityLiveRegion="polite">
+          <View style={styles.prayerAvailabilityHeader}>
+            <Text style={styles.prayerAvailabilityTitle}>{PRAYER_DISPLAY_NAMES[expandedPrayer]} congregation</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close prayer information"
+              onPress={() => setExpandedPrayer(null)} style={styles.prayerInfoClose}>
+              <Ionicons name="close" size={18} color="#475569" />
+            </Pressable>
+          </View>
+          <Text style={styles.prayerAvailabilityBody}>
+            {reasons[expandedPrayer]?.trim() || `The mosque has marked ${PRAYER_DISPLAY_NAMES[expandedPrayer]} as not held in congregation at this location. A specific reason hasn’t been provided. Please contact the mosque for details.`}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -731,66 +772,6 @@ const TravelBanner = React.memo(function TravelBanner({ mosqueName, distanceKm, 
       </Text>
       <Ionicons name="chevron-forward" size={14} color="#92400E" />
     </Pressable>
-  );
-});
-
-type GeoPrayerCardProps = { times: AladhanTimings };
-const GeoPrayerCard = React.memo(function GeoPrayerCard({ times }: GeoPrayerCardProps) {
-  return (
-    <AppCard style={styles.cardContainer}>
-      <View style={styles.sectionHeader}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Ionicons name="location-outline" size={15} color={tokens.color.text.accent} />
-          <AppText variant="sectionTitle">Prayer Times Near You</AppText>
-        </View>
-      </View>
-      <AppText variant="caption" style={styles.cardSubtitle}>
-        Calculated for your current location
-      </AppText>
-      <View style={styles.titleDivider} />
-      <View style={styles.prayerTable}>
-        {(['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const).map((p) => (
-          <View key={p} style={styles.prayerRow}>
-            <AppText style={styles.prayerName}>{p}</AppText>
-            <AppText style={styles.prayerTimeText}>{times[p]?.slice(0, 5) ?? '--:--'}</AppText>
-          </View>
-        ))}
-      </View>
-    </AppCard>
-  );
-});
-
-type NearbyLiveEntry = { mosqueId: string; mosque: Mosque; distance: number };
-type NearbyLiveCardProps = { entries: NearbyLiveEntry[]; onListen: (mosqueId: string) => void };
-const NearbyLiveCard = React.memo(function NearbyLiveCard({ entries, onListen }: NearbyLiveCardProps) {
-  if (!entries.length) return null;
-  return (
-    <AppCard style={[styles.cardContainer, { gap: 10 }]}>
-      <AppText variant="sectionTitle">Live Near You</AppText>
-      {entries.map(({ mosqueId, mosque, distance }) => (
-        <View key={mosqueId} style={styles.otherLiveRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-            <Ionicons name="radio-outline" size={18} color="#0F172A" />
-            <View style={{ flex: 1 }}>
-              <AppText style={styles.otherLiveName} numberOfLines={1}>{mosque.name}</AppText>
-              <AppText variant="caption" style={styles.otherLiveSub} numberOfLines={1}>
-                {Math.round(distance)} km away
-              </AppText>
-            </View>
-            <View style={styles.liveBadge}>
-              <AppText variant="caption" color={tokens.color.text.inverse} style={styles.liveBadgeText}>
-                LIVE
-              </AppText>
-            </View>
-          </View>
-          <Pressable onPress={() => onListen(mosqueId)} hitSlop={6}>
-            <AppText variant="body" color={tokens.color.text.accent} style={styles.listenLink}>
-              Listen
-            </AppText>
-          </Pressable>
-        </View>
-      ))}
-    </AppCard>
   );
 });
 
@@ -910,13 +891,139 @@ const CrossMosqueAlertBanner = React.memo(function CrossMosqueAlertBanner({
   );
 });
 
+type ListenerFirstRunProps = {
+  onDiscover: () => void;
+  onUseLocation: () => void;
+  onRequestMosque: () => void;
+  locationStatus: 'idle' | 'loading' | 'enabled' | 'denied';
+};
+
+const ListenerFirstRun = React.memo(function ListenerFirstRun({
+  onDiscover,
+  onUseLocation,
+  onRequestMosque,
+  locationStatus,
+}: ListenerFirstRunProps) {
+  const benefits: Array<{
+    icon: keyof typeof Ionicons.glyphMap;
+    title: string;
+    description: string;
+  }> = [
+    {
+      icon: 'time-outline',
+      title: 'Prayer times you can trust',
+      description: 'See the schedule published by your mosque.',
+    },
+    {
+      icon: 'radio-outline',
+      title: 'Live Adhan',
+      description: 'Listen whenever your mosque starts a broadcast.',
+    },
+    {
+      icon: 'megaphone-outline',
+      title: 'Local updates',
+      description: 'Keep up with Jumu’ah, events and announcements.',
+    },
+  ];
+
+  return (
+    <View style={styles.firstRunWrap}>
+      <View style={styles.firstRunHero}>
+        <View style={styles.firstRunIcon}>
+          <Ionicons name="business" size={26} color="#FFFFFF" />
+        </View>
+        <AppText style={styles.firstRunEyebrow}>WELCOME</AppText>
+        <AppText style={styles.firstRunTitle}>Let’s find your mosque</AppText>
+        <AppText style={styles.firstRunBody}>
+          Follow the mosque you pray with to make this home screen yours.
+        </AppText>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Find my mosque"
+          accessibilityHint="Search by name, city, or your current location"
+          onPress={onDiscover}
+          style={({ pressed }) => [
+            styles.firstRunPrimary,
+            pressed && styles.firstRunPressed,
+          ]}
+        >
+          <Ionicons name="search" size={20} color="#FFFFFF" />
+          <AppText style={styles.firstRunPrimaryText}>Find my mosque</AppText>
+          <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
+        </Pressable>
+        {locationStatus !== 'enabled' ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Find mosques near me"
+            onPress={onUseLocation}
+            disabled={locationStatus === 'loading' || locationStatus === 'denied'}
+            style={({ pressed }) => [
+              styles.firstRunLocation,
+              pressed && styles.firstRunPressed,
+              (locationStatus === 'loading' || locationStatus === 'denied') && { opacity: 0.65 },
+            ]}
+          >
+            {locationStatus === 'loading' ? (
+              <ActivityIndicator size="small" color="#0369A1" />
+            ) : (
+              <Ionicons name="navigate-outline" size={19} color="#0369A1" />
+            )}
+            <AppText style={styles.firstRunLocationText}>
+              {locationStatus === 'denied' ? 'Location is off — search instead' : 'Show mosques near me'}
+            </AppText>
+          </Pressable>
+        ) : null}
+        <View style={styles.firstRunPrivacyRow}>
+          <Ionicons name="location-outline" size={14} color="#47637B" />
+          <AppText style={styles.firstRunPrivacyText}>
+            Search by name or choose Near me—location is always optional.
+          </AppText>
+        </View>
+      </View>
+
+      <View style={styles.firstRunBenefits}>
+        <AppText style={styles.firstRunBenefitsTitle}>Following a mosque unlocks</AppText>
+        {benefits.map((benefit) => (
+          <View key={benefit.title} style={styles.firstRunBenefitRow}>
+            <View style={styles.firstRunBenefitIcon}>
+              <Ionicons name={benefit.icon} size={18} color="#0284C7" />
+            </View>
+            <View style={styles.firstRunBenefitCopy}>
+              <AppText style={styles.firstRunBenefitTitle}>{benefit.title}</AppText>
+              <AppText style={styles.firstRunBenefitBody}>{benefit.description}</AppText>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={onRequestMosque}
+        style={({ pressed }) => [
+          styles.firstRunMissing,
+          pressed && styles.firstRunPressed,
+        ]}
+      >
+        <View style={styles.firstRunMissingIcon}>
+          <Ionicons name="add" size={18} color="#4F765B" />
+        </View>
+        <View style={styles.firstRunBenefitCopy}>
+          <AppText style={styles.firstRunMissingTitle}>Can’t find your mosque?</AppText>
+          <AppText style={styles.firstRunMissingBody}>Ask us to add it</AppText>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="#4F765B" />
+      </Pressable>
+    </View>
+  );
+});
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const router = useRouter();
   const { session } = useAuth();
-  const roles = useRoleFlags();
   const userId = session?.user?.id ?? null;
+  const accessToken = session?.access_token ?? null;
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [mosques, setMosques] = useState<Mosque[]>([]);
@@ -924,47 +1031,43 @@ export default function HomeScreen() {
   const [rawAnnouncements, setRawAnnouncements] = useState<RawAnnouncement[]>([]);
   const [rawEvents, setRawEvents] = useState<RawEvent[]>([]);
   const [rawCampaigns, setRawCampaigns] = useState<RawCampaign[]>([]);
-  const [primaryJumuahSlots, setPrimaryJumuahSlots] = useState<JumuahSlot[]>([]);
+  const [primaryJumuah, setPrimaryJumuah] = useState<{ mosqueId: string; slots: JumuahSlot[] } | null>(null);
   const [liveStreams, setLiveStreams] = useState<Record<string, StreamRow>>({});
-  const [nextBroadcast, setNextBroadcast] = useState<AdhanBroadcast | null>(null);
   const [prayerTimes, setPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
   const [nextDayPrayerTimes, setNextDayPrayerTimes] = useState<NormalizedPrayerTimes | null>(null);
   const [prayerLoading, setPrayerLoading] = useState(false);
   const [prayerError, setPrayerError] = useState<string | null>(null);
-  const [muezzinLoading, setMuezzinLoading] = useState(false);
-  const [muezzinError, setMuezzinError] = useState<string | null>(null);
   const [defaultMosqueId, setDefaultMosqueId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'enabled' | 'denied'>('idle');
-  const [geoPrayerTimes, setGeoPrayerTimes] = useState<AladhanTimings | null>(null);
   const [showMosquePicker, setShowMosquePicker] = useState(false);
   const [contentRefreshKey, setContentRefreshKey] = useState(0);
   const [todayQuote, setTodayQuote] = useState<DailyQuote | null>(null);
   const [crossMosqueAlerts, setCrossMosqueAlerts] = useState<CrossMosqueAlert[]>([]);
+  const [homeLoaded, setHomeLoaded] = useState(false);
 
   const prayerRequestIdRef = useRef(0);
   const prayerLoadedMosqueRef = useRef<string | null>(null);
   const lastMosqueIdsRef = useRef('');
   const lastSubIdsRef = useRef('');
   const refreshIdRef = useRef(0);
+  // This route is the Listener workspace for every authenticated person,
+  // including people who also hold admin or muezzin permissions.
+  const nearby = useMosquesNearby(15, userLocation, true);
+  const currentAreaLocation = nearby.coordinates ?? userLocation;
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
   const subscribedIds = useMemo(() => new Set(subs.map((s) => s.mosque_id)), [subs]);
-
-  const staffPrimaryMosqueId = useMemo(
-    () => (roles.isMainAdmin ? null : roles.primaryAdminMosqueId ?? roles.primaryMuezzinMosqueId ?? null),
-    [roles.isMainAdmin, roles.primaryAdminMosqueId, roles.primaryMuezzinMosqueId]
-  );
 
   // Shared Map used by primaryMosque, render loops, and cross-mosque alerts.
   const mosqueById = useMemo(() => new Map(mosques.map((m) => [m.id, m])), [mosques]);
 
   const primaryMosque = useMemo(() => {
     const validDefaultId = defaultMosqueId && subscribedIds.has(defaultMosqueId) ? defaultMosqueId : null;
-    const preferredIds = [staffPrimaryMosqueId, validDefaultId, subs[0]?.mosque_id].filter(Boolean) as string[];
+    const preferredIds = [validDefaultId, subs[0]?.mosque_id].filter(Boolean) as string[];
 
     for (const id of preferredIds) {
       const mosque = mosqueById.get(id);
@@ -972,7 +1075,7 @@ export default function HomeScreen() {
     }
 
     return null;
-  }, [subs, mosqueById, defaultMosqueId, subscribedIds, staffPrimaryMosqueId]);
+  }, [subs, mosqueById, defaultMosqueId, subscribedIds]);
 
   const followedMosques = useMemo(() => {
     return mosques.filter((m) => subscribedIds.has(m.id));
@@ -1008,7 +1111,7 @@ export default function HomeScreen() {
     const [mosqueRes, subsRes, streamsRes] = await Promise.all([
       supabase
         .from('mosques')
-        .select('id, name, city, country, status, lat, lng')
+        .select('id, name, city, country, status, lat, lng, prayers_not_offered, prayers_not_offered_reasons')
         .order('name', { ascending: true })
         .limit(200),
       userId
@@ -1033,7 +1136,7 @@ export default function HomeScreen() {
     if (missingIds.length) {
       const { data: extra, error: extraErr } = await supabase
         .from('mosques')
-        .select('id, name, city, country, status')
+        .select('id, name, city, country, status, prayers_not_offered, prayers_not_offered_reasons')
         .in('id', missingIds);
       if (!extraErr && extra) mosqueRows = mergeMosqueRows(mosqueRows, extra as Mosque[]);
     }
@@ -1057,6 +1160,8 @@ export default function HomeScreen() {
     } else {
       setLiveStreams({});
     }
+
+    setHomeLoaded(true);
 
     return { mosques: mosqueRows, subs: subscriptionRows };
   }, [userId]);
@@ -1100,22 +1205,6 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const loadMuezzin = React.useCallback(async () => {
-    if (!roles.isMuezzin) { setNextBroadcast(null); setMuezzinError(null); return; }
-    setMuezzinLoading(true);
-    setMuezzinError(null);
-    try {
-      const upcoming = await fetchUpcomingBroadcasts(1);
-      setNextBroadcast(upcoming[0] ?? null);
-      if (!upcoming.length) setMuezzinError('No upcoming adhans scheduled.');
-    } catch (e: any) {
-      setMuezzinError(e?.message ?? 'Could not load upcoming adhans.');
-      setNextBroadcast(null);
-    } finally {
-      setMuezzinLoading(false);
-    }
-  }, [roles.isMuezzin]);
-
   const requestUserLocation = useCallback(async () => {
     if (locationStatus === 'loading') return;
     setLocationStatus('loading');
@@ -1135,15 +1224,15 @@ export default function HomeScreen() {
       setShowMosquePicker(false);
       setDefaultMosqueId(mosque.id);
       try {
-        await persistDefaultMosqueId(userId, mosque.id);
+        await persistDefaultMosqueId(userId, mosque.id, accessToken);
       } catch { /* best-effort persistence */ }
     },
-    [userId]
+    [accessToken, userId]
   );
 
   const onRefresh = React.useCallback(async () => {
     const refreshId = ++refreshIdRef.current;
-    const visibleMosqueId = primaryMosque?.id ?? staffPrimaryMosqueId ?? defaultMosqueId ?? subs[0]?.mosque_id ?? null;
+    const visibleMosqueId = primaryMosque?.id ?? defaultMosqueId ?? subs[0]?.mosque_id ?? null;
     setRefreshing(true);
     try {
       await withTimeout(
@@ -1162,11 +1251,11 @@ export default function HomeScreen() {
           const latestSubs = homeResult.status === 'fulfilled' ? homeResult.value.subs : subs;
           const latestSubIds = new Set(latestSubs.map((s) => s.mosque_id));
           const validDefaultId = storedDefaultId && latestSubIds.has(storedDefaultId) ? storedDefaultId : null;
-          const preferredId = staffPrimaryMosqueId ?? validDefaultId ?? latestSubs[0]?.mosque_id ?? visibleMosqueId;
+          const preferredId = validDefaultId ?? latestSubs[0]?.mosque_id ?? visibleMosqueId;
 
           await Promise.allSettled([
             preferredId && preferredId !== visibleMosqueId ? loadPrayerTimes(preferredId) : Promise.resolve(),
-            loadMuezzin(),
+            userLocation ? nearby.refetch() : Promise.resolve(),
           ]);
           setContentRefreshKey((key) => key + 1);
         })(),
@@ -1182,11 +1271,11 @@ export default function HomeScreen() {
     defaultMosqueId,
     loadDefault,
     loadHomeData,
-    loadMuezzin,
     loadPrayerTimes,
     primaryMosque?.id,
-    staffPrimaryMosqueId,
     subs,
+    nearby.refetch,
+    userLocation,
   ]);
 
   // ── Stable UI callbacks (prevent React.memo thrashing on memoised children) ──
@@ -1194,6 +1283,14 @@ export default function HomeScreen() {
   const openMosquePicker = useCallback(() => setShowMosquePicker(true), []);
   const closeMosquePicker = useCallback(() => setShowMosquePicker(false), []);
   const openDiscover = useCallback(() => router.push('/(user)/discover'), [router]);
+  const openNearbyMosques = useCallback(
+    () => router.push({ pathname: '/(user)/discover', params: { view: 'nearby' } }),
+    [router]
+  );
+  const requestMissingMosque = useCallback(
+    () => router.push('/(user)/request-mosque'),
+    [router]
+  );
   const manageMosques = useCallback(() => {
     setShowMosquePicker(false);
     router.push('/(user)/manage-mosques');
@@ -1206,6 +1303,26 @@ export default function HomeScreen() {
       }),
     [router]
   );
+  const handleOpenNearbyMosque = useCallback(
+    (mosque: NearbyMosque) => router.push({
+      pathname: '/(user)/mosque/[id]',
+      params: {
+        id: mosque.id,
+        name: mosque.name,
+        city: mosque.city,
+        country: mosque.country,
+      },
+    }),
+    [router]
+  );
+  const handleNearbyDirections = useCallback((mosque: NearbyMosque) => {
+    const label = encodeURIComponent(mosque.name);
+    const destination = `${mosque.latitude},${mosque.longitude}`;
+    const url = Platform.OS === 'ios'
+      ? `http://maps.apple.com/?daddr=${destination}&q=${label}`
+      : `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=walking`;
+    void Linking.openURL(url);
+  }, []);
 
   // ── Effects ────────────────────────────────────────────────────────────────
 
@@ -1218,9 +1335,8 @@ export default function HomeScreen() {
     }, [loadDefault, loadHomeData, loadPrayerTimes, primaryMosque?.id])
   );
 
-  // Live stream realtime + polling (listener only — untouched)
+  // Live stream realtime + polling for the Listener workspace.
   useEffect(() => {
-    if (roles.isMuezzin) return;
     let cancelled = false;
     const refresh = () => { if (!cancelled) void loadHomeData(); };
     const channel = supabase.channel(`listener-home-live-${userId ?? 'guest'}`);
@@ -1235,7 +1351,7 @@ export default function HomeScreen() {
     channel.subscribe();
     const pollId = setInterval(refresh, LIVE_REFRESH_MS);
     return () => { cancelled = true; clearInterval(pollId); supabase.removeChannel(channel); };
-  }, [loadHomeData, roles.isMuezzin, userId]);
+  }, [loadHomeData, userId]);
 
   // 30-second clock tick — remaining display is HH:MM so minute granularity is sufficient.
   useEffect(() => {
@@ -1251,7 +1367,7 @@ export default function HomeScreen() {
     (async () => {
       const { data, error } = await supabase
         .from('mosques')
-        .select('id, name, city, country, status')
+        .select('id, name, city, country, status, prayers_not_offered, prayers_not_offered_reasons')
         .eq('id', defaultMosqueId)
         .maybeSingle();
       if (!cancelled && data && !error) setMosques((prev) => [...prev, data]);
@@ -1259,7 +1375,6 @@ export default function HomeScreen() {
     return () => { cancelled = true; };
   }, [defaultMosqueId, mosques, subscribedIds]);
 
-  useEffect(() => { loadMuezzin(); }, [loadMuezzin]);
   useEffect(() => { loadPrayerTimes(primaryMosque?.id); }, [loadPrayerTimes, primaryMosque?.id]);
   usePrayerTimesRealtime(
     primaryMosque?.id,
@@ -1275,7 +1390,7 @@ export default function HomeScreen() {
       setRawAnnouncements([]);
       setRawEvents([]);
       setRawCampaigns([]);
-      setPrimaryJumuahSlots([]);
+      setPrimaryJumuah(null);
       setTodayQuote(null);
       return;
     }
@@ -1319,8 +1434,7 @@ export default function HomeScreen() {
           .eq('mosque_id', primaryMosque.id)
           .eq('is_active', true)
           .order('sort_order', { ascending: true })
-          .order('salah_at', { ascending: true })
-          .limit(5),
+          .order('salah_at', { ascending: true }),
         supabase
           .from('mosque_daily_quotes')
           .select('id,text_en,text_ar,source')
@@ -1333,7 +1447,7 @@ export default function HomeScreen() {
       setRawAnnouncements(announcementRes.error ? [] : (announcementRes.data ?? []) as RawAnnouncement[]);
       setRawEvents(eventRes.error ? [] : (eventRes.data ?? []) as RawEvent[]);
       setRawCampaigns(campaignRes.error ? [] : (campaignRes.data ?? []) as RawCampaign[]);
-      setPrimaryJumuahSlots(jumuahRes.error ? [] : (jumuahRes.data ?? []) as JumuahSlot[]);
+      setPrimaryJumuah({ mosqueId: primaryMosque.id, slots: jumuahRes.error ? [] : (jumuahRes.data ?? []) as JumuahSlot[] });
       setTodayQuote(!quoteRes.error && quoteRes.data ? (quoteRes.data as DailyQuote) : null);
     })();
 
@@ -1393,28 +1507,25 @@ export default function HomeScreen() {
   // ── Memos ──────────────────────────────────────────────────────────────────
 
   const distanceFromHomeMosque = useMemo(() => {
-    if (!userLocation || primaryMosque?.lat == null || primaryMosque?.lng == null) return null;
+    if (!currentAreaLocation || primaryMosque?.lat == null || primaryMosque?.lng == null) return null;
     return haversineKm(
-      userLocation.latitude, userLocation.longitude,
+      currentAreaLocation.latitude, currentAreaLocation.longitude,
       Number(primaryMosque.lat), Number(primaryMosque.lng)
     );
-  }, [userLocation, primaryMosque]);
+  }, [currentAreaLocation, primaryMosque]);
 
   const isTravelling = distanceFromHomeMosque !== null && distanceFromHomeMosque > 30;
 
-  // Fetch Aladhan times for GPS position when travelling
-  useEffect(() => {
-    if (!userLocation || !isTravelling) { setGeoPrayerTimes(null); return; }
-    const today = formatLocalDate(new Date());
-    fetchAladhanTimes(userLocation.latitude, userLocation.longitude, today)
-      .then((t) => setGeoPrayerTimes(t));
-  }, [userLocation, isTravelling]);
-
   const nextPrayer = useMemo(
-    () => computeNextPrayerSummaryAcrossDays(prayerTimes, nextDayPrayerTimes, new Date(clockMs)),
-    [clockMs, prayerTimes, nextDayPrayerTimes]
+    () => {
+      const filterOffered = (times: NormalizedPrayerTimes | null) => times ? Object.fromEntries(
+        ALL_PRAYERS.map((name) => [name, primaryMosque?.prayers_not_offered?.includes(name)
+          ? { adhan: null, iqama: null } : times[name]])
+      ) as NormalizedPrayerTimes : null;
+      return computeNextPrayerSummaryAcrossDays(filterOffered(prayerTimes), filterOffered(nextDayPrayerTimes), new Date(clockMs));
+    },
+    [clockMs, prayerTimes, nextDayPrayerTimes, primaryMosque?.prayers_not_offered]
   );
-  const currentDayOfWeek = useMemo(() => new Date(clockMs).getDay(), [clockMs]);
 
   // Freshness uses Date.now() at evaluation time; 15 s polling catches any
   // stream that crosses the 20-min window between evaluations.
@@ -1426,24 +1537,6 @@ export default function HomeScreen() {
     return next;
   }, [liveStreams]);
   const liveMosqueIds = useMemo(() => new Set(Object.keys(freshLiveStreams)), [freshLiveStreams]);
-
-  const nearbyLiveEntries = useMemo((): NearbyLiveEntry[] => {
-    if (!userLocation) return [];
-    return Object.keys(freshLiveStreams)
-      .filter((id) => id !== primaryMosque?.id)
-      .reduce<NearbyLiveEntry[]>((acc, mosqueId) => {
-        const mosque = mosqueById.get(mosqueId);
-        if (!mosque?.lat || !mosque?.lng) return acc;
-        const distance = haversineKm(
-          userLocation.latitude, userLocation.longitude,
-          Number(mosque.lat), Number(mosque.lng)
-        );
-        if (distance <= 30) acc.push({ mosqueId, mosque, distance });
-        return acc;
-      }, [])
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 3);
-  }, [userLocation, freshLiveStreams, primaryMosque?.id, mosqueById]);
 
   // ── Live broadcast state for primary mosque (UNTOUCHED logic) ─────────────
 
@@ -1474,33 +1567,58 @@ export default function HomeScreen() {
 
   const topPad = Platform.OS === 'android' ? 8 : 0;
 
-  // ── Muezzin branch — UNTOUCHED ─────────────────────────────────────────────
+  // ── Listener workspace ─────────────────────────────────────────────────────
 
-  if (roles.isMuezzin) {
+  const otherLive = Object.entries(freshLiveStreams).filter(
+    ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
+  );
+
+  if (userId && homeLoaded && !primaryMosque && subs.length === 0) {
     return (
       <ScreenContainer
         contentStyle={[styles.scrollBody, { paddingTop: topPad + 12 }]}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.color.text.accent} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={tokens.color.text.accent}
+          />
         }
       >
         <View style={styles.headerRow}>
           <AppLogo size={30} />
           <AppText variant="title" style={styles.appTitle}>Adhan Connect</AppText>
-          <Pressable onPress={() => router.push('/(user)/settings')} hitSlop={12}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+            onPress={() => router.push('/(user)/settings')}
+            hitSlop={12}
+          >
             <Ionicons name="settings-outline" size={22} color="#0F172A" />
           </Pressable>
         </View>
-        <MuezzinHero loading={muezzinLoading} broadcast={nextBroadcast} error={muezzinError} router={router} />
+        <ListenerFirstRun
+          onDiscover={openDiscover}
+          onUseLocation={requestUserLocation}
+          onRequestMosque={requestMissingMosque}
+          locationStatus={locationStatus}
+        />
+        {currentAreaLocation ? (
+          <NearYouNowCard
+            mosques={nearby.mosques}
+            loading={nearby.loading}
+            error={nearby.error}
+            freshAsOf={nearby.freshAsOf}
+            onRefresh={() => void nearby.refetch()}
+            onViewMosque={handleOpenNearbyMosque}
+            onListen={(mosque) => handleListenLive(mosque.id)}
+            onDirections={handleNearbyDirections}
+            limit={3}
+          />
+        ) : null}
       </ScreenContainer>
     );
   }
-
-  // ── Listener branch ────────────────────────────────────────────────────────
-
-  const otherLive = Object.entries(freshLiveStreams).filter(
-    ([mosqueId]) => mosqueId !== primaryMosque?.id && subscribedIds.has(mosqueId)
-  );
 
   return (
     <ScreenContainer
@@ -1632,7 +1750,7 @@ export default function HomeScreen() {
               : prayerLoading
               ? "Checking today's schedule..."
               : nextPrayer?.remaining
-              ? `In ${nextPrayer.remaining}`
+              ? `${formatHomeCountdown(nextPrayer.scheduledAt, clockMs)} remaining`
               : prayerError ?? 'Pull to refresh'}
           </AppText>
         </View>
@@ -1660,11 +1778,22 @@ export default function HomeScreen() {
         </View>
       </Pressable>
 
+      {primaryMosque && primaryJumuah?.mosqueId === primaryMosque.id ? (
+        <HomeJumuahStrip
+          mosqueName={primaryMosque.name}
+          slots={primaryJumuah.slots}
+          onPress={() => router.push({ pathname: '/(user)/jumuah/[id]', params: { id: primaryMosque.id } })}
+        />
+      ) : null}
+
       {/* ── Remaining prayers today (compact strip replacing full table) ── */}
       <RemainingPrayersStrip
+        key={primaryMosque?.id ?? 'no-mosque'}
         prayerTimes={prayerTimes}
         nextDayPrayerTimes={nextDayPrayerTimes}
         nextPrayerName={nextPrayer?.name ?? null}
+        notOffered={primaryMosque?.prayers_not_offered ?? []}
+        reasons={primaryMosque?.prayers_not_offered_reasons ?? {}}
         clockMs={clockMs}
         loading={prayerLoading}
       />
@@ -1678,17 +1807,12 @@ export default function HomeScreen() {
           announcements={primaryMosqueAnnouncements}
           events={primaryMosqueEvents}
           campaigns={primaryMosqueCampaigns}
-          jumuahSlots={primaryJumuahSlots}
-          dayOfWeek={currentDayOfWeek}
           router={router}
         />
       ) : null}
 
       {/* ── Daily spiritual reflection ── */}
       {todayQuote ? <QuoteOfTheDayCard quote={todayQuote} /> : null}
-
-      {/* ── Geo prayer times when travelling ── */}
-      {isTravelling && geoPrayerTimes && <GeoPrayerCard times={geoPrayerTimes} />}
 
       {/* My mosques */}
       <MyMosquesStrip
@@ -1697,9 +1821,6 @@ export default function HomeScreen() {
         liveMosqueIds={liveMosqueIds}
         router={router}
       />
-
-      {/* ── Nearby live broadcasts ── */}
-      <NearbyLiveCard entries={nearbyLiveEntries} onListen={handleListenLive} />
 
       {/* ── Other live broadcasts from followed mosques ── */}
       {otherLive.length > 0 && (
@@ -1753,6 +1874,18 @@ export default function HomeScreen() {
           />
         </AppCard>
       ) : null}
+      {/* Nearby context stays compact so the primary mosque and prayer remain first. */}
+      {currentAreaLocation ? (
+        <NearbyHomeSummary
+          mosques={nearby.mosques}
+          loading={nearby.loading}
+          error={nearby.error}
+          onOpenNearby={openNearbyMosques}
+          onListen={(mosque) => handleListenLive(mosque.id)}
+          onRefresh={() => void nearby.refetch()}
+        />
+      ) : null}
+
     </ScreenContainer>
   );
 }
@@ -1766,6 +1899,153 @@ const styles = StyleSheet.create({
     height: 58, paddingHorizontal: 0,
   },
   appTitle: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '700', letterSpacing: 0.2, color: '#0F172A' },
+
+  // ── First listener visit ──
+  firstRunWrap: { gap: 14 },
+  firstRunHero: {
+    backgroundColor: '#EFF7FF',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    padding: 20,
+  },
+  firstRunIcon: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: '#0284C7',
+    marginBottom: 18,
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
+  },
+  firstRunEyebrow: {
+    color: '#0369A1',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  firstRunTitle: {
+    color: '#0F172A',
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  firstRunBody: {
+    color: '#52677C',
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  firstRunPrimary: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: 17,
+    backgroundColor: '#0284C7',
+    marginTop: 20,
+    paddingHorizontal: 16,
+  },
+  firstRunPrimaryText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  firstRunLocation: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 15,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginTop: 10,
+    paddingHorizontal: 14,
+  },
+  firstRunLocationText: {
+    color: '#0369A1',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  firstRunPrivacyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 12,
+  },
+  firstRunPrivacyText: {
+    flex: 1,
+    color: '#47637B',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  firstRunBenefits: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    gap: 4,
+  },
+  firstRunBenefitsTitle: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 7,
+  },
+  firstRunBenefitRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  firstRunBenefitIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#E0F2FE',
+  },
+  firstRunBenefitCopy: { flex: 1 },
+  firstRunBenefitTitle: { color: '#0F172A', fontSize: 14, fontWeight: '800' },
+  firstRunBenefitBody: { color: '#64748B', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  firstRunMissing: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F1F6EF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#DCE8D8',
+    paddingHorizontal: 14,
+  },
+  firstRunMissingIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: '#E3EEE0',
+  },
+  firstRunMissingTitle: { color: '#203126', fontSize: 14, fontWeight: '800' },
+  firstRunMissingBody: { color: '#4F765B', fontSize: 12, marginTop: 2 },
+  firstRunPressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
 
   // ── Mosque identity bar ──
   identityBar: {
@@ -1902,7 +2182,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#E6E8EB',
   },
   contentRowUrgent: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
-  contentRowJumuah: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
   contentRowPressed: { opacity: 0.86 },
   contentIcon: {
     width: 34, height: 34, borderRadius: 12,
@@ -1910,7 +2189,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0F2FE',
   },
   contentIconUrgent: { backgroundColor: '#FEE2E2' },
-  contentIconJumuah: { backgroundColor: '#DBEAFE' },
   contentIconCampaign: { backgroundColor: '#FCE7F3' },
   contentIconPinned: { backgroundColor: '#FEF3C7' },
   contentIconAnnouncement: { backgroundColor: '#E0F2FE' },
@@ -1940,16 +2218,6 @@ const styles = StyleSheet.create({
   },
   eventDateMonth: { color: '#047857', fontSize: 9, fontWeight: '900' },
   eventDateDay: { color: '#065F46', fontSize: 16, fontWeight: '900', marginTop: -1 },
-
-  // ── Jumu'ah slots in What's On ──
-  jumuahSlotRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  jumuahSlotChip: {
-    paddingHorizontal: 10, paddingVertical: 5,
-    backgroundColor: '#FFFFFF', borderRadius: tokens.radius.md,
-    borderWidth: 1, borderColor: '#BFDBFE',
-  },
-  jumuahSlotTime: { color: '#1E40AF', fontWeight: '900', fontSize: 14 },
-  jumuahSlotVenue: { color: '#3B82F6', fontSize: 11, marginTop: 1 },
 
   // ── Campaign progress ──
   campaignTrack: { height: 6, borderRadius: 999, backgroundColor: '#E2E8F0', overflow: 'hidden' },
@@ -2038,12 +2306,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  remainingScroll: { flexDirection: 'row', gap: 6 },
+  remainingScroll: { flexDirection: 'row', gap: 4 },
   prayerPill: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 66,
     alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 9,
+    paddingHorizontal: 2,
+    paddingVertical: 8,
     borderRadius: 14,
     backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
@@ -2054,13 +2324,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     borderColor: '#0EA5E9',
   },
+  prayerPillExcluded: { backgroundColor: '#EDEFF2', borderColor: '#DCE1E7' },
+  prayerAvailabilityInfo: { backgroundColor: '#F1F5F9', borderRadius: 12, paddingHorizontal: 12, paddingBottom: 12, marginTop: 10 },
+  prayerAvailabilityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  prayerAvailabilityTitle: { flex: 1, color: '#334155', fontSize: 13, fontWeight: '700' },
+  prayerInfoClose: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  prayerAvailabilityBody: { color: '#475569', fontSize: 13, lineHeight: 20 },
   prayerPillPassed: { backgroundColor: '#F8FAFC', borderColor: '#F1F5F9' },
-  prayerPillName: { fontSize: 11, fontWeight: '700', color: '#64748B' },
+  prayerPillName: { width: '100%', textAlign: 'center', fontSize: 10, fontWeight: '700', color: '#64748B' },
   prayerPillNamePassed: { color: '#CBD5E1' },
   prayerPillNameNext: { color: '#0369A1', fontWeight: '800' },
-  prayerPillTime: { fontSize: 14, fontWeight: '900', color: '#0F172A' },
+  prayerPillTime: { width: '100%', textAlign: 'center', fontVariant: ['tabular-nums'], fontSize: 13, fontWeight: '900', color: '#0F172A' },
   prayerPillTimePassed: { color: '#CBD5E1' },
-  prayerPillTimeNext: { color: '#0C4A6E', fontSize: 14, fontWeight: '900' },
+  notOfferedLabel: { width: '100%', alignItems: 'center', justifyContent: 'center' },
+  iqamaHeading: { color: '#64748B', fontSize: 10, fontWeight: '600', marginTop: 8, marginBottom: 4 },
+  iqamaPill: { flex: 1, minWidth: 0, minHeight: 27, justifyContent: 'center', paddingHorizontal: 2, paddingVertical: 4, backgroundColor: '#F8FAFC', borderColor: '#E6E8EB', borderWidth: 1, borderRadius: 8 },
+  iqamaTime: { color: '#475569', textAlign: 'center', fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  prayerPillUnavailable: { width: '100%', color: '#64748B', fontSize: 10, lineHeight: 13, fontWeight: '600', textAlign: 'center' },
+  prayerPillTimeNext: { color: '#0C4A6E', fontSize: 13, fontWeight: '900' },
   prayerPillDot: {
     width: 5, height: 5, borderRadius: 3,
     backgroundColor: '#0EA5E9', marginTop: 2,

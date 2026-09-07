@@ -1,6 +1,11 @@
+import {
+  AmiriQuran_400Regular,
+  useFonts,
+} from '@expo-google-fonts/amiri-quran';
 import { Redirect, Stack, router, usePathname, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { NotificationRuntime } from '../../components/NotificationRuntime';
 import { AuthProvider, useAuth } from '../auth';
 import { hasCurrentAccountConsent } from '../accountConsent';
 import {
@@ -75,14 +80,81 @@ function RootNavigator() {
     (preferredEntryLoaded &&
       roleSelectionLoaded &&
       workspaceStateAccessToken === session?.access_token);
+  // Stable "already bootstrapped for this user" state. When Supabase refreshes
+  // the JWT on tab focus, session.access_token changes → useRoleFlags briefly
+  // sets loading:true → roleResolutionSettled, workspaceStateReady, and all
+  // role flags (isMainAdmin etc.) flip to false → isBootstrapping would flip to
+  // true and Stack.Protected guards would drop, actively navigating away from
+  // admin/muezzin screens. Once we have successfully bootstrapped for a given
+  // user we keep confirmed copies so token refreshes are transparent.
+  const sessionUserId = session?.user?.id ?? null;
+  const [confirmedUserId, setConfirmedUserId] = useState<string | null>(null);
+  const [confirmedRoleSettled, setConfirmedRoleSettled] = useState(false);
+  const [confirmedWorkspaceReady, setConfirmedWorkspaceReady] = useState(false);
+  const [confirmedIsMainAdmin, setConfirmedIsMainAdmin] = useState(false);
+  const [confirmedIsAdmin, setConfirmedIsAdmin] = useState(false);
+  const [confirmedIsMuezzin, setConfirmedIsMuezzin] = useState(false);
+  const [confirmedHasMultipleWorkspaceAccess, setConfirmedHasMultipleWorkspaceAccess] = useState(false);
+
+  useEffect(() => {
+    if (!sessionUserId) {
+      setConfirmedUserId(null);
+      setConfirmedRoleSettled(false);
+      setConfirmedWorkspaceReady(false);
+      setConfirmedIsMainAdmin(false);
+      setConfirmedIsAdmin(false);
+      setConfirmedIsMuezzin(false);
+      setConfirmedHasMultipleWorkspaceAccess(false);
+      return;
+    }
+    if (sessionUserId !== confirmedUserId) {
+      setConfirmedUserId(sessionUserId);
+      setConfirmedRoleSettled(false);
+      setConfirmedWorkspaceReady(false);
+      setConfirmedIsMainAdmin(false);
+      setConfirmedIsAdmin(false);
+      setConfirmedIsMuezzin(false);
+      setConfirmedHasMultipleWorkspaceAccess(false);
+      return;
+    }
+    if (roleResolutionSettled) {
+      setConfirmedRoleSettled(true);
+      setConfirmedIsMainAdmin(roles.isMainAdmin);
+      setConfirmedIsAdmin(roles.isAdmin);
+      setConfirmedIsMuezzin(roles.isMuezzin);
+      setConfirmedHasMultipleWorkspaceAccess(roles.hasMultipleWorkspaceAccess);
+    }
+    if (workspaceStateReady) setConfirmedWorkspaceReady(true);
+  }, [
+    sessionUserId,
+    roleResolutionSettled,
+    workspaceStateReady,
+    confirmedUserId,
+    roles.isMainAdmin,
+    roles.isAdmin,
+    roles.isMuezzin,
+    roles.hasMultipleWorkspaceAccess,
+  ]);
+
+  // During a token-refresh re-check (loading:true, same user), use confirmed
+  // values so Stack.Protected guards and isBootstrapping stay stable.
+  const isRecheck = roles.loading && confirmedRoleSettled && sessionUserId === confirmedUserId;
+  const effectiveRoleSettled = confirmedRoleSettled || roleResolutionSettled;
+  const effectiveWorkspaceReady = confirmedWorkspaceReady || workspaceStateReady;
+  const effectiveIsMainAdmin = isRecheck ? confirmedIsMainAdmin : roles.isMainAdmin;
+  const effectiveIsAdmin = isRecheck ? confirmedIsAdmin : roles.isAdmin;
+  const effectiveIsMuezzin = isRecheck ? confirmedIsMuezzin : roles.isMuezzin;
+  const effectiveHasMultipleWorkspaceAccess = isRecheck ? confirmedHasMultipleWorkspaceAccess : roles.hasMultipleWorkspaceAccess;
+  const effectiveRoleAccessReady = effectiveRoleSettled && !roles.error;
+
   const isBootstrapping =
     loading ||
     !guestBrowsingLoaded ||
     (!inRecoveryFlow &&
       !!session?.user &&
       !requiresAccountConsent &&
-      !roleResolutionSettled) ||
-    (!inRecoveryFlow && !workspaceStateReady);
+      !effectiveRoleSettled) ||
+    (!inRecoveryFlow && !effectiveWorkspaceReady);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,7 +436,7 @@ function RootNavigator() {
   }
 
   const canBrowseUserStack =
-    (!session && guestBrowsing) || roleAccessReady;
+    (!session && guestBrowsing) || effectiveRoleAccessReady;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -372,11 +444,11 @@ function RootNavigator() {
       <Stack.Protected guard={canBrowseUserStack}>
         <Stack.Screen name="(user)" />
       </Stack.Protected>
-      <Stack.Protected guard={roleAccessReady && roles.isAdmin}>
+      <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsAdmin}>
         <Stack.Screen name="(admin)" />
         <Stack.Screen name="admin-home" />
       </Stack.Protected>
-      <Stack.Protected guard={roleAccessReady && roles.isMainAdmin}>
+      <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsMainAdmin}>
         <Stack.Screen name="admin" />
       </Stack.Protected>
       <Stack.Protected guard={Boolean(session)}>
@@ -384,7 +456,7 @@ function RootNavigator() {
         <Stack.Screen name="auth-complete" />
         <Stack.Screen name="complete-account" />
       </Stack.Protected>
-      <Stack.Protected guard={roleAccessReady && roles.isMuezzin}>
+      <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsMuezzin}>
         <Stack.Screen name="(muezzin)" />
         <Stack.Screen name="muezzin/live-broadcast" />
         <Stack.Screen
@@ -396,11 +468,11 @@ function RootNavigator() {
         />
       </Stack.Protected>
       <Stack.Protected
-        guard={roleAccessReady && roles.hasMultipleWorkspaceAccess}
+        guard={effectiveRoleAccessReady && effectiveHasMultipleWorkspaceAccess}
       >
         <Stack.Screen name="role-entry" />
       </Stack.Protected>
-      <Stack.Protected guard={roleAccessReady}>
+      <Stack.Protected guard={effectiveRoleAccessReady}>
         <Stack.Screen
           name="modal"
           options={{
@@ -415,8 +487,19 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({ AmiriQuran_400Regular });
+
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#0EA5E9" />
+      </View>
+    );
+  }
+
   return (
     <AuthProvider>
+      <NotificationRuntime />
       <RootNavigator />
     </AuthProvider>
   );

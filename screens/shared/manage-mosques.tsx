@@ -30,6 +30,7 @@ export default function ManageMosques() {
   const segments = useSegments();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const accessToken = session?.access_token ?? null;
   const isMuezzinContext = segments[0] === '(muezzin)';
   const discoverPath = isMuezzinContext
     ? '/(muezzin)/mosque-discovery'
@@ -148,7 +149,7 @@ export default function ManageMosques() {
     setItems((prev) => prev.filter((i) => i.mosque_id !== mosqueId));
     if (defaultId === mosqueId) {
       setDefaultId(null);
-      await clearDefaultMosqueId(userId);
+      await clearDefaultMosqueId(userId, accessToken);
     }
     const { error: unfollowError } = await supabase
       .from('subscriptions')
@@ -163,7 +164,7 @@ export default function ManageMosques() {
 
   const setDefault = async (mosqueId: string) => {
     try {
-      await setDefaultMosqueId(userId, mosqueId);
+      await setDefaultMosqueId(userId, mosqueId, accessToken);
       setDefaultId(mosqueId);
     } catch {
       setDefaultId(mosqueId);

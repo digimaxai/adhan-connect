@@ -1,4 +1,4 @@
-import { Redirect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -8,6 +8,7 @@ import { tokens } from '@/theme/tokens';
 import { useRoleFlags } from '@/lib/roles';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { useAuth } from '@/lib/auth';
+import { requireRoleEntrySelection } from '@/lib/roleEntrySession';
 
 type ToolDef = {
   title: string;
@@ -28,32 +29,74 @@ type ToolSectionProps = {
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const { session } = useAuth();
+  const [accessRefreshKey, setAccessRefreshKey] = React.useState(0);
   const {
     loading: roleLoading,
+    ready: roleReady,
+    resolvedUserId,
     isAdmin,
     isMuezzin,
     isLocalAdmin,
     isMainAdmin,
     role,
     hasMultipleWorkspaceAccess,
-  } = useRoleFlags();
-  const { mosques, selectedMosque, loading: mosqueLoading, error, setSelectedMosque } = useAdminMosque();
-  const { session } = useAuth();
+    adminMosques,
+  } = useRoleFlags({
+    refreshKey: accessRefreshKey,
+    reuseResolvedSessionAccess: accessRefreshKey === 0,
+  });
+  const roleMatchesSession =
+    roleReady && resolvedUserId === (session?.user?.id ?? null);
+  const {
+    mosques,
+    selectedMosque,
+    loading: mosqueLoading,
+    error,
+    setSelectedMosque,
+  } = useAdminMosque({
+    enabled: roleMatchesSession && isAdmin,
+    knownMosques: roleMatchesSession && isAdmin ? adminMosques : undefined,
+    refreshKey: accessRefreshKey,
+  });
   const [refreshing, setRefreshing] = React.useState(false);
+  const [switchingWorkspace, setSwitchingWorkspace] = React.useState(false);
+  const [loadTimedOut, setLoadTimedOut] = React.useState(false);
+  const workspaceLoading = roleLoading || (isAdmin && mosqueLoading);
+
+  React.useEffect(() => {
+    if (!workspaceLoading) {
+      setLoadTimedOut(false);
+      setRefreshing(false);
+      return;
+    }
+    const timeoutId = setTimeout(() => setLoadTimedOut(true), 12_000);
+    return () => clearTimeout(timeoutId);
+  }, [workspaceLoading, accessRefreshKey]);
 
   const disableActions = !selectedMosque;
   const locationLabel = selectedMosque
     ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') || null
     : null;
 
-  const handleRefresh = async () => {
+  const handleRefresh = () => {
     setRefreshing(true);
-    try {} finally {
-      setRefreshing(false);
+    setLoadTimedOut(false);
+    setAccessRefreshKey((current) => current + 1);
+  };
+
+  const handleSwitchWorkspace = async () => {
+    if (!session?.user?.id || switchingWorkspace) return;
+    setSwitchingWorkspace(true);
+    try {
+      await requireRoleEntrySelection(session.user.id);
+      router.replace('/role-entry' as any);
+    } finally {
+      setSwitchingWorkspace(false);
     }
   };
 
-  if (roleLoading || mosqueLoading) {
+  if (workspaceLoading && !loadTimedOut) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={tokens.color.status.info} />
@@ -62,7 +105,38 @@ export default function AdminDashboard() {
     );
   }
 
-  if (isMuezzin && !isAdmin) return <Redirect href={'/' as any} />;
+  if (workspaceLoading) {
+    return (
+      <View style={styles.centered}>
+        <Ionicons name="cloud-offline-outline" size={34} color={tokens.color.status.warning} />
+        <AppText variant="sectionTitle" style={styles.muted}>
+          Admin workspace is taking longer than expected
+        </AppText>
+        <AppText variant="body" color={tokens.color.text.secondary} style={styles.muted}>
+          Your notification settings were saved. Retry the workspace check, or choose another workspace.
+        </AppText>
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleRefresh}
+          style={({ pressed }) => [styles.recoveryPrimary, pressed && styles.pressed]}
+        >
+          <AppText style={styles.recoveryPrimaryText}>Try again</AppText>
+        </Pressable>
+        {hasMultipleWorkspaceAccess && session?.user?.id ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={switchingWorkspace}
+            onPress={() => void handleSwitchWorkspace()}
+            style={({ pressed }) => [styles.recoverySecondary, pressed && styles.pressed]}
+          >
+            <AppText style={styles.recoverySecondaryText}>
+              {switchingWorkspace ? 'Opening…' : 'Choose workspace'}
+            </AppText>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
 
   if (!isAdmin) {
     return (
@@ -100,6 +174,15 @@ export default function AdminDashboard() {
       description: 'Assign muezzins and keep daily coverage organised.',
       href: '/(admin)/staff-rota',
       icon: 'people-outline',
+      iconBg: '#F5F3FF',
+      iconColor: '#7C3AED',
+      requiresMosque: true,
+    },
+    {
+      title: 'Attendance & Engagement',
+      description: 'View Friday Jumu\'ah and events attendance planning.',
+      href: '/(admin)/attendance',
+      icon: 'people-circle-outline',
       iconBg: '#F5F3FF',
       iconColor: '#7C3AED',
       requiresMosque: true,
@@ -189,11 +272,18 @@ export default function AdminDashboard() {
         ) : null}
         {hasMultipleWorkspaceAccess ? (
           <Pressable
-            onPress={() => router.push('/role-entry' as any)}
-            style={({ pressed }) => [styles.switchWorkspaceBtn, pressed && styles.pressed]}
+            disabled={switchingWorkspace}
+            onPress={() => void handleSwitchWorkspace()}
+            style={({ pressed }) => [
+              styles.switchWorkspaceBtn,
+              switchingWorkspace && styles.disabled,
+              pressed && styles.pressed,
+            ]}
           >
             <Ionicons name="swap-horizontal-outline" size={15} color="#2563EB" />
-            <AppText style={styles.switchWorkspaceBtnText}>Switch workspace</AppText>
+            <AppText style={styles.switchWorkspaceBtnText}>
+              {switchingWorkspace ? 'Opening…' : 'Switch workspace'}
+            </AppText>
           </Pressable>
         ) : null}
       </View>
@@ -242,6 +332,7 @@ export default function AdminDashboard() {
           ) : null}
         </View>
       )}
+
 
       {/* ── Daily operations ── */}
       <ToolSection
@@ -346,7 +437,31 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, padding: 24 },
   loadingText: { color: tokens.color.text.secondary },
   muted: { textAlign: 'center' },
+  recoveryPrimary: {
+    minWidth: 180,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: tokens.radius.pill,
+    backgroundColor: tokens.color.text.accent,
+  },
+  recoveryPrimaryText: { color: '#FFFFFF', fontWeight: tokens.typography.weight.bold },
+  recoverySecondary: {
+    minWidth: 180,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.bg.surface,
+  },
+  recoverySecondaryText: {
+    color: tokens.color.text.secondary,
+    fontWeight: tokens.typography.weight.semibold,
+  },
   pressed: { opacity: 0.88 },
+  disabled: { opacity: 0.55 },
   container: { gap: 20, paddingBottom: 48 },
 
   // Header

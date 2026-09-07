@@ -30,6 +30,7 @@ type SessionAccessCacheEntry = {
 
 const sessionAccessMemory = new Map<string, SessionAccessCacheEntry>();
 const sessionAccessInflight = new Map<string, Promise<SessionAccessPayload>>();
+const SESSION_ACCESS_TIMEOUT_MS = 10_000;
 
 function storageKey(userId: string) {
   return `session_access:${userId}`;
@@ -164,7 +165,7 @@ export async function fetchSessionAccess(options?: {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
           },
-        });
+        }, SESSION_ACCESS_TIMEOUT_MS);
 
         const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
         const payload = await response.json().catch(() => null);

@@ -456,6 +456,12 @@ function AdminLanding() {
 
 const quickActions = [
   {
+    title: 'Mosque Assistant',
+    icon: <MosqueIcon />,
+    description: 'Discover official websites, review mosque information, and convert prayer timetables.',
+    href: '/admin/mosque-assistant',
+  },
+  {
     title: 'Mosques',
     icon: <MosqueIcon />,
     description: 'Approve registrations, update profiles, and inspect mosque configurations.',

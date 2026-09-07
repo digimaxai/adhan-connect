@@ -1,4 +1,4 @@
-// GET /api/mosques/search
+// Expo Router API route: GET /api/mosques/search
 // Cost-optimized: Single query with COUNT, selective columns, 1-hour cache
 // Query count: 1 (with subscriptions count)
 // Cache: 1 hour
@@ -21,7 +21,11 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const query = (searchParams.get('q') || '').trim().toLowerCase();
+    const query = (searchParams.get('q') || '')
+      .toLowerCase()
+      .replace(/[,%_()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
     if (!query || query.length < 2) {
       return Response.json(

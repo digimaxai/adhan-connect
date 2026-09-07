@@ -136,10 +136,10 @@ export default function LiveAdhansCard({
             </View>
 
             {/* Action */}
-            <Pressable style={styles.listenButton}>
+            <View style={styles.listenButton}>
               <Ionicons name="play-circle" size={20} color={tokens.color.text.accent} />
               <Text style={styles.listenButtonText}>Listen Now</Text>
-            </Pressable>
+            </View>
           </Pressable>
         )}
       />

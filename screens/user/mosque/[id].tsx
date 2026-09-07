@@ -1,10 +1,12 @@
 // app/mosque/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, LayoutChangeEvent, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, LayoutChangeEvent, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
+import { listCoverImageUrls } from '../../../lib/api/admin/contentAttachments';
 import { labelForPrayer, PrayerName } from '../../lib/adhans';
 import { supabase } from '../../lib/supabase';
 import { useLiveStreamForMosque } from '../../shared/hooks/useLiveStreamForMosque';
@@ -12,6 +14,7 @@ import { usePrayerTimesRealtime } from '../../shared/hooks/usePrayerTimesRealtim
 import { getDailyPrayerTimes } from '../../../lib/api/prayerTimesUnified';
 import { promptForSignIn } from '../../../lib/guestAccess';
 import { FOLLOWED_MOSQUE_LIMIT } from '../../../lib/subscriptionLimits';
+import { mosqueServiceLabel } from '../../../lib/mosqueServices';
 import {
   crowdState,
   formatJumuahTime,
@@ -28,6 +31,16 @@ type Mosque = {
   city?: string | null;
   country?: string | null;
   slug?: string | null;
+  description?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  postcode?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  website?: string | null;
+  management_info?: string | null;
+  services?: string[] | null;
+  prayers_not_offered?: string[] | null;
 };
 
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
@@ -38,6 +51,7 @@ type EventRow = {
   start_at?: string | null;
   description?: string | null;
   location?: string | null;
+  cover_image_url?: string | null;
 };
 type CampaignRow = {
   id: string;
@@ -45,6 +59,7 @@ type CampaignRow = {
   raised_cents?: number | null;
   goal_cents?: number | null;
   end_at?: string | null;
+  cover_image_url?: string | null;
 };
 type AnnouncementRow = {
   id: string;
@@ -199,7 +214,7 @@ export default function MosquePage() {
       setLoading(true);
       try {
         let base = null as any;
-        const selectCols = 'id,name,city,country,slug';
+        const selectCols = 'id,name,city,country,slug,description,address_line1,address_line2,postcode,contact_phone,contact_email,website,management_info,services,prayers_not_offered';
 
         if (id && isUuid(id)) {
           const { data } = await supabase.from('mosques').select(selectCols).eq('id', id).maybeSingle();
@@ -349,6 +364,19 @@ export default function MosquePage() {
             .eq('friday_date', fridayDate)
             .in('slot_id', slotIds);
           summaryMap = summaryFromRows(summaryRes.data as JumuahSummary[]);
+        }
+
+        if (eventsArr.length || campaignsArr.length) {
+          try {
+            const coverImageMap = await listCoverImageUrls([
+              ...eventsArr.map((ev) => ({ contentType: 'event' as const, contentId: ev.id })),
+              ...campaignsArr.map((c) => ({ contentType: 'campaign' as const, contentId: c.id })),
+            ]);
+            eventsArr = eventsArr.map((ev) => ({ ...ev, cover_image_url: coverImageMap[`event:${ev.id}`] ?? null }));
+            campaignsArr = campaignsArr.map((c) => ({ ...c, cover_image_url: coverImageMap[`campaign:${c.id}`] ?? null }));
+          } catch (e: any) {
+            console.warn('cover image fetch exception', e?.message);
+          }
         }
 
         const normalizedPrayer = await fetchDisplayedPrayerTimes(actualId);
@@ -648,14 +676,21 @@ export default function MosquePage() {
           <View style={styles.timesTable}>
             {displayTimes.map((row) => {
               const isNext = row.key === nextPrayerName;
+              const notOffered = mosque?.prayers_not_offered?.includes(row.key.toLowerCase());
               return (
                 <View key={row.key} style={[styles.timeRow, isNext && styles.timeRowNext]}>
                   <Text style={[styles.timeName, isNext && styles.timeNameNext]}>{row.name}</Text>
-                  <Text style={[styles.timeValue, isNext && styles.timeValueNext]}>{row.adhan}</Text>
-                  {hasIqamaTimes && (
-                    <Text style={[styles.timeIqama, isNext && styles.timeValueNext]}>
-                      {row.iqama ?? '-'}
-                    </Text>
+                  {notOffered ? (
+                    <Text style={styles.notOfferedLabel} numberOfLines={1}>Not offered here</Text>
+                  ) : (
+                    <>
+                      <Text style={[styles.timeValue, isNext && styles.timeValueNext]}>{row.adhan}</Text>
+                      {hasIqamaTimes && (
+                        <Text style={[styles.timeIqama, isNext && styles.timeValueNext]}>
+                          {row.iqama ?? '-'}
+                        </Text>
+                      )}
+                    </>
                   )}
                 </View>
               );
@@ -680,13 +715,16 @@ export default function MosquePage() {
                   onPress={() => router.push({ pathname: '/(user)/event/[id]', params: { id: ev.id } } as any)}
                   style={({ pressed }) => [styles.eventRow, { opacity: pressed ? 0.88 : 1 }]}
                 >
+                  {ev.cover_image_url ? (
+                    <Image source={{ uri: ev.cover_image_url }} style={styles.rowThumb} contentFit="cover" />
+                  ) : null}
                   {chip && (
                     <View style={[styles.eventDateChip, { backgroundColor: chip.bg }]}>
                       <Text style={[styles.eventDateChipText, { color: chip.color }]}>{chip.label}</Text>
                     </View>
                   )}
                   <View style={{ flex: 1, gap: 3 }}>
-                    <Text style={styles.eventTitle} numberOfLines={1}>{ev.title ?? 'Event'}</Text>
+                    <Text style={styles.eventTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>{ev.title ?? 'Event'}</Text>
                     {timeStr ? <Text style={styles.eventMeta}>{timeStr}</Text> : null}
                     {ev.location ? <Text style={styles.eventMeta} numberOfLines={1}>{ev.location}</Text> : null}
                   </View>
@@ -719,7 +757,12 @@ export default function MosquePage() {
               const pct = Math.min(100, Math.round((raised / goal) * 100));
               return (
                 <View key={c.id} style={styles.campaignRow}>
-                  <Text style={styles.campaignTitle} numberOfLines={1}>{c.title ?? 'Campaign'}</Text>
+                  <View style={styles.campaignHeaderRow}>
+                    {c.cover_image_url ? (
+                      <Image source={{ uri: c.cover_image_url }} style={styles.rowThumb} contentFit="cover" />
+                    ) : null}
+                    <Text style={styles.campaignTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>{c.title ?? 'Campaign'}</Text>
+                  </View>
                   <View style={styles.progressTrack}>
                     <View style={[styles.progressFill, { width: `${pct}%` }]} />
                   </View>
@@ -833,14 +876,88 @@ export default function MosquePage() {
           </View>
         )}
 
-        {/* ── About (only renders when location data available) ── */}
-        {city ? (
+        {/* ── About ── */}
+        {(mosque?.description || mosque?.address_line1 || mosque?.contact_phone || mosque?.contact_email || mosque?.website || mosque?.management_info || mosque?.services?.length || city) ? (
           <View style={[styles.card, styles.shadow]}>
-            <Text style={styles.cardTitle}>About This Mosque</Text>
-            <View style={styles.aboutRow}>
-              <Ionicons name="location-outline" size={15} color="#64748B" />
-              <Text style={styles.aboutText}>{city}</Text>
-            </View>
+            <Text style={styles.cardTitle}>About</Text>
+
+            {mosque?.description ? (
+              <Text style={styles.aboutDescription}>{mosque.description}</Text>
+            ) : null}
+
+            {/* Address */}
+            {(mosque?.address_line1 || city) ? (
+              <View style={styles.aboutRow}>
+                <Ionicons name="location-outline" size={15} color="#64748B" style={{ marginTop: 2 }} />
+                <Text style={styles.aboutText}>
+                  {[mosque?.address_line1, mosque?.address_line2, mosque?.city, mosque?.postcode, mosque?.country]
+                    .filter(Boolean).join(', ')}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Phone */}
+            {mosque?.contact_phone ? (
+              <Pressable
+                style={styles.aboutRow}
+                onPress={() => Linking.openURL(`tel:${mosque.contact_phone}`)}
+                accessibilityRole="link"
+                accessibilityLabel={`Call ${mosque.contact_phone}`}
+              >
+                <Ionicons name="call-outline" size={15} color="#64748B" style={{ marginTop: 2 }} />
+                <Text style={[styles.aboutText, styles.aboutLink]}>{mosque.contact_phone}</Text>
+              </Pressable>
+            ) : null}
+
+            {/* Email */}
+            {mosque?.contact_email ? (
+              <Pressable
+                style={styles.aboutRow}
+                onPress={() => Linking.openURL(`mailto:${mosque.contact_email}`)}
+                accessibilityRole="link"
+                accessibilityLabel={`Email ${mosque.contact_email}`}
+              >
+                <Ionicons name="mail-outline" size={15} color="#64748B" style={{ marginTop: 2 }} />
+                <Text style={[styles.aboutText, styles.aboutLink]}>{mosque.contact_email}</Text>
+              </Pressable>
+            ) : null}
+
+            {/* Website */}
+            {mosque?.website ? (
+              <Pressable
+                style={styles.aboutRow}
+                onPress={() => mosque.website && Linking.openURL(mosque.website)}
+                accessibilityRole="link"
+                accessibilityLabel={`Visit website`}
+              >
+                <Ionicons name="globe-outline" size={15} color="#64748B" style={{ marginTop: 2 }} />
+                <Text style={[styles.aboutText, styles.aboutLink]} numberOfLines={1}>
+                  {mosque.website.replace(/^https?:\/\//, '')}
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {/* Key staff */}
+            {mosque?.management_info ? (
+              <View style={styles.aboutRow}>
+                <Ionicons name="person-outline" size={15} color="#64748B" style={{ marginTop: 2 }} />
+                <Text style={styles.aboutText}>{mosque.management_info}</Text>
+              </View>
+            ) : null}
+
+            {/* Services */}
+            {mosque?.services?.length ? (
+              <View style={styles.servicesSection}>
+                <Text style={styles.servicesSectionLabel}>Services</Text>
+                <View style={styles.servicesGrid}>
+                  {mosque.services.map((s) => (
+                    <View key={s} style={styles.serviceChip}>
+                      <Text style={styles.serviceChipText}>{mosqueServiceLabel(s, mosque.prayers_not_offered)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -960,6 +1077,7 @@ const styles = StyleSheet.create({
   timeValue: { minWidth: 72, textAlign: 'right', fontWeight: '800', color: '#0F172A', fontSize: 14 },
   timeValueNext: { color: '#0369A1' },
   timeIqama: { minWidth: 72, textAlign: 'right', fontWeight: '700', color: '#475569', fontSize: 14 },
+  notOfferedLabel: { flex: 1, textAlign: 'right', fontSize: 12, fontStyle: 'italic', color: '#94A3B8' },
 
   jumuahRow: { flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   jumuahTimeBox: { width: 78, alignItems: 'flex-start', gap: 3 },
@@ -995,9 +1113,11 @@ const styles = StyleSheet.create({
   eventMeta: { color: '#475569', fontSize: 12 },
   viewAllBtn: { marginTop: 8, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#E0F2FE' },
   viewAllText: { color: '#0369A1', fontWeight: '800', fontSize: 13 },
+  rowThumb: { width: 44, height: 44, borderRadius: 10, backgroundColor: '#F1F5F9' },
 
   campaignRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', gap: 8 },
-  campaignTitle: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
+  campaignHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  campaignTitle: { flex: 1, fontWeight: '700', color: '#0F172A', fontSize: 14 },
   campaignMeta: { color: '#475569', fontSize: 12 },
   donateBtn: {
     backgroundColor: '#0EA5E9',
@@ -1017,8 +1137,15 @@ const styles = StyleSheet.create({
   noticeTitle: { color: '#0F172A', fontSize: 14, fontWeight: '800' },
   noticeSummary: { color: '#475569', fontSize: 12, lineHeight: 17 },
 
-  aboutRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
-  aboutText: { color: '#475569', fontSize: 13, flex: 1 },
+  aboutDescription: { color: '#374151', fontSize: 14, lineHeight: 21, marginBottom: 4 },
+  aboutRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 8 },
+  aboutText: { color: '#475569', fontSize: 13, flex: 1, lineHeight: 19 },
+  aboutLink: { color: '#0369A1' },
+  servicesSection: { marginTop: 12, gap: 8 },
+  servicesSectionLabel: { fontSize: 12, fontWeight: '800', color: '#94A3B8', letterSpacing: 0.6, textTransform: 'uppercase' },
+  servicesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  serviceChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD' },
+  serviceChipText: { fontSize: 12, fontWeight: '700', color: '#0369A1' },
   recordRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
   recordTitle: { fontWeight: '700', color: '#0F172A', fontSize: 14 },
   recordMeta: { color: '#475569', fontSize: 12, marginTop: 2 },

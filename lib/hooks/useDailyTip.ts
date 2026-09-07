@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { fetchPublicApiJson } from '../api/publicApiClient';
 
-interface IslamicTip {
+export interface IslamicTip {
   category: string;
   title: string;
   description: string;
@@ -13,30 +14,31 @@ interface UseDailyTipResult {
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  showNext: () => void;
 }
 
 export function useDailyTip(category?: string): UseDailyTipResult {
   const [tip, setTip] = useState<IslamicTip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
 
   const fetchTip = async () => {
     setLoading(true);
     setError(null);
     try {
-      const url = category ? `/api/tips/daily?category=${category}` : '/api/tips/daily';
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch tip');
-      }
-
-      const data = (await response.json()) as { tip: IslamicTip | IslamicTip[] };
-      // Handle both single tip and array responses
-      const tipData = Array.isArray(data.tip) ? data.tip[0] : data.tip;
-      setTip(tipData || null);
+      const params = new URLSearchParams();
+      if (category) params.set('category', category);
+      if (!category && offset > 0) params.set('offset', String(offset));
+      const query = params.toString();
+      const data = await fetchPublicApiJson<{ tip: IslamicTip }>(
+        `/api/tips/daily${query ? `?${query}` : ''}`,
+        'Daily reflection'
+      );
+      setTip(data.tip ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      console.warn('[reflection] reminder unavailable', err);
+      setError('Check your connection and try again.');
       setTip(null);
     } finally {
       setLoading(false);
@@ -45,7 +47,13 @@ export function useDailyTip(category?: string): UseDailyTipResult {
 
   useEffect(() => {
     void fetchTip();
-  }, [category]);
+  }, [category, offset]);
 
-  return { tip, loading, error, refetch: fetchTip };
+  return {
+    tip,
+    loading,
+    error,
+    refetch: fetchTip,
+    showNext: () => setOffset((value) => value + 1),
+  };
 }

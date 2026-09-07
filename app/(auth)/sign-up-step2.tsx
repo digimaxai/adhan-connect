@@ -1,8 +1,7 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,7 +13,7 @@ import {
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { getPendingAuthEmail, clearPendingAuthEmail } from '../../lib/authFlowState';
+import { clearPendingAuthEmail } from '../../lib/authFlowState';
 import * as Location from 'expo-location';
 
 export default function SignUpStep2Screen() {
@@ -30,17 +29,7 @@ export default function SignUpStep2Screen() {
   const [detectingLocation, setDetectingLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const email = getPendingAuthEmail();
-
-  useEffect(() => {
-    if (!session?.user?.id) {
-      router.replace('/sign-up' as any);
-      return;
-    }
-    requestLocationPermission();
-  }, [session?.user?.id]);
-
-  const requestLocationPermission = async () => {
+  const requestLocationPermission = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
@@ -70,7 +59,15 @@ export default function SignUpStep2Screen() {
     } finally {
       setDetectingLocation(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      router.replace('/sign-up' as any);
+      return;
+    }
+    void requestLocationPermission();
+  }, [requestLocationPermission, router, session?.user?.id]);
 
   const validateUsername = () => {
     const trimmed = username.trim();
@@ -106,7 +103,7 @@ export default function SignUpStep2Screen() {
       );
       if (!response.ok) return; // Fail silently, subscription is optional
 
-      const data = (await response.json()) as { mosques: Array<{ id: string }> };
+      const data = (await response.json()) as { mosques: { id: string }[] };
       const nearestMosques = data.mosques.slice(0, 3); // Top 3 nearest
 
       // Subscribe user to each mosque
@@ -169,13 +166,13 @@ export default function SignUpStep2Screen() {
       }
 
       // Auto-subscribe to 3 nearest mosques if location available
-      if (latitude && longitude) {
+      if (latitude != null && longitude != null) {
         await autoSubscribeToNearestMosques(latitude, longitude, session!.user!.id);
       }
 
       clearPendingAuthEmail();
       router.replace('/role-entry' as any);
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
       setBusy(false);
     }

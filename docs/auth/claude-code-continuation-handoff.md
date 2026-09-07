@@ -291,10 +291,13 @@ still waiting on explicit product-owner authorisation for that, per step 7.
      `POST /auth/v1/token?grant_type=password` returned 400, and the UI shows
      a neutral "We could not sign you in with those details. Check them or
      reset your password." — does not confirm or deny account existence.
-   - **Sign-in with a never-used email (E2/E3 enumeration check):** Passed.
-     Produces the exact same explicit "Sign in / Create account / Use a
-     different email" choice screen as a known, existing email. No
-     distinguishing signal between the two cases was observed.
+   - **Sign-in with a never-used email (E2/E3 enumeration check):** The original
+     implementation produced the same explicit “Sign in / Create account”
+     choice for every email. Superseded 2026-09-05: Continue now sends every
+     syntactically valid email directly to the same password screen. Account
+     creation is a quiet, separate action on the initial email screen, so the
+     UI remains enumeration-resistant without asking existing users to choose
+     “Sign in” twice.
    - **Sign-up (E1):** Inconclusive, not a code defect. The real Supabase
      project's outbound-email rate limit (`over_email_send_rate_limit`)
      tripped after a couple of automated attempts in quick succession, since

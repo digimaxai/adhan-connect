@@ -1,4 +1,4 @@
-// GET /api/quran/reciters
+// Expo Router API route: GET /api/quran/reciters
 // Cost-optimized: External API only (no DB query), 7-day cache
 // Query count: 0 (external API)
 // Cache: 7 days

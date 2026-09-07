@@ -4,7 +4,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useRoleFlags } from '../../lib/roles';
 
 export default function AdminStack() {
-  const roles = useRoleFlags();
+  const roles = useRoleFlags({ reuseResolvedSessionAccess: true });
 
   if (roles.loading) {
     return (

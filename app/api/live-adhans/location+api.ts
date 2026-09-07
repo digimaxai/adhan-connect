@@ -1,11 +1,11 @@
-// GET /api/live-adhans/location
+// Expo Router API route: GET /api/live-adhans/location
 // Cost-optimized: 2 queries (streams + adhans with mosque JOIN), 30s cache
 // Query count: 2
 // Cache: 30 seconds (real-time priority)
 
 // Removed Next.js imports
 import { supabase } from '../../../lib/supabase';
-import { isFreshLiveStream } from '../../../lib/liveStreamFreshness';
+import { isFreshLiveAdhan, isFreshLiveStream } from '../../../lib/liveStreamFreshness';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +20,7 @@ interface LiveAdhan {
   duration_seconds: number;
   is_live: boolean;
   broadcast_url?: string;
+  distance_km: number;
 }
 
 // Simple in-memory cache (30 seconds)
@@ -43,11 +44,23 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const latitude = parseFloat(searchParams.get('lat') ?? '0');
-    const longitude = parseFloat(searchParams.get('lon') ?? '0');
-    const radiusKm = Math.min(parseFloat(searchParams.get('radius') ?? '15'), 100);
+    const latitudeParam = searchParams.get('lat');
+    const longitudeParam = searchParams.get('lon');
+    const latitude = latitudeParam?.trim() ? Number(latitudeParam) : Number.NaN;
+    const longitude = longitudeParam?.trim() ? Number(longitudeParam) : Number.NaN;
+    const requestedRadius = Number(searchParams.get('radius') ?? '15');
+    const radiusKm = Number.isFinite(requestedRadius) && requestedRadius > 0
+      ? Math.min(requestedRadius, 100)
+      : 15;
 
-    if (!latitude || !longitude) {
+    if (
+      !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
       return Response.json(
         { error: 'Missing latitude/longitude parameters' },
         { status: 400 }
@@ -76,8 +89,8 @@ export async function GET(request: Request) {
           id,
           name,
           city,
-          latitude,
-          longitude
+          lat,
+          lng
         ),
         started_at,
         updated_at
@@ -104,9 +117,12 @@ export async function GET(request: Request) {
         id,
         mosque_id,
         prayer,
-        adhan_time,
+        scheduled_at,
         status,
-        broadcast_url
+        started_at,
+        ended_at,
+        broadcast_started_at,
+        broadcast_ended_at
       `
       )
       .eq('status', 'live')
@@ -122,52 +138,51 @@ export async function GET(request: Request) {
 
     // Combine and filter by distance, freshness
     const adhansByMosque = new Map<string, (typeof liveAdhans)[0]>();
-    (liveAdhans || []).forEach((a) => {
+    (liveAdhans || []).filter((adhan) => isFreshLiveAdhan(adhan)).forEach((a) => {
       adhansByMosque.set(a.mosque_id, a);
     });
 
     const nearbyAdhans: LiveAdhan[] = (liveStreams || [])
       .map((stream) => {
         const mosque = stream.mosques as any;
-        if (!mosque) return null;
+        if (!mosque || mosque.lat == null || mosque.lng == null) return null;
 
         const distance = getDistance(
           latitude,
           longitude,
-          mosque.latitude || 0,
-          mosque.longitude || 0
+          mosque.lat,
+          mosque.lng
         );
 
         // Check if stream is fresh (not stale)
         const isFresh = isFreshLiveStream({
-          created_at: stream.started_at,
-          updated_at: stream.updated_at,
-        } as any);
+          is_live: true,
+          started_at: stream.started_at,
+        });
 
         if (!isFresh) return null;
 
         const adhan = adhansByMosque.get(stream.mosque_id);
 
-        const result: LiveAdhan & { distance_km: number } = {
+        const startedAt = stream.started_at ?? stream.updated_at ?? new Date().toISOString();
+        const result: LiveAdhan = {
           mosque_id: mosque.id,
           mosque_name: mosque.name,
           mosque_city: mosque.city || 'Unknown',
           prayer: adhan?.prayer || 'Unknown',
-          adhan_time: adhan?.adhan_time || '',
+          adhan_time: adhan?.scheduled_at || '',
           listeners: 0,
-          started_at: stream.started_at,
-          duration_seconds: Math.floor((Date.now() - new Date(stream.started_at).getTime()) / 1000),
+          started_at: startedAt,
+          duration_seconds: Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)),
           is_live: true,
-          broadcast_url: adhan?.broadcast_url || '',
           distance_km: parseFloat(distance.toFixed(1)),
         };
         return result;
       })
       .filter(
-        (a): a is LiveAdhan & { distance_km: number } =>
-          a !== null && (a as any).distance_km <= radiusKm
+        (a): a is LiveAdhan => a !== null && a.distance_km <= radiusKm
       )
-      .sort((a, b) => (a as any).distance_km - (b as any).distance_km)
+      .sort((a, b) => a.distance_km - b.distance_km)
       .slice(0, 20);
 
     // Cache the result

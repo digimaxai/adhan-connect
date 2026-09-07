@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { fetchPublicApiJson } from '../api/publicApiClient';
 
-interface DailyDua {
+export interface DailyDua {
   prayer: string;
   dua_arabic: string;
   dua_english: string;
@@ -24,17 +25,14 @@ export function useDailyDua(prayer?: string): UseDailyDuaResult {
     setLoading(true);
     setError(null);
     try {
-      const url = prayer ? `/api/duas/daily?prayer=${prayer}` : '/api/duas/daily';
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch dua');
-      }
-
-      const data = (await response.json()) as { dua: DailyDua };
+      const url = prayer
+        ? `/api/duas/daily?prayer=${encodeURIComponent(prayer)}`
+        : '/api/duas/daily';
+      const data = await fetchPublicApiJson<{ dua: DailyDua }>(url, 'Dua');
       setDua(data.dua);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      console.warn('[reflection] dua unavailable', err);
+      setError('Check your connection and try again.');
       setDua(null);
     } finally {
       setLoading(false);

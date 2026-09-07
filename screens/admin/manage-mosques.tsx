@@ -5,7 +5,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
-import { clearDefaultMosqueId, getDefaultMosqueId, setDefaultMosqueId } from '../../lib/mosquePreferences';
+import {
+  clearAdminDefaultMosqueId,
+  getAdminDefaultMosqueId,
+  setAdminDefaultMosqueId,
+} from '../../lib/mosquePreferences';
 import { supabase } from '../../lib/supabase';
 
 type FollowedMosque = {
@@ -56,7 +60,7 @@ export default function ManageMosques() {
   useEffect(() => {
     const getDefault = async () => {
       try {
-        const stored = await getDefaultMosqueId(userId);
+        const stored = await getAdminDefaultMosqueId(userId);
         setDefaultId(stored ?? null);
       } catch {}
     };
@@ -90,13 +94,13 @@ export default function ManageMosques() {
     setItems((prev) => prev.filter((i) => i.mosque_id !== mosqueId));
     if (defaultId === mosqueId) {
       setDefaultId(null);
-      await clearDefaultMosqueId(userId);
+      await clearAdminDefaultMosqueId(userId);
     }
   };
 
   const setDefault = async (mosqueId: string) => {
     try {
-      await setDefaultMosqueId(userId, mosqueId);
+      await setAdminDefaultMosqueId(userId, mosqueId);
       setDefaultId(mosqueId);
     } catch {
       setDefaultId(mosqueId);

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { PrayerAvailabilityReasons } from '@/components/admin/PrayerAvailabilityReasons';
 import { AppText } from '@/components/ui/app-text';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { tokens } from '@/theme/tokens';
@@ -9,20 +10,33 @@ import { useRoleFlags } from '@/lib/roles';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
-import { clearDefaultMosqueId, getDefaultMosqueId, setDefaultMosqueId } from '@/lib/mosquePreferences';
 import {
-  getAdminNotifCoverRequests,
-  getAdminNotifRotaChanges,
+  clearAdminDefaultMosqueId,
+  getAdminDefaultMosqueId,
+  setAdminDefaultMosqueId,
+} from '@/lib/mosquePreferences';
+import {
   getAdminTimeFormat,
-  setAdminNotifCoverRequests,
-  setAdminNotifRotaChanges,
   setAdminTimeFormat,
 } from '@/lib/adminPreferences';
 
 export default function AdminSettingsScreen() {
-  const { loading: roleLoading, isAdmin, isLocalAdmin, role, isMuezzin } = useRoleFlags();
   const { session, signOut } = useAuth();
-  const { mosques, setSelectedMosque, loading: mosqueLoading } = useAdminMosque();
+  const {
+    loading: roleLoading,
+    ready: roleReady,
+    resolvedUserId,
+    isAdmin,
+    isLocalAdmin,
+    role,
+    isMuezzin,
+    adminMosques: resolvedAdminMosques,
+  } = useRoleFlags({ reuseResolvedSessionAccess: true });
+  const roleMatchesSession = roleReady && resolvedUserId === (session?.user?.id ?? null);
+  const { mosques, selectedMosque, setSelectedMosque, loading: mosqueLoading } = useAdminMosque({
+    enabled: roleMatchesSession && isAdmin,
+    knownMosques: roleMatchesSession && isAdmin ? resolvedAdminMosques : undefined,
+  });
   const router = useRouter();
 
   const [defaultId, setDefaultId] = useState<string | null>(null);
@@ -31,11 +45,7 @@ export default function AdminSettingsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   // Preferences
-  const [notifCover, setNotifCover] = useState(true);
-  const [notifRota, setNotifRota] = useState(true);
   const [timeFormat, setTimeFormat] = useState<'12h' | '24h'>('12h');
-  const [savingNotifCover, setSavingNotifCover] = useState(false);
-  const [savingNotifRota, setSavingNotifRota] = useState(false);
   const [savingTimeFormat, setSavingTimeFormat] = useState(false);
 
   // Prayer source config — loaded from the active mosque for London mosques only
@@ -58,15 +68,11 @@ export default function AdminSettingsScreen() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [stored, cover, rota, fmt] = await Promise.all([
-        getDefaultMosqueId(accountUserId),
-        getAdminNotifCoverRequests(accountUserId),
-        getAdminNotifRotaChanges(accountUserId),
+      const [stored, fmt] = await Promise.all([
+        getAdminDefaultMosqueId(accountUserId),
         getAdminTimeFormat(accountUserId),
       ]);
       setDefaultId(stored ?? null);
-      setNotifCover(cover);
-      setNotifRota(rota);
       setTimeFormat(fmt);
       setError(null);
     } catch {
@@ -99,7 +105,7 @@ export default function AdminSettingsScreen() {
   const handleSetDefault = async (mosqueId: string) => {
     setSaving(true);
     try {
-      await setDefaultMosqueId(accountUserId, mosqueId);
+      await setAdminDefaultMosqueId(accountUserId, mosqueId);
       setDefaultId(mosqueId);
       setSelectedMosque?.(mosqueId);
       setError(null);
@@ -114,7 +120,7 @@ export default function AdminSettingsScreen() {
   const handleClearDefault = async () => {
     setSaving(true);
     try {
-      await clearDefaultMosqueId(accountUserId);
+      await clearAdminDefaultMosqueId(accountUserId);
       setDefaultId(null);
       setError(null);
     } catch {
@@ -122,38 +128,6 @@ export default function AdminSettingsScreen() {
       Alert.alert('Unable to clear', 'Could not clear the default mosque.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleToggleCover = async (val: boolean) => {
-    if (savingNotifCover || val === notifCover) return;
-    const previous = notifCover;
-    setNotifCover(val);
-    setSavingNotifCover(true);
-    try {
-      await setAdminNotifCoverRequests(accountUserId, val);
-      setError(null);
-    } catch {
-      setNotifCover(previous);
-      setError('Could not save cover request alert preference.');
-    } finally {
-      setSavingNotifCover(false);
-    }
-  };
-
-  const handleToggleRota = async (val: boolean) => {
-    if (savingNotifRota || val === notifRota) return;
-    const previous = notifRota;
-    setNotifRota(val);
-    setSavingNotifRota(true);
-    try {
-      await setAdminNotifRotaChanges(accountUserId, val);
-      setError(null);
-    } catch {
-      setNotifRota(previous);
-      setError('Could not save rota change alert preference.');
-    } finally {
-      setSavingNotifRota(false);
     }
   };
 
@@ -202,7 +176,7 @@ export default function AdminSettingsScreen() {
     }
   };
 
-  if (roleLoading || mosqueLoading) {
+  if (roleLoading || (isAdmin && mosqueLoading)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={tokens.color.status.info} />
@@ -258,6 +232,9 @@ export default function AdminSettingsScreen() {
         <View style={styles.profileInfo}>
           <AppText style={styles.profileEmail} numberOfLines={1}>{email ?? 'No email'}</AppText>
           <View style={styles.badgeRow}>
+            <View style={[styles.roleBadge, styles.listenerBadge]}>
+              <AppText style={[styles.roleBadgeText, styles.listenerBadgeText]}>Listener</AppText>
+            </View>
             <View style={styles.roleBadge}>
               <AppText style={styles.roleBadgeText}>{roleLabel}</AppText>
             </View>
@@ -293,36 +270,32 @@ export default function AdminSettingsScreen() {
         </View>
       </View>
 
-      {/* ── Notifications ── */}
+      {/* ── Notification ownership ── */}
       <View style={styles.section}>
         <AppText style={styles.sectionLabel}>NOTIFICATIONS</AppText>
         <View style={styles.groupCard}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleText}>
-              <AppText style={styles.toggleTitle}>Cover request alerts</AppText>
-              <AppText style={styles.toggleDesc}>Notify when a muezzin requests or cancels cover</AppText>
+          <View style={styles.notificationInfoRow}>
+            <View style={[styles.actionIcon, { backgroundColor: '#EFF6FF' }]}>
+              <Ionicons name="notifications-outline" size={18} color="#0369A1" />
             </View>
-            <Switch
-              value={notifCover}
-              onValueChange={handleToggleCover}
-              disabled={savingNotifCover}
-              trackColor={{ false: '#E2E8F0', true: '#BAE6FD' }}
-              thumbColor={notifCover ? '#0EA5E9' : '#CBD5E1'}
-            />
+            <View style={styles.toggleText}>
+              <AppText style={styles.toggleTitle}>Set alerts in the relevant workspace</AppText>
+              <AppText style={styles.toggleDesc}>
+                Personal Adhan alerts are in Listener. Duty, rota and LIVE reminders are in Muezzin.
+              </AppText>
+            </View>
           </View>
           <View style={styles.hairline} />
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleText}>
-              <AppText style={styles.toggleTitle}>Rota change alerts</AppText>
-              <AppText style={styles.toggleDesc}>Notify when a rota assignment is updated</AppText>
+          <View style={styles.notificationInfoRow}>
+            <View style={[styles.actionIcon, { backgroundColor: '#F1F5F9' }]}>
+              <Ionicons name="grid-outline" size={18} color="#475569" />
             </View>
-            <Switch
-              value={notifRota}
-              onValueChange={handleToggleRota}
-              disabled={savingNotifRota}
-              trackColor={{ false: '#E2E8F0', true: '#BAE6FD' }}
-              thumbColor={notifRota ? '#0EA5E9' : '#CBD5E1'}
-            />
+            <View style={styles.toggleText}>
+              <AppText style={styles.toggleTitle}>Admin activity stays in the console</AppText>
+              <AppText style={styles.toggleDesc}>
+                Cover and rota updates remain visible here. No inactive push controls are shown.
+              </AppText>
+            </View>
           </View>
         </View>
       </View>
@@ -357,6 +330,8 @@ export default function AdminSettingsScreen() {
           </View>
         </View>
       </View>
+
+      {selectedMosque ? <PrayerAvailabilityReasons key={selectedMosque.mosqueId} mosqueId={selectedMosque.mosqueId} mosqueName={selectedMosque.name} /> : null}
 
       {/* ── Prayer times source — London mosques only ── */}
       {londonMosque ? (
@@ -599,6 +574,8 @@ const styles = StyleSheet.create({
   roleBadgeText: { fontSize: 11, fontWeight: tokens.typography.weight.bold, color: '#0369A1' },
   muezzinBadge: { backgroundColor: '#ECFDF5' },
   muezzinBadgeText: { color: '#059669' },
+  listenerBadge: { backgroundColor: '#F1F5F9' },
+  listenerBadgeText: { color: '#334155' },
 
   // Sections
   section: { gap: 8 },
@@ -613,6 +590,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden', ...tokens.shadow.card,
   },
   hairline: { height: StyleSheet.hairlineWidth, backgroundColor: tokens.color.border.subtle, marginHorizontal: 16 },
+  notificationInfoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16 },
 
   // Detail rows (read-only)
   detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 13, gap: 12 },

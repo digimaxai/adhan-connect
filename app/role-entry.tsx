@@ -56,7 +56,10 @@ function workspaceLabel(mode: StaffEntryMode) {
 export default function RoleEntryScreen() {
   const router = useRouter();
   const { session } = useAuth();
-  const roles = useRoleFlags();
+  // RootNavigator has already made the authoritative access decision. Reuse
+  // it while switching workspaces so a just-finished preference save cannot
+  // start a second, transiently disagreeing role request.
+  const roles = useRoleFlags({ reuseResolvedSessionAccess: true });
   const [busy, setBusy] = useState<StaffEntryMode | null>(null);
   const [preferredEntry, setPreferredEntry] = useState<StaffEntryMode | null>(null);
   const [preferredLoaded, setPreferredLoaded] = useState(false);

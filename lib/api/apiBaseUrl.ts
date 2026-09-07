@@ -265,6 +265,36 @@ export function resolveApiUrls(path: string): string[] {
   const envBase = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
   const preferUsbReverseLoopback = Platform.OS !== 'web' && shouldPreferUsbReverseLoopback();
   const envBaseIsLoopbackOnly = isNativeLoopbackOnlyBase(envBase);
+  const isNativeDevelopment =
+    Platform.OS !== 'web' && typeof __DEV__ !== 'undefined' && __DEV__;
+
+  // A development build can retain an API URL from the EAS build environment,
+  // while its live JS bundle is served by a different Metro host. Try the host
+  // that supplied the current bundle first so a stale server-side 404 cannot
+  // mask valid API routes on the active development server.
+  if (isNativeDevelopment) {
+    for (const nativeDevBase of resolveNativeDevBaseUrls()) {
+      if (preferUsbReverseLoopback) {
+        const usbReverseBase = nativeUsbReverseBaseFor(nativeDevBase);
+        if (usbReverseBase) {
+          addNativeCandidatesFromBase(candidates, usbReverseBase, normalized);
+        }
+        const loopbackBase = nativeLoopbackBaseFor(nativeDevBase);
+        if (loopbackBase) {
+          addNativeCandidatesFromBase(candidates, loopbackBase, normalized);
+        }
+      } else {
+        const emulatorBase = nativeAndroidEmulatorBaseFor(nativeDevBase);
+        if (emulatorBase) {
+          addNativeCandidatesFromBase(candidates, emulatorBase, normalized);
+        }
+      }
+
+      if (!(preferUsbReverseLoopback && isNativeLoopbackOnlyBase(nativeDevBase))) {
+        addNativeCandidatesFromBase(candidates, nativeDevBase, normalized);
+      }
+    }
+  }
 
   if (Platform.OS !== 'web' && preferUsbReverseLoopback) {
     const envUsbReverseBase = nativeUsbReverseBaseFor(envBase);
@@ -288,11 +318,9 @@ export function resolveApiUrls(path: string): string[] {
     candidates.add(`${trimTrailingSlashes(envBase)}${normalized}`);
   }
 
-  if (envBase && candidates.size > 0) {
-    return Array.from(candidates);
-  }
-
-  if (Platform.OS !== 'web') {
+  // Retain the discovery fallback for custom native environments where Metro
+  // does not expose its host through Expo Constants during the first pass.
+  if (Platform.OS !== 'web' && candidates.size === 0) {
     for (const nativeDevBase of resolveNativeDevBaseUrls()) {
       if (preferUsbReverseLoopback) {
         const usbReverseBase = nativeUsbReverseBaseFor(nativeDevBase);

@@ -1,5 +1,6 @@
 // lib/auth.tsx
 import type { Session, User } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -12,6 +13,7 @@ import { ACCOUNT_POLICY_VERSIONS } from './policies';
 import { supabase } from './supabase';
 import { clearRoleEntrySelectionRequirement, requireRoleEntrySelection } from './roleEntrySession';
 import { clearSessionAccessCache } from './sessionAccess';
+import { unregisterCurrentPushDevice } from './notifications/device';
 
 const configuredWebRedirectUrl = () => {
   const webUrl = process.env.EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB?.trim();
@@ -27,6 +29,23 @@ const configuredNativeRedirectUrl = () => {
   return legacyUrl && !/^https?:\/\//i.test(legacyUrl) ? legacyUrl : null;
 };
 
+const resolvedNativeScheme = () => {
+  const configuredScheme = Constants.expoConfig?.scheme;
+  const scheme = Array.isArray(configuredScheme) ? configuredScheme[0] : configuredScheme;
+  return scheme?.trim() || 'adhanconnect';
+};
+
+const resolvedNativeRedirectUrl = (path: '/callback' | '/new-password') => {
+  const scheme = resolvedNativeScheme();
+  const configuredUrl = configuredNativeRedirectUrl();
+
+  if (configuredUrl && configuredUrl.toLowerCase().startsWith(`${scheme.toLowerCase()}:`)) {
+    return replaceCallbackPath(configuredUrl, path.slice(1));
+  }
+
+  return Linking.createURL(path, { scheme });
+};
+
 const replaceCallbackPath = (url: string, path: string) =>
   url.replace(/\/callback(?=\/?(?:[?#]|$))/, `/${path}`);
 
@@ -38,9 +57,7 @@ export const getAuthRedirectUrl = () => {
       ? `${window.location.origin}/callback`
       : 'http://localhost:8081/callback';
   }
-  const configuredUrl = configuredNativeRedirectUrl();
-  if (configuredUrl) return configuredUrl;
-  return Linking.createURL('/callback', { scheme: 'adhanconnect' });
+  return resolvedNativeRedirectUrl('/callback');
 };
 
 export const getPasswordResetRedirectUrl = () => {
@@ -50,9 +67,7 @@ export const getPasswordResetRedirectUrl = () => {
     if (typeof window !== 'undefined') return `${window.location.origin}/new-password`;
     return 'http://localhost:8081/new-password';
   }
-  const configuredUrl = configuredNativeRedirectUrl();
-  if (configuredUrl) return replaceCallbackPath(configuredUrl, 'new-password');
-  return Linking.createURL('/new-password', { scheme: 'adhanconnect' });
+  return resolvedNativeRedirectUrl('/new-password');
 };
 
 const deriveDisplayName = (raw?: string | null, fallbackEmail?: string | null) => {
@@ -445,6 +460,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     const activeUserId = session?.user?.id ?? null;
     try {
+      // Best-effort only: a push-token cleanup failure must never trap a user
+      // in their account or weaken the existing fail-closed sign-out path.
+      await unregisterCurrentPushDevice(session?.access_token).catch(() => {});
       await signOutCurrentDeviceFailClosed();
     } finally {
       await Promise.allSettled([

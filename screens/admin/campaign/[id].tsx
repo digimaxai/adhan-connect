@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppText } from '@/components/ui/app-text';
+import { ContentAttachmentsEditor } from '@/components/admin/ContentAttachmentsEditor';
 import { tokens } from '@/theme/tokens';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { supabase } from '@/lib/supabase';
@@ -237,11 +238,14 @@ export default function AdminCampaignForm() {
                 placeholder="Explain what the funds will be used for..."
                 placeholderTextColor={tokens.color.text.muted}
                 multiline
-                numberOfLines={4}
-                maxLength={1000}
+                numberOfLines={6}
+                maxLength={4000}
                 textAlignVertical="top"
               />
             </View>
+            <AppText variant="caption" color={tokens.color.text.muted} style={styles.charCount}>
+              {description.length} / 4000
+            </AppText>
           </View>
 
           {/* Goal */}
@@ -362,6 +366,22 @@ export default function AdminCampaignForm() {
             </View>
           </View>
 
+          {/* Cover image & attachments — kept last so the core fields above stay quick to reach */}
+          {!isNew && selectedMosque ? (
+            <ContentAttachmentsEditor mosqueId={selectedMosque.mosqueId} contentType="campaign" contentId={id!} />
+          ) : (
+            <View style={styles.section}>
+              <AppText variant="caption" style={styles.sectionLabel}>COVER IMAGE</AppText>
+              <View style={styles.fieldCard}>
+                <View style={styles.row}>
+                  <AppText variant="body" color={tokens.color.text.muted} style={styles.rowLabel}>
+                    Save the campaign to add a cover image and attachments.
+                  </AppText>
+                </View>
+              </View>
+            </View>
+          )}
+
           {/* Save */}
           <Pressable
             onPress={handleSave}
@@ -449,8 +469,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontWeight: tokens.typography.weight.medium,
   },
-  multiline: { minHeight: 96, paddingTop: 14 },
+  multiline: { minHeight: 140, paddingTop: 14 },
   placeholder: { color: tokens.color.text.muted },
+  charCount: { textAlign: 'right', paddingRight: 4 },
 
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   rowLabel: { flex: 1, fontSize: 15, fontWeight: tokens.typography.weight.medium, color: tokens.color.text.primary },

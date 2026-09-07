@@ -6,7 +6,7 @@ import { useRoleFlags } from '../../lib/roles';
 import { tokens } from '../../theme/tokens';
 
 export default function MuezzinTabs() {
-  const roles = useRoleFlags();
+  const roles = useRoleFlags({ reuseResolvedSessionAccess: true });
 
   if (roles.loading) {
     return (

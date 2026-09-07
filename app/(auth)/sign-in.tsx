@@ -27,7 +27,7 @@ import {
   type SocialProvider,
 } from '../../lib/socialAuth';
 
-type Stage = 'email' | 'choice' | 'password';
+type Stage = 'email' | 'password';
 
 const APPLE_AUTH_ENABLED =
   process.env.EXPO_PUBLIC_APPLE_AUTH_ENABLED === 'true';
@@ -81,7 +81,17 @@ export default function SignInScreen() {
       setError('Enter a valid email address.');
       return;
     }
-    setStage('choice');
+    setStage('password');
+  };
+
+  const beginSignUp = () => {
+    setError(null);
+    if (/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+      setPendingAuthEmail(normalizedEmail);
+    } else {
+      clearPendingAuthEmail();
+    }
+    router.push('/sign-up' as any);
   };
 
   const submitPassword = async () => {
@@ -159,7 +169,7 @@ export default function SignInScreen() {
               </Text>
               <Text style={styles.subtle}>
                 {stage === 'email'
-                  ? 'Sign in, create an account, or browse public mosque information.'
+                  ? 'Sign in to continue to your Listener or staff workspace.'
                   : normalizedEmail}
               </Text>
 
@@ -257,6 +267,17 @@ export default function SignInScreen() {
                     <Text style={styles.primaryButtonText}>Continue</Text>
                   </Pressable>
 
+                  <View style={styles.newAccountRow}>
+                    <Text style={styles.newAccountPrompt}>New to Adhan Connect?</Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={beginSignUp}
+                      hitSlop={8}
+                    >
+                      <Text style={styles.newAccountLink}>Create account</Text>
+                    </Pressable>
+                  </View>
+
                   {/* TESTING: Guest browsing disabled - comment out to re-enable */}
                   {false && (
                     <Pressable
@@ -273,53 +294,6 @@ export default function SignInScreen() {
                       </Text>
                     </Pressable>
                   )}
-                </>
-              ) : null}
-
-              {stage === 'choice' ? (
-                <>
-                  <Text style={styles.choicePrompt}>What would you like to do?</Text>
-                  <Pressable
-                    onPress={() => {
-                      setStage('password');
-                      setError(null);
-                    }}
-                    style={({ pressed }) => [
-                      styles.choiceButton,
-                      pressed && styles.buttonPressed,
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.choiceTitle}>Sign in</Text>
-                      <Text style={styles.choiceDetail}>
-                        Use the password for an existing account
-                      </Text>
-                    </View>
-                    <Text style={styles.chevron}>›</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => {
-                      setPendingAuthEmail(normalizedEmail);
-                      router.push('/sign-up' as any);
-                    }}
-                    style={({ pressed }) => [
-                      styles.choiceButton,
-                      pressed && styles.buttonPressed,
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.choiceTitle}>Create account</Text>
-                      <Text style={styles.choiceDetail}>
-                        Set up a new account with this email
-                      </Text>
-                    </View>
-                    <Text style={styles.chevron}>›</Text>
-                  </Pressable>
-
-                  <Pressable onPress={changeEmail} style={styles.textButton}>
-                    <Text style={styles.textButtonLabel}>Use a different email</Text>
-                  </Pressable>
                 </>
               ) : null}
 
@@ -364,14 +338,10 @@ export default function SignInScreen() {
                   </Pressable>
                   <Pressable
                     disabled={busy}
-                    onPress={() => {
-                      setStage('choice');
-                      setPassword('');
-                      setError(null);
-                    }}
+                    onPress={changeEmail}
                     style={styles.textButton}
                   >
-                    <Text style={styles.secondaryTextButtonLabel}>Back</Text>
+                    <Text style={styles.secondaryTextButtonLabel}>Use a different email</Text>
                   </Pressable>
                 </>
               ) : null}
@@ -478,26 +448,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   noticeText: { color: '#1E3A8A', lineHeight: 19 },
-  choicePrompt: {
-    color: '#334155',
-    fontWeight: '700',
-    fontSize: 15,
-    marginBottom: 4,
-  },
-  choiceButton: {
-    flexDirection: 'row',
+  newAccountRow: {
     alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 12,
-    backgroundColor: '#F8FAFC',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 18,
   },
-  choiceTitle: { color: '#0F172A', fontWeight: '800', fontSize: 16 },
-  choiceDetail: { color: '#64748B', fontSize: 13, lineHeight: 18, marginTop: 2 },
-  chevron: { color: '#0284C7', fontSize: 28, fontWeight: '400' },
+  newAccountPrompt: { color: '#64748B', fontSize: 14 },
+  newAccountLink: {
+    color: '#0284C7',
+    fontSize: 14,
+    fontWeight: '800',
+    marginLeft: 5,
+  },
   textButton: { alignSelf: 'center', padding: 10, marginTop: 8 },
   textButtonLabel: { color: '#0284C7', fontWeight: '700' },
   secondaryTextButtonLabel: { color: '#64748B', fontWeight: '700' },

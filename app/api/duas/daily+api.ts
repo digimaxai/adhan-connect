@@ -1,4 +1,4 @@
-// GET /api/duas/daily
+// Expo Router API route: GET /api/duas/daily
 // Cost-optimized: Hardcoded array, 24h cache
 // Query count: 0 (no DB query)
 // Cache: 24 hours
@@ -60,7 +60,14 @@ export async function GET(request: Request) {
 
     if (prayer) {
       // Get dua for specific prayer
-      result = duas.find((d) => d.prayer.toLowerCase() === prayer) || duas[0];
+      const matchingDua = duas.find((d) => d.prayer.toLowerCase() === prayer);
+      if (!matchingDua) {
+        return Response.json(
+          { error: 'Unknown prayer. Use Fajr, Dhuhr, Asr, Maghrib, or Isha.' },
+          { status: 400 }
+        );
+      }
+      result = matchingDua;
     } else {
       // Get verse of day (deterministic based on day of year)
       const now = new Date();

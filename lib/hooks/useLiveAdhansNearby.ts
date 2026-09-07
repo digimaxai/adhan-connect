@@ -1,73 +1,35 @@
-import { useEffect, useState } from 'react';
-import * as Location from 'expo-location';
+import { useMemo } from 'react';
+import { useMosquesNearby } from './useMosquesNearby';
 
-interface LiveAdhan {
-  mosque_id: string;
-  mosque_name: string;
-  mosque_city: string;
-  prayer: string;
-  adhan_time: string;
-  listeners: number;
-  started_at: string;
-  duration_seconds: number;
-  is_live: boolean;
-  broadcast_url?: string;
-}
+/**
+ * Compatibility wrapper for the original hook. LIVE state now comes from the
+ * same nearby context as prayer times and is refreshed by Realtime, app resume,
+ * or an explicit refresh—never by a 30-second GPS poll.
+ */
+export function useLiveAdhansNearby(radiusKm = 15) {
+  const nearby = useMosquesNearby(radiusKm);
+  const adhans = useMemo(() => nearby.mosques
+    .filter((mosque) => mosque.is_live)
+    .map((mosque) => ({
+      mosque_id: mosque.id,
+      mosque_name: mosque.name,
+      mosque_city: mosque.city,
+      prayer: mosque.live_prayer ?? 'Adhan',
+      adhan_time: mosque.live_started_at ?? '',
+      listeners: 0,
+      started_at: mosque.live_started_at ?? '',
+      duration_seconds: mosque.live_started_at
+        ? Math.max(0, Math.floor((Date.now() - new Date(mosque.live_started_at).getTime()) / 1000))
+        : 0,
+      is_live: true,
+      distance_km: mosque.distance_km,
+    })), [nearby.mosques]);
 
-interface UseLiveAdhansNearbyResult {
-  adhans: LiveAdhan[];
-  loading: boolean;
-  error: string | null;
-  refetch: () => Promise<void>;
-  refresh: () => Promise<void>; // Explicit refresh for real-time updates
-}
-
-export function useLiveAdhansNearby(radiusKm: number = 15): UseLiveAdhansNearbyResult {
-  const [adhans, setAdhans] = useState<LiveAdhan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchAdhans = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const response = await fetch(
-        `/api/live-adhans/location?lat=${location.coords.latitude}&lon=${location.coords.longitude}&radius=${radiusKm}`
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch live adhans');
-      }
-
-      const data = (await response.json()) as { adhans: LiveAdhan[]; cached: boolean };
-      setAdhans(data.adhans);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      setAdhans([]);
-    } finally {
-      setLoading(false);
-    }
+  return {
+    adhans,
+    loading: nearby.loading,
+    error: nearby.error,
+    refetch: nearby.refetch,
+    refresh: nearby.refetch,
   };
-
-  useEffect(() => {
-    void fetchAdhans();
-
-    // Refresh every 30 seconds for real-time updates
-    const interval = setInterval(() => {
-      void fetchAdhans();
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [radiusKm]);
-
-  // Explicit refresh (for pull-to-refresh, button click, etc.)
-  const refresh = async () => {
-    await fetchAdhans();
-  };
-
-  return { adhans, loading, error, refetch: fetchAdhans, refresh };
 }

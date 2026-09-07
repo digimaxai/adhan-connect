@@ -11,6 +11,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ContentDetailHero } from '../../../components/ContentDetailHero';
+import { ContentDocumentsList } from '../../../components/ContentDocumentsList';
+import {
+  getAttachmentPublicUrl,
+  listContentAttachments,
+  type ContentAttachment,
+} from '../../../lib/api/admin/contentAttachments';
 import { supabase } from '../../../lib/supabase';
 
 type CampaignRow = {
@@ -39,6 +46,7 @@ export default function CampaignDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [campaign, setCampaign] = useState<CampaignRow | null>(null);
+  const [attachments, setAttachments] = useState<ContentAttachment[]>([]);
   const [amount, setAmount] = useState<number>(10);
   const [loading, setLoading] = useState(true);
 
@@ -47,15 +55,18 @@ export default function CampaignDetail() {
       if (!id) return;
       setLoading(true);
       try {
-        const { data } = await supabase
-          .from('campaigns')
-          .select(
-            'id,title,description,raised_cents,goal_cents,end_at,mosques(name)'
-          )
-          .eq('id', id)
-          .eq('status', 'active')
-          .or(`end_at.is.null,end_at.gte.${formatLocalDate(new Date())}`)
-          .maybeSingle();
+        const [{ data }, { attachments: rows }] = await Promise.all([
+          supabase
+            .from('campaigns')
+            .select(
+              'id,title,description,raised_cents,goal_cents,end_at,mosques(name)'
+            )
+            .eq('id', id)
+            .eq('status', 'active')
+            .or(`end_at.is.null,end_at.gte.${formatLocalDate(new Date())}`)
+            .maybeSingle(),
+          listContentAttachments('campaign', id),
+        ]);
         setCampaign(
           data
             ? {
@@ -69,6 +80,7 @@ export default function CampaignDetail() {
               }
             : null
         );
+        setAttachments(rows);
       } finally {
         setLoading(false);
       }
@@ -88,6 +100,9 @@ export default function CampaignDetail() {
     );
   })();
 
+  const coverImage = attachments.find((item) => item.kind === 'image') ?? null;
+  const documents = attachments.filter((item) => item.kind === 'document');
+
   const donate = () => {
     Alert.alert(
       'Donation flow',
@@ -98,112 +113,121 @@ export default function CampaignDetail() {
   const preset = [5, 10, 20, 50];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.body}>
-        <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} hitSlop={10}>
-            <Ionicons name="chevron-back" size={24} color="#111111" />
-          </Pressable>
-          <Text style={styles.title}>Campaign</Text>
-          <View style={{ width: 24 }} />
+    <SafeAreaView style={styles.screen} edges={['left', 'right']}>
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color="#1E7BF6" />
         </View>
-
-        {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color="#1E7BF6" />
-          </View>
-        ) : campaign ? (
-          <>
-            <View style={[styles.card, styles.shadow]}>
-              <Text style={styles.campaignTitle}>
-                {campaign.title ?? 'Campaign'}
-              </Text>
-              {campaign.mosque_name ? (
-                <Text style={styles.subtle}>{campaign.mosque_name}</Text>
-              ) : null}
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${pct}%` }]} />
-              </View>
-              <Text style={styles.meta}>
-                {`${formatCurrency(
-                  campaign.raised_cents
-                )} raised of ${formatCurrency(campaign.goal_cents)} goal`}
-              </Text>
-              {campaign.end_at ? (
-                <Text style={styles.meta}>
-                  Ends{' '}
-                  {new Date(campaign.end_at).toLocaleDateString([], {
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+      ) : campaign ? (
+        <>
+          <ScrollView contentContainerStyle={styles.scrollBody}>
+            <ContentDetailHero
+              imageUrl={coverImage ? getAttachmentPublicUrl(coverImage.storage_path) : null}
+              icon="heart-outline"
+              title={campaign.title}
+              onBack={() => router.back()}
+              shareTitle={campaign.title ? `${campaign.title}${campaign.mosque_name ? ` — ${campaign.mosque_name}` : ''}` : null}
+            />
+            <View style={styles.body}>
+              <View style={[styles.card, styles.shadow]}>
+                <Text style={styles.campaignTitle}>
+                  {campaign.title ?? 'Campaign'}
                 </Text>
-              ) : null}
-              {campaign.description ? (
-                <Text style={styles.desc}>{campaign.description}</Text>
-              ) : null}
-            </View>
+                {campaign.mosque_name ? (
+                  <Text style={styles.subtle}>{campaign.mosque_name}</Text>
+                ) : null}
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${pct}%` }]} />
+                </View>
+                <Text style={styles.meta}>
+                  {`${formatCurrency(
+                    campaign.raised_cents
+                  )} raised of ${formatCurrency(campaign.goal_cents)} goal`}
+                </Text>
+                {campaign.end_at ? (
+                  <Text style={styles.meta}>
+                    Ends{' '}
+                    {new Date(campaign.end_at).toLocaleDateString([], {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Text>
+                ) : null}
+                {campaign.description ? (
+                  <Text style={styles.desc}>{campaign.description}</Text>
+                ) : null}
+              </View>
 
-            <View style={[styles.card, styles.shadow]}>
-              <Text style={styles.cardTitle}>Choose amount</Text>
-              <View style={styles.pillRow}>
-                {preset.map((value) => (
-                  <Pressable
-                    key={value}
-                    onPress={() => setAmount(value)}
-                    style={({ pressed }) => [
-                      styles.amountPill,
-                      amount === value && styles.amountPillActive,
-                      { opacity: pressed ? 0.85 : 1 },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.amountText,
-                        amount === value && styles.amountTextActive,
+              <ContentDocumentsList documents={documents} />
+
+              <View style={[styles.card, styles.shadow]}>
+                <Text style={styles.cardTitle}>Choose amount</Text>
+                <View style={styles.pillRow}>
+                  {preset.map((value) => (
+                    <Pressable
+                      key={value}
+                      onPress={() => setAmount(value)}
+                      style={({ pressed }) => [
+                        styles.amountPill,
+                        amount === value && styles.amountPillActive,
+                        { opacity: pressed ? 0.85 : 1 },
                       ]}
                     >
-                      {formatCurrency(value * 100)}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <Text
+                        style={[
+                          styles.amountText,
+                          amount === value && styles.amountTextActive,
+                        ]}
+                      >
+                        {formatCurrency(value * 100)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.meta}>
+                  Selected: {formatCurrency(amount * 100)}
+                </Text>
               </View>
-              <Text style={styles.meta}>
-                Selected: {formatCurrency(amount * 100)}
-              </Text>
             </View>
-          </>
-        ) : (
+          </ScrollView>
+          <View style={styles.sticky}>
+            <Pressable
+              onPress={donate}
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                { opacity: pressed ? 0.9 : 1 },
+              ]}
+            >
+              <Text style={styles.primaryText}>
+                {`Donate ${formatCurrency(amount * 100)}`}
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <ScrollView contentContainerStyle={styles.body}>
+          <View style={styles.topBar}>
+            <Ionicons name="chevron-back" size={24} color="#111111" onPress={() => router.back()} />
+            <Text style={styles.title}>Campaign</Text>
+            <View style={{ width: 24 }} />
+          </View>
           <View style={[styles.card, styles.shadow]}>
             <Text style={styles.campaignTitle}>Campaign unavailable</Text>
             <Text style={styles.desc}>
               This campaign may be paused, ended, or no longer public.
             </Text>
           </View>
-        )}
-      </ScrollView>
-      {campaign ? (
-        <View style={styles.sticky}>
-          <Pressable
-            onPress={donate}
-            style={({ pressed }) => [
-              styles.primaryBtn,
-              { opacity: pressed ? 0.9 : 1 },
-            ]}
-          >
-            <Text style={styles.primaryText}>
-              {`Donate ${formatCurrency(amount * 100)}`}
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8F8F9' },
+  scrollBody: { paddingBottom: 24 },
   body: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
-  centered: { paddingVertical: 48, alignItems: 'center' },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -217,7 +241,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.05)',
-    marginTop: 8,
+    marginTop: 14,
   },
   campaignTitle: { fontSize: 20, fontWeight: '800', color: '#111111' },
   subtle: { color: '#585858', marginTop: 4 },

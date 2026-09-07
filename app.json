@@ -18,6 +18,7 @@
         "NSMicrophoneUsageDescription": "Adhan Connect needs microphone access for live Adhan broadcasts.",
         "NSCameraUsageDescription": "Adhan Connect's live broadcast feature is built on WebRTC, which may request camera access even though video broadcasting is not currently used.",
         "NSLocationWhenInUseUsageDescription": "Adhan Connect uses your location to find nearby mosques, calculate local prayer times, and check access to nearby live Adhan broadcasts.",
+        "NSPhotoLibraryUsageDescription": "Adhan Connect needs photo library access so mosque admins can attach a cover image to events, campaigns, and notices.",
         "UIBackgroundModes": [
           "audio"
         ],
@@ -40,7 +41,8 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "WAKE_LOCK",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE",
+        "READ_MEDIA_IMAGES"
       ]
     },
     "web": {
@@ -52,6 +54,13 @@
       "expo-web-browser",
       "expo-apple-authentication",
       "expo-font",
+      "expo-image-picker",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "adhan-alerts"
+        }
+      ],
       "expo-secure-store",
       [
         "expo-splash-screen",

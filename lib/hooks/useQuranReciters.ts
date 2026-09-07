@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
+import {
+  fetchQuranReciters as requestQuranReciters,
+  QuranReciter,
+} from '../api/quranClient';
 
-interface QuranReciter {
-  id: number;
-  reciter_name: string;
-  english_name: string;
-  style: string;
-  translated_name: {
-    language_name: string;
-    name: string;
-  };
-}
+export type { QuranReciter } from '../api/quranClient';
 
 interface UseQuranReciterResult {
   reciters: QuranReciter[];
@@ -27,14 +22,7 @@ export function useQuranReciters(): UseQuranReciterResult {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/quran/reciters');
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch reciters');
-      }
-
-      const data = (await response.json()) as { reciters: QuranReciter[] };
-      setReciters(data.reciters);
+      setReciters(await requestQuranReciters());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       setReciters([]);

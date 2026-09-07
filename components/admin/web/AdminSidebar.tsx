@@ -107,6 +107,7 @@ export default function AdminSidebar({ compact = false, isPhone = false }: Props
     { label: 'Dashboard',    href: '/admin',               icon: <GridIcon /> },
     { label: 'Prayer Times', href: '/admin/prayer-times',  icon: <ClockIcon /> },
     { label: 'Mosques',      href: '/admin/mosques',        icon: <BuildingIcon /> },
+    { label: 'Mosque Assistant', href: '/admin/mosque-assistant', icon: <BuildingIcon /> },
     { label: 'Users',        href: '/admin/users',          icon: <UsersIcon /> },
     { label: 'Account',      href: '/admin/account',        icon: <AccountIcon /> },
   ];

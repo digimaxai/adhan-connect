@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { notificationClient } from '../notifications/client';
 import type { AppNotification } from '../types/muezzin';
 
 export type AppNotificationInsert = {
@@ -11,8 +12,12 @@ export type AppNotificationInsert = {
   metadata?: Record<string, unknown> | null;
 };
 
-export async function getAppNotifications(limit = 40): Promise<AppNotification[]> {
-  const { data, error } = await supabase
+export async function getAppNotifications(
+  limit = 40,
+  accessToken?: string | null
+): Promise<AppNotification[]> {
+  const client = accessToken ? notificationClient(accessToken) : supabase;
+  const { data, error } = await client
     .from('app_notifications')
     .select('id, user_id, mosque_id, actor_user_id, type, title, body, metadata, read_at, created_at')
     .order('created_at', { ascending: false })
@@ -33,9 +38,10 @@ export async function insertAppNotifications(rows: AppNotificationInsert[]) {
   return (data ?? []) as AppNotification[];
 }
 
-export async function markAppNotificationRead(notificationId: string) {
+export async function markAppNotificationRead(notificationId: string, accessToken?: string | null) {
   const readAt = new Date().toISOString();
-  const { error } = await supabase
+  const client = accessToken ? notificationClient(accessToken) : supabase;
+  const { error } = await client
     .from('app_notifications')
     .update({ read_at: readAt })
     .eq('id', notificationId);
@@ -43,19 +49,17 @@ export async function markAppNotificationRead(notificationId: string) {
   if (error) throw error;
 }
 
-export async function markAllAppNotificationsRead() {
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError) throw userError;
-  if (!user?.id) return;
-
+export async function markAllAppNotificationsRead(
+  userId?: string | null,
+  accessToken?: string | null
+) {
+  if (!userId) return;
   const readAt = new Date().toISOString();
-  const { error } = await supabase
+  const client = accessToken ? notificationClient(accessToken) : supabase;
+  const { error } = await client
     .from('app_notifications')
     .update({ read_at: readAt })
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .is('read_at', null);
 
   if (error) throw error;
