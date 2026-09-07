@@ -169,6 +169,8 @@ export default function MosqueServicesScreen() {
     <AdminScreenShell
       title="Prayer Availability & Services"
       subtitle="What listeners see on your mosque page"
+      backHref="/(admin)"
+      backLabel="Back to Console"
       mosqueName={selectedMosque?.name}
       mosqueMeta={
         selectedMosque

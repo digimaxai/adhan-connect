@@ -609,7 +609,9 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
 
     const allItems = ALL_PRAYERS.map((p) => {
       const excluded = notOffered.includes(p);
-      const adhan = excluded ? null : prayerTimes?.[p]?.adhan;
+      // The calculated time is still informative even when the mosque
+      // doesn't hold this prayer in congregation, so it's always computed.
+      const adhan = prayerTimes?.[p]?.adhan;
       const passed = adhan ? adhan.getTime() < now.getTime() : true;
       const isNext = !excluded && p === nextPrayerName && !passed;
       const timeLabel = adhan
@@ -655,7 +657,7 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
                 disabled={!excluded}
                 accessible={excluded}
                 accessibilityRole={excluded ? 'button' : undefined}
-                accessibilityLabel={`${PRAYER_DISPLAY_NAMES[name]}: ${excluded ? 'Not offered. More information' : timeLabel ?? 'Time unavailable'}`}
+                accessibilityLabel={`${PRAYER_DISPLAY_NAMES[name]}: ${timeLabel ?? 'Time unavailable'}${excluded ? '. Not offered in congregation here. Tap for more information.' : ''}`}
                 accessibilityState={excluded ? { expanded: expandedPrayer === name } : undefined}
                 onPress={() => setExpandedPrayer(current => current === name ? null : name)}
                 style={[
@@ -676,24 +678,25 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
                 >
                   {PRAYER_DISPLAY_NAMES[name]}
                 </Text>
-                {excluded ? <View style={styles.notOfferedLabel}>
-                  <Text style={styles.prayerPillUnavailable} numberOfLines={1} adjustsFontSizeToFit>Not</Text>
-                  <Text style={styles.prayerPillUnavailable} numberOfLines={1} adjustsFontSizeToFit>offered</Text>
-                  <Ionicons name="information-circle-outline" size={14} color="#64748B" style={{ marginTop: 3 }} />
-                </View> : <Text
+                <Text
                   numberOfLines={1}
                   style={[
                     styles.prayerPillTime,
                     passed && styles.prayerPillTimePassed,
-                    excluded && styles.prayerPillUnavailable,
+                    excluded && styles.prayerPillTimeExcluded,
                     isNext && styles.prayerPillTimeNext,
                   ]}
                   adjustsFontSizeToFit
                   minimumFontScale={0.85}
                 >
                   {timeLabel ?? '--:--'}
-                </Text>}
-                {isNext ? <View style={styles.prayerPillDot} /> : null}
+                </Text>
+                {excluded ? (
+                  <View style={styles.notOfferedBadge}>
+                    <Ionicons name="information-circle" size={13} color="#B45309" />
+                    <Text style={styles.notOfferedBadgeText} numberOfLines={1} adjustsFontSizeToFit>Not offered</Text>
+                  </View>
+                ) : isNext ? <View style={styles.prayerPillDot} /> : null}
               </Pressable>
             ))}
       </View>
@@ -2322,11 +2325,12 @@ const styles = StyleSheet.create({
   prayerPillNameNext: { color: '#0369A1', fontWeight: '800' },
   prayerPillTime: { width: '100%', textAlign: 'center', fontVariant: ['tabular-nums'], fontSize: 13, fontWeight: '900', color: '#0F172A' },
   prayerPillTimePassed: { color: '#CBD5E1' },
-  notOfferedLabel: { width: '100%', alignItems: 'center', justifyContent: 'center' },
+  prayerPillTimeExcluded: { color: '#94A3B8' },
+  notOfferedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
+  notOfferedBadgeText: { fontSize: 9, fontWeight: '700', color: '#B45309' },
   iqamaHeading: { color: '#64748B', fontSize: 10, fontWeight: '600', marginTop: 8, marginBottom: 4 },
   iqamaPill: { flex: 1, minWidth: 0, minHeight: 27, justifyContent: 'center', paddingHorizontal: 2, paddingVertical: 4, backgroundColor: '#F8FAFC', borderColor: '#E6E8EB', borderWidth: 1, borderRadius: 8 },
   iqamaTime: { color: '#475569', textAlign: 'center', fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  prayerPillUnavailable: { width: '100%', color: '#64748B', fontSize: 10, lineHeight: 13, fontWeight: '600', textAlign: 'center' },
   prayerPillTimeNext: { color: '#0C4A6E', fontSize: 13, fontWeight: '900' },
   prayerPillDot: {
     width: 5, height: 5, borderRadius: 3,

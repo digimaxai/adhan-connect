@@ -63,6 +63,8 @@ export default function AttendanceScreen() {
     <AdminScreenShell
       title="Attendance & Engagement"
       subtitle="Friday Jumu'ah and event planning"
+      backHref="/(admin)"
+      backLabel="Back to Console"
       mosqueName={selectedMosque?.name}
       mosqueMeta={
         selectedMosque
