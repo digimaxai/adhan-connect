@@ -16,13 +16,9 @@ import { promptForSignIn } from '../../../lib/guestAccess';
 import { FOLLOWED_MOSQUE_LIMIT } from '../../../lib/subscriptionLimits';
 import { mosqueServiceLabel } from '../../../lib/mosqueServices';
 import {
-  crowdState,
   formatJumuahTime,
   isFridayToday,
   JumuahSlot,
-  JumuahSummary,
-  nextFridayDate,
-  summaryFromRows,
 } from '../../../lib/jumuah';
 
 type Mosque = {
@@ -175,7 +171,6 @@ export default function MosquePage() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
   const [jumuahSlots, setJumuahSlots] = useState<JumuahSlot[]>([]);
-  const [jumuahSummary, setJumuahSummary] = useState<Record<string, JumuahSummary>>({});
   const [following, setFollowing] = useState<boolean>(false);
   const [subCount, setSubCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -260,7 +255,6 @@ export default function MosquePage() {
           setCampaigns([]);
           setAnnouncements([]);
           setJumuahSlots([]);
-          setJumuahSummary({});
           setFollowing(false);
           return;
         }
@@ -354,17 +348,6 @@ export default function MosquePage() {
           campaignsArr = [];
         }
         const slotsArr = Array.isArray(jumuahSlotsRes.data) ? (jumuahSlotsRes.data as JumuahSlot[]) : [];
-        let summaryMap: Record<string, JumuahSummary> = {};
-        if (slotsArr.length) {
-          const slotIds = slotsArr.map((slot) => slot.id);
-          const fridayDate = nextFridayDate();
-          const summaryRes = await supabase
-            .from('jumuah_slot_attendance_summary')
-            .select('slot_id,attendee_count,household_count')
-            .eq('friday_date', fridayDate)
-            .in('slot_id', slotIds);
-          summaryMap = summaryFromRows(summaryRes.data as JumuahSummary[]);
-        }
 
         if (eventsArr.length || campaignsArr.length) {
           try {
@@ -388,7 +371,6 @@ export default function MosquePage() {
         setCampaigns(campaignsArr);
         setAnnouncements(Array.isArray(announcementsRes.data) ? announcementsRes.data : []);
         setJumuahSlots(slotsArr);
-        setJumuahSummary(summaryMap);
         setSubCount(subCountRes.count ?? 0);
       } finally {
         setLoading(false);
@@ -825,14 +807,11 @@ export default function MosquePage() {
             <View style={styles.cardHeaderRow}>
               <View>
                 <Text style={styles.cardTitle}>{isFridayToday() ? "Jumu'ah Today" : "Jumu'ah This Friday"}</Text>
-                <Text style={styles.cardSubtitle}>Friday prayer times and congregation guidance.</Text>
+                <Text style={styles.cardSubtitle}>Friday prayer times.</Text>
               </View>
             </View>
             <View style={styles.divider} />
             {previewJumuahSlots.map((slot) => {
-              const count = jumuahSummary[slot.id]?.attendee_count ?? 0;
-              const crowd = crowdState(count, slot.capacity);
-              const isLegacy = slot.id.startsWith('legacy-');
               return (
                 <View key={slot.id} style={styles.jumuahRow}>
                   <View style={styles.jumuahTimeBox}>
@@ -846,20 +825,6 @@ export default function MosquePage() {
                     {[slot.venue, slot.language].filter(Boolean).length
                       ? <Text style={styles.jumuahMeta} numberOfLines={1}>{[slot.venue, slot.language].filter(Boolean).join(' / ')}</Text>
                       : null}
-                    {!isLegacy && (
-                      <View style={styles.crowdWrap}>
-                        <View style={[
-                          styles.crowdPill,
-                          crowd.tone === 'danger' ? styles.crowdDanger
-                            : crowd.tone === 'warning' ? styles.crowdWarning
-                            : crowd.tone === 'busy' ? styles.crowdBusy
-                            : crowd.tone === 'calm' ? styles.crowdCalm
-                            : styles.crowdNeutral,
-                        ]}>
-                          <Text style={styles.crowdText}>{crowd.label}</Text>
-                        </View>
-                      </View>
-                    )}
                   </View>
                 </View>
               );

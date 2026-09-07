@@ -1860,20 +1860,6 @@ export default function HomeScreen() {
         </AppCard>
       )}
 
-      {/* ── Discover CTA — nudge for users following only one mosque ── */}
-      {subs.length === 1 ? (
-        <AppCard subtle style={styles.discoveryCard}>
-          <AppText variant="sectionTitle">Find More Mosques</AppText>
-          <AppText variant="body" style={styles.discoverySubtitle}>
-            Discover and follow other mosques to listen to live adhans.
-          </AppText>
-          <AppButton
-            title="Discover"
-            onPress={() => router.push('/(user)/discover')}
-            style={styles.discoveryBtn}
-          />
-        </AppCard>
-      ) : null}
       {/* Nearby context stays compact so the primary mosque and prayer remain first. */}
       {currentAreaLocation ? (
         <NearbyHomeSummary

@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useAuth } from '../lib/auth';
 import { supabase } from '../lib/supabase';
 
-type Engagement = { attendees: number; capacity: number | null; party_size: number; liked: boolean; favourited: boolean };
+type Engagement = { party_size: number; liked: boolean; favourited: boolean };
 
 export function EventEngagement({ eventId, startsAt }: { eventId: string; startsAt?: string | null }) {
   const { session } = useAuth();
@@ -51,18 +51,16 @@ export function EventEngagement({ eventId, startsAt }: { eventId: string; starts
     }
   };
   const started = !!startsAt && new Date(startsAt).getTime() <= Date.now();
-  const spaces = data?.capacity != null ? Math.max(0, data.capacity - data.attendees) : null;
 
   return <View style={styles.card}>
     <Text style={styles.title}>Are you coming?</Text>
     {loading ? <ActivityIndicator /> : data ? <>
-      <Text style={styles.summary}>{data.attendees} planning to attend</Text>
       <Text style={styles.note}>Help the organisers plan. This is an attendance plan, not a ticket.</Text>
       <Text style={styles.label}>{started ? 'This event has started' : data.party_size ? `Your party: ${data.party_size} ${data.party_size === 1 ? 'person' : 'people'}` : 'Choose your party size'}</Text>
       <View style={styles.actions}>
         {Array.from({ length: 8 }, (_, i) => i + 1).map((size) => {
           const selected = data.party_size === size;
-          const disabled = saving || started || (spaces !== null && size > spaces + data.party_size);
+          const disabled = saving || started;
           return <Pressable key={size} accessibilityRole="button" accessibilityLabel={`Attend with ${size} ${size === 1 ? 'person' : 'people'}`} accessibilityState={{ selected, disabled }}
             disabled={disabled} onPress={() => void respond('attendance', size)} style={[styles.choice, selected && styles.selected, disabled && styles.disabled]}>
             <Text style={[styles.choiceText, selected && styles.selectedText]}>{size}</Text>
@@ -91,7 +89,6 @@ export function EventEngagement({ eventId, startsAt }: { eventId: string; starts
 const styles = StyleSheet.create({
   card: { marginTop: 14, padding: 18, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, gap: 12 },
   title: { fontSize: 19, fontWeight: '800', color: '#0F172A' },
-  summary: { color: '#047857', fontSize: 14, fontWeight: '600' },
   note: { color: '#64748B', fontSize: 12, lineHeight: 18 },
   label: { color: '#334155', fontSize: 13, fontWeight: '600' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

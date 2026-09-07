@@ -27,9 +27,13 @@ async function main() {
       await ok(client.auth.signInWithPassword({ email, password })); clients.push(client);
     }
     await ok(admin.from('mosque_admins').insert({ mosque_id: mosque, user_id: users[1] }));
-    assert.equal((await ok(anon.rpc('get_event_engagement', { p_event_id: event }))).attendees, 0);
+    const anonView = await ok(anon.rpc('get_event_engagement', { p_event_id: event }));
+    assert.equal(anonView.party_size, 0);
+    assert.equal(anonView.attendees, undefined, 'listener-facing RPC must not expose aggregate attendees');
     const args = { p_event_id: event, p_action: 'attendance', p_value: 2 };
-    assert.equal((await ok(clients[0].rpc('set_event_engagement', args))).attendees, 2);
+    const afterAttend = await ok(clients[0].rpc('set_event_engagement', args));
+    assert.equal(afterAttend.party_size, 2);
+    assert.equal(afterAttend.attendees, undefined, 'listener-facing RPC must not expose aggregate attendees');
     assert.ok((await clients[1].rpc('set_event_engagement', { ...args, p_value: 1 })).error);
     await ok(clients[0].rpc('set_event_engagement', { ...args, p_action: 'like', p_value: 1 }));
     await ok(clients[0].rpc('set_event_engagement', { ...args, p_action: 'favourite', p_value: 1 }));
@@ -42,7 +46,18 @@ async function main() {
     const report = await ok(clients[1].rpc('get_mosque_engagement', { p_mosque_id: mosque, p_friday_date: date }));
     assert.equal(report.events[0].attendees, 2); assert.equal(report.events[0].likes, 1);
     assert.equal(report.events[0].favourites, 1); assert.equal(report.friday[0].attendees, 3);
-    assert.equal((await ok(clients[0].rpc('set_event_engagement', { ...args, p_value: 0 }))).attendees, 0);
+    assert.equal((await ok(clients[0].rpc('set_event_engagement', { ...args, p_value: 0 }))).party_size, 0);
+
+    // Jumu'ah attendance RPCs: listener sees only their own plan; capacity enforced server-side.
+    const jArgs = { p_mosque_id: mosque, p_slot_id: slot, p_friday_date: date };
+    const jBefore = await ok(clients[0].rpc('get_jumuah_attendance', { p_mosque_id: mosque, p_friday_date: date }));
+    assert.equal(jBefore.attendee_count, undefined, 'listener-facing Jumuah RPC must not expose aggregate count');
+    const jAfter = await ok(clients[0].rpc('set_jumuah_attendance', { ...jArgs, p_party_size: 4 }));
+    assert.equal(jAfter.party_size, 4);
+    assert.ok((await anon.from('jumuah_slot_attendance_summary').select('*').limit(1)).error, 'aggregate view must not be selectable by anon');
+    assert.ok((await clients[0].from('jumuah_attendance_intents').insert({ mosque_id: mosque, slot_id: slot, user_id: users[0], friday_date: date, party_size: 1 })).error, 'direct table writes must be blocked');
+    await ok(clients[0].rpc('set_jumuah_attendance', { ...jArgs, p_party_size: 0 }));
+
     console.log('PASS: staging attendance, capacity, reactions, privacy, local-admin event and Friday summaries.');
   } finally {
     const cleanupErrors = [];

@@ -22,7 +22,7 @@ async function openNotificationDestination(
   const mosqueId = readString(data, 'mosqueId');
   let workspace: StaffEntryMode | null = null;
 
-  if (screen === 'live' || screen === 'mosque') workspace = 'listener';
+  if (screen === 'live' || screen === 'mosque' || screen === 'event' || screen === 'jumuah') workspace = 'listener';
   if (screen === 'muezzin_broadcast' || screen === 'muezzin_rota') workspace = 'muezzin';
   if (workspace) {
     await setPreferredStaffEntry(userId, workspace).catch(() => undefined);
@@ -48,6 +48,15 @@ async function openNotificationDestination(
   }
   if (screen === 'muezzin_rota') {
     router.replace('/(muezzin)/my-rota' as any);
+    return;
+  }
+  if (screen === 'event') {
+    const eventId = readString(data, 'eventId');
+    if (eventId) router.replace(`/(user)/event/${encodeURIComponent(eventId)}` as any);
+    return;
+  }
+  if (screen === 'jumuah' && mosqueId) {
+    router.replace({ pathname: '/(user)/jumuah/[id]', params: { id: mosqueId } } as any);
   }
 }
 
