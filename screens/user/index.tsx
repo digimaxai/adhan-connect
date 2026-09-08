@@ -693,8 +693,7 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
                 </Text>
                 {excluded ? (
                   <View style={styles.notOfferedBadge}>
-                    <Ionicons name="information-circle" size={13} color="#B45309" />
-                    <Text style={styles.notOfferedBadgeText} numberOfLines={1} adjustsFontSizeToFit>Not offered</Text>
+                    <Ionicons name="information" size={9} color="#FFFFFF" />
                   </View>
                 ) : isNext ? <View style={styles.prayerPillDot} /> : null}
               </Pressable>
@@ -714,14 +713,20 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
       {expandedPrayer && notOffered.includes(expandedPrayer) ? (
         <View style={styles.prayerAvailabilityInfo} accessibilityLiveRegion="polite">
           <View style={styles.prayerAvailabilityHeader}>
-            <Text style={styles.prayerAvailabilityTitle}>{PRAYER_DISPLAY_NAMES[expandedPrayer]} congregation</Text>
+            <View style={styles.prayerAvailabilityHeaderLeft}>
+              <View style={styles.prayerAvailabilityIcon}>
+                <Ionicons name="information" size={11} color="#FFFFFF" />
+              </View>
+              <Text style={styles.prayerAvailabilityTitle}>{PRAYER_DISPLAY_NAMES[expandedPrayer]}</Text>
+            </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Close prayer information"
               onPress={() => setExpandedPrayer(null)} style={styles.prayerInfoClose}>
-              <Ionicons name="close" size={18} color="#475569" />
+              <Ionicons name="close" size={18} color="#94A3B8" />
             </Pressable>
           </View>
+          <Text style={styles.prayerAvailabilityStatus}>Not held in congregation here</Text>
           <Text style={styles.prayerAvailabilityBody}>
-            {reasons[expandedPrayer]?.trim() || `The mosque has marked ${PRAYER_DISPLAY_NAMES[expandedPrayer]} as not held in congregation at this location. A specific reason hasn’t been provided. Please contact the mosque for details.`}
+            {reasons[expandedPrayer]?.trim() || `A specific reason hasn’t been provided. Please contact the mosque for details.`}
           </Text>
         </View>
       ) : null}
@@ -2308,17 +2313,21 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E6E8EB',
     gap: 2,
+    position: 'relative',
   },
   prayerPillNext: {
     backgroundColor: '#EFF6FF',
     borderColor: '#0EA5E9',
   },
-  prayerPillExcluded: { backgroundColor: '#EDEFF2', borderColor: '#DCE1E7' },
-  prayerAvailabilityInfo: { backgroundColor: '#F1F5F9', borderRadius: 12, paddingHorizontal: 12, paddingBottom: 12, marginTop: 10 },
+  prayerPillExcluded: { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
+  prayerAvailabilityInfo: { backgroundColor: '#F8FAFC', borderRadius: 14, borderWidth: 1, borderColor: '#EDF1F5', paddingHorizontal: 14, paddingTop: 10, paddingBottom: 14, marginTop: 10, gap: 4 },
   prayerAvailabilityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  prayerAvailabilityTitle: { flex: 1, color: '#334155', fontSize: 13, fontWeight: '700' },
+  prayerAvailabilityHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 },
+  prayerAvailabilityIcon: { width: 17, height: 17, borderRadius: 9, backgroundColor: '#94A3B8', alignItems: 'center', justifyContent: 'center' },
+  prayerAvailabilityTitle: { flex: 1, color: '#0F172A', fontSize: 14, fontWeight: '800' },
   prayerInfoClose: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  prayerAvailabilityBody: { color: '#475569', fontSize: 13, lineHeight: 20 },
+  prayerAvailabilityStatus: { color: '#64748B', fontSize: 12, fontWeight: '700', letterSpacing: 0.1 },
+  prayerAvailabilityBody: { color: '#475569', fontSize: 13, lineHeight: 20, marginTop: 2 },
   prayerPillPassed: { backgroundColor: '#F8FAFC', borderColor: '#F1F5F9' },
   prayerPillName: { width: '100%', textAlign: 'center', fontSize: 10, fontWeight: '700', color: '#64748B' },
   prayerPillNamePassed: { color: '#CBD5E1' },
@@ -2326,8 +2335,17 @@ const styles = StyleSheet.create({
   prayerPillTime: { width: '100%', textAlign: 'center', fontVariant: ['tabular-nums'], fontSize: 13, fontWeight: '900', color: '#0F172A' },
   prayerPillTimePassed: { color: '#CBD5E1' },
   prayerPillTimeExcluded: { color: '#94A3B8' },
-  notOfferedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
-  notOfferedBadgeText: { fontSize: 9, fontWeight: '700', color: '#B45309' },
+  notOfferedBadge: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iqamaHeading: { color: '#64748B', fontSize: 10, fontWeight: '600', marginTop: 8, marginBottom: 4 },
   iqamaPill: { flex: 1, minWidth: 0, minHeight: 27, justifyContent: 'center', paddingHorizontal: 2, paddingVertical: 4, backgroundColor: '#F8FAFC', borderColor: '#E6E8EB', borderWidth: 1, borderRadius: 8 },
   iqamaTime: { color: '#475569', textAlign: 'center', fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] },
