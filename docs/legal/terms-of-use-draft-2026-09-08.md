@@ -28,8 +28,8 @@ developed and operated by **Maksums Limited**, trading as **Maksums
 Digital Agency** ("we", "us", "our"). By using the Service, you agree to
 these Terms. If you do not agree, please do not use the Service.
 
-If you use the Service as a Listener, you do not create an account and are
-not asked to click "I agree" — using the app constitutes acceptance of
+If you use the app's everyday features, you do not create an account and
+are not asked to click "I agree" — using the app constitutes acceptance of
 these Terms. If you hold a mosque staff role, you will be asked to accept
 these Terms and our Privacy Notice explicitly when your account is created.
 
@@ -43,12 +43,13 @@ their own mosque.
 
 ## 3. Who can use the Service
 
-- **Listener features** are available generally, without an account or age
-  verification, because the Service does not ask for the kind of
-  information that would make age verification meaningful. The Service is
-  intended for a general audience; see the Privacy Notice's Children
-  section for the status of our review of what an accountless flow means
-  for younger users.
+- **Everyday features** — finding mosques, prayer times, live Adhan,
+  following mosques, attendance planning — are available generally,
+  without an account or age verification, because the Service does not ask
+  for the kind of information that would make age verification meaningful.
+  The Service is intended for a general audience; see the Privacy Notice's
+  Children section for the status of our review of what this means for
+  younger users.
 - **Mosque staff accounts** are intended for adults performing an
   operational role for a mosque, and are gated to those with an
   administrator or muezzin invitation from a recognised mosque.
@@ -181,10 +182,11 @@ by law.
 
 We may suspend or terminate access to the Service, in whole or in part, at
 any time, for violation of these Terms or for operational reasons. Because
-Listener use does not involve an account, "termination" for a Listener
-means we may restrict access to specific features or the app generally, but
-there is no account to close. Mosque staff account termination is handled
-as described in the Privacy Notice's account deletion section.
+everyday use of the app does not involve an account, "termination" in that
+case means we may restrict access to specific features or the app
+generally, but there is no account to close. Mosque staff account
+termination is handled as described in the Privacy Notice's account
+deletion section.
 
 ## 16. Changes to these Terms
 
