@@ -27,7 +27,7 @@ export function AdminScreenShell({
   subtitle,
   eyebrow = 'Local Admin',
   backHref,
-  backLabel = 'Back to Home',
+  backLabel = 'Back',
   activeTab,
   onGoPrayerTimes,
   onGoStaffRota,
@@ -58,7 +58,7 @@ export function AdminScreenShell({
           <AppButton
             title={backLabel}
             variant="ghost"
-            onPress={() => router.push(backHref as any)}
+            onPress={() => router.canGoBack() ? router.back() : router.replace(backHref as any)}
             style={styles.backButton}
           />
         ) : null}
@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.pill,
     minHeight: 34,
     paddingHorizontal: tokens.spacing.sm,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#E0F2FE',
   },
   tabRow: {
     flexDirection: 'row',

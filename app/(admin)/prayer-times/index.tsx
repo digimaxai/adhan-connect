@@ -40,6 +40,9 @@ import {
   rollbackPrayerScheduleImport,
 } from '@/lib/api/admin/prayerScheduleImports';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import { ALADHAN_METHODS, DEFAULT_ALADHAN_METHOD } from '@/lib/api/aladhan';
+import { EMPTY_PRAYER_TIME_ADJUSTMENTS, PRAYER_ADJUSTMENT_KEYS, formatPrayerAdjustment, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '@/lib/prayerTimeAdjustments';
 
 const prayers: { key: keyof PrayerTimeForm; label: string }[] = [
   { key: 'fajr', label: 'Fajr' },
@@ -236,7 +239,7 @@ export default function PrayerTimesAdminScreen({
         : '/admin/prayer-times'
       : '/(admin)');
   const backLabel =
-    backLabelOverride ?? (isMainAdminWeb && effectiveMosqueId ? 'Back to Mosque' : 'Back to Console');
+    backLabelOverride ?? 'Back';
   const eyebrowLabel = eyebrowOverride ?? (isMainAdminWeb ? 'Main Admin' : 'Local Admin');
   const isOnboardingEntry =
     typeof onboardingMode === 'boolean'
@@ -263,6 +266,12 @@ export default function PrayerTimesAdminScreen({
   const [showPicker, setShowPicker] = useState(false);
   const [tempValue, setTempValue] = useState<Date | null>(null);
   const [currentRow, setCurrentRow] = useState<PrayerTimesRow | null>(null);
+  const [prayerSource, setPrayerSource] = useState<'aladhan' | 'elm'>('aladhan');
+  const [calculationMethod, setCalculationMethod] = useState(DEFAULT_ALADHAN_METHOD);
+  const [prayerSchool, setPrayerSchool] = useState<0 | 1>(0);
+  const [adjustments, setAdjustments] = useState<PrayerTimeAdjustments>({ ...EMPTY_PRAYER_TIME_ADJUSTMENTS });
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [scheduleSourceLabel, setScheduleSourceLabel] = useState(
     'No published schedule for this date.'
   );
@@ -439,6 +448,12 @@ export default function PrayerTimesAdminScreen({
 
     try {
       const payload = await loadPrayerTimesWorkspace(selectedMosque.mosqueId, dateIso, 6);
+      if (payload.prayerSettings) {
+        setPrayerSource(payload.prayerSettings.prayerSource);
+        setCalculationMethod(payload.prayerSettings.calculationMethod);
+        setPrayerSchool(payload.prayerSettings.school);
+        setAdjustments(payload.prayerSettings.adjustments);
+      }
       if (payload.currentRow) {
         setCurrentRow(payload.currentRow);
         setForm(mapRowToForm(payload.currentRow));
@@ -499,6 +514,25 @@ export default function PrayerTimesAdminScreen({
       setRefreshing(false);
     }
   }, [loadPrayerTimes]);
+
+  const handleSavePrayerSettings = async () => {
+    if (!selectedMosque) return;
+    setSavingSettings(true); setError(null); setNotice(null);
+    try {
+      const { error: saveError } = await supabase.rpc('update_mosque_prayer_settings', {
+        p_mosque_id: selectedMosque.mosqueId,
+        p_prayer_source: prayerSource,
+        p_prayer_calculation_method: calculationMethod,
+        p_prayer_school: prayerSchool,
+        p_prayer_time_adjustments: normalizePrayerTimeAdjustments(adjustments),
+      });
+      if (saveError) throw saveError;
+      await loadPrayerTimes();
+      setNotice('Automatic prayer-time settings saved. Existing uploaded and manual schedules were not changed.');
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Unable to save automatic prayer-time settings.');
+    } finally { setSavingSettings(false); }
+  };
 
   const updateFormTime = useCallback(
     (prayer: keyof PrayerTimeForm, field: keyof TimePair, value: string | null) => {
@@ -1027,6 +1061,37 @@ export default function PrayerTimesAdminScreen({
         </AppCard>
       )}
 
+      {selectedMosque && !loading && (form.fajr.adhan || form.dhuhr.adhan || form.asr.adhan || form.maghrib.adhan || form.isha.adhan) ? (
+        <AppCard style={styles.summaryCard}>
+          <View style={styles.utilityHeader}>
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              {dateIso === formatLocalDate(new Date()) ? 'Shown to congregation today' : `Schedule for ${dateIso}`}
+            </AppText>
+            <AppText variant="title">Current prayer times</AppText>
+          </View>
+          {prayers.map((p) => (
+            <View key={p.key} style={styles.summaryRow}>
+              <AppText variant="body" style={styles.summaryPrayer}>{p.label}</AppText>
+              <AppText variant="body" style={styles.summaryAdhan}>{form[p.key].adhan ?? '—'}</AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryIqama}>
+                {form[p.key].iqama ? `Iqama ${form[p.key].iqama}` : 'Iqama —'}
+              </AppText>
+            </View>
+          ))}
+          {currentRow ? (
+            <View style={styles.sourceBadge}>
+              <AppText variant="caption" style={styles.sourceBadgeText}>
+                {currentRow.source_type === 'manual' ? 'Manual correction' : 'Published timetable'}
+              </AppText>
+            </View>
+          ) : (
+            <View style={[styles.sourceBadge, styles.sourceBadgeMuted]}>
+              <AppText variant="caption" style={styles.sourceBadgeMutedText}>Auto-calculated</AppText>
+            </View>
+          )}
+        </AppCard>
+      ) : null}
+
       {!selectedMosque && !mosques.length ? (
         <AdminBanner
           tone="warning"
@@ -1056,6 +1121,76 @@ export default function PrayerTimesAdminScreen({
               : `You are setting up ${selectedMosque.name}. Manual day-level edits are available here, while Main Admin publishes month or full-year timetable files from the web portal.`
           }
         />
+      ) : null}
+
+      {selectedMosque ? (
+        <AppCard style={styles.settingsCard}>
+          <Pressable
+            onPress={() => setShowSettings((prev) => !prev)}
+            style={styles.settingsToggleRow}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showSettings }}
+          >
+            <View style={{ flex: 1, gap: 2 }}>
+              <AppText variant="caption" color={tokens.color.text.secondary}>Automatic timetable</AppText>
+              <AppText variant="title">Calculation basis and adjustments</AppText>
+              {!showSettings && (
+                <AppText variant="caption" color={tokens.color.text.secondary}>
+                  {prayerSource === 'elm' ? 'East London Mosque (London Unified)' : `Aladhan · Method ${calculationMethod} · ${prayerSchool === 1 ? 'Hanafi Asr' : 'Standard Asr'}`}
+                  {PRAYER_ADJUSTMENT_KEYS.some((k) => adjustments[k] !== 0)
+                    ? ` · Adjustments: ${PRAYER_ADJUSTMENT_KEYS.filter((k) => adjustments[k] !== 0).map((k) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${adjustments[k] > 0 ? '+' : ''}${adjustments[k]}m`).join(', ')}`
+                    : ' · No adjustments'}
+                </AppText>
+              )}
+            </View>
+            <AppText variant="body" color={tokens.color.text.accent} style={{ paddingLeft: 8 }}>
+              {showSettings ? 'Done' : 'Edit'}
+            </AppText>
+          </Pressable>
+
+          {showSettings && (
+            <>
+              <AppText variant="body" color={tokens.color.text.secondary}>
+                Used only when there is no uploaded or manually entered beginning time. Congregation times remain mosque controlled.
+              </AppText>
+              <View style={styles.choiceRow}>
+                <AppButton title="Calculated by location" variant={prayerSource === 'aladhan' ? 'primary' : 'ghost'} onPress={() => setPrayerSource('aladhan')} />
+                <AppButton title="East London timetable" variant={prayerSource === 'elm' ? 'primary' : 'ghost'} onPress={() => setPrayerSource('elm')} />
+              </View>
+              {prayerSource === 'aladhan' ? (
+                <View style={styles.settingsGroup}>
+                  <AppText variant="caption" color={tokens.color.text.secondary}>Calculation method</AppText>
+                  <View style={styles.choiceRow}>
+                    {ALADHAN_METHODS.filter((method) => [2, 3, 4, 5, 13, 15].includes(method.id)).map((method) => (
+                      <AppButton key={method.id} title={method.label} variant={calculationMethod === method.id ? 'primary' : 'ghost'} onPress={() => setCalculationMethod(method.id)} />
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <AppText variant="caption" color={tokens.color.text.secondary}>Uses East London Mosque's published London Unified beginning times as the base.</AppText>
+              )}
+              <View style={styles.settingsGroup}>
+                <AppText variant="caption" color={tokens.color.text.secondary}>Asr school</AppText>
+                <View style={styles.choiceRow}>
+                  <AppButton title="Standard" variant={prayerSchool === 0 ? 'primary' : 'ghost'} onPress={() => setPrayerSchool(0)} />
+                  <AppButton title="Hanafi" variant={prayerSchool === 1 ? 'primary' : 'ghost'} onPress={() => setPrayerSchool(1)} />
+                </View>
+              </View>
+              <View style={styles.settingsGroup}>
+                <AppText variant="caption" color={tokens.color.text.secondary}>Fine-tune each beginning time (−30 to +30 min). Use this to account for local geographic differences.</AppText>
+                {PRAYER_ADJUSTMENT_KEYS.map((prayer) => (
+                  <View key={prayer} style={styles.adjustmentRow}>
+                    <AppText variant="body" style={styles.adjustmentLabel}>{prayer.charAt(0).toUpperCase() + prayer.slice(1)}</AppText>
+                    <AppButton title="−" variant="ghost" onPress={() => setAdjustments((current) => normalizePrayerTimeAdjustments({ ...current, [prayer]: current[prayer] - 1 }))} disabled={adjustments[prayer] <= -30} />
+                    <AppText variant="body" style={styles.adjustmentValue}>{formatPrayerAdjustment(adjustments[prayer])}</AppText>
+                    <AppButton title="+" variant="ghost" onPress={() => setAdjustments((current) => normalizePrayerTimeAdjustments({ ...current, [prayer]: current[prayer] + 1 }))} disabled={adjustments[prayer] >= 30} />
+                  </View>
+                ))}
+              </View>
+              <AppButton title={savingSettings ? 'Saving settings…' : 'Save automatic settings'} onPress={handleSavePrayerSettings} disabled={savingSettings} />
+            </>
+          )}
+        </AppCard>
       ) : null}
 
       {notice ? (
@@ -1877,10 +2012,10 @@ export default function PrayerTimesAdminScreen({
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeader}>
             <AppText variant="caption" color={tokens.color.text.secondary}>
-              Quick edit
+              Single-date correction
             </AppText>
             <AppText variant="title" style={styles.sectionTitle}>
-              Manual daily override
+              Correct this day
             </AppText>
           </View>
           {canManageImports ? (
@@ -1905,9 +2040,6 @@ export default function PrayerTimesAdminScreen({
                 <AppCard key={p.key} style={[styles.card, disableForNoMosque && styles.cardDisabled]}>
                   <View style={styles.cardHeader}>
                     <AppText variant="title">{p.label}</AppText>
-                    <AppText variant="caption" color={tokens.color.text.secondary}>
-                      Adjust one day at a time when the imported schedule needs a correction.
-                    </AppText>
                   </View>
                   <View style={styles.row}>
                     <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
@@ -1949,9 +2081,12 @@ export default function PrayerTimesAdminScreen({
               ))
             )}
 
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              Saving overwrites the beginning and congregation times for {dateIso} only. Other dates in the published timetable are not affected.
+            </AppText>
             <View style={styles.actionRow}>
               <AppButton
-                title={saving ? 'Saving...' : 'Save Day Override'}
+                title={saving ? 'Saving...' : 'Save correction'}
                 onPress={handleSave}
                 disabled={saving || disableForNoMosque}
               />
@@ -2594,7 +2729,7 @@ function validateCoverageIntentSelection(
     return {
       valid: true,
       error: null as string | null,
-      warning: 'This preview already looks like a full year. Choose Full year instead if this should become the mosque’s canonical annual timetable.',
+      warning: "This preview already looks like a full year. Choose Full year instead if this should become the mosque's canonical annual timetable.",
     };
   }
 
@@ -2937,6 +3072,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     flex: 1,
   },
+  settingsCard: { gap: tokens.spacing.md, borderRadius: 18 },
+  settingsToggleRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  settingsGroup: { gap: 8 },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  adjustmentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  adjustmentLabel: { flex: 1, fontWeight: tokens.typography.weight.bold },
+  adjustmentValue: { width: 70, textAlign: 'center', fontWeight: tokens.typography.weight.extrabold },
+  summaryCard: { gap: 6, borderRadius: 16 },
+  summaryRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10, paddingVertical: 5, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F1F5F9' },
+  summaryPrayer: { width: 64, fontWeight: tokens.typography.weight.bold },
+  summaryAdhan: { width: 48, fontWeight: tokens.typography.weight.extrabold },
+  summaryIqama: { flex: 1 },
+  sourceBadgeMuted: { backgroundColor: '#F1F5F9' },
+  sourceBadgeMutedText: { color: '#64748B', fontWeight: tokens.typography.weight.bold },
   compactManualCard: { gap: 8, borderRadius: 18 },
   utilityHeader: { gap: 2 },
   statusValue: { fontWeight: tokens.typography.weight.extrabold },

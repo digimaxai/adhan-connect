@@ -96,6 +96,13 @@ export default function AdminShell({
         keywords: ['mosques', 'network', 'directory'],
         onSelect: () => router.push('/admin/mosques' as any),
       },
+      {
+        key: 'route-mosque-requests',
+        label: 'Open mosque requests',
+        description: 'Review self-registrations, listener invites, and add-requests for new mosques.',
+        keywords: ['requests', 'onboarding', 'invite', 'new mosque', 'inbox'],
+        onSelect: () => router.push('/admin/mosque-requests' as any),
+      },
       ...(selectedMosqueId
         ? [
             {

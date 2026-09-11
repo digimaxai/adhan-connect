@@ -82,10 +82,18 @@ export default function UserTabs() {
         }}
       />
       <Tabs.Screen
+        name="my-mosque"
+        options={{
+          title: 'My Mosque',
+          tabBarAccessibilityLabel: 'Open my default mosque',
+          tabBarIcon: pillIcon('business-outline', 'business'),
+        }}
+      />
+      <Tabs.Screen
         name="discover"
         options={{
-          title: 'Mosques',
-          tabBarAccessibilityLabel: 'Discover mosques',
+          title: 'Discover',
+          tabBarAccessibilityLabel: 'Discover other mosques',
           tabBarIcon: pillIcon('compass-outline', 'compass'),
         }}
       />
@@ -110,6 +118,12 @@ export default function UserTabs() {
       <Tabs.Screen name="manage-mosques" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="invite-mosque" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="request-mosque" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-admin-request" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-onboarding-hub" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-messages/[mosqueId]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-enquiries" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-enquiry" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-conversation" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

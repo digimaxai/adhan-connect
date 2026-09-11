@@ -1,6 +1,7 @@
 import { fetchAladhanTimes } from '../../../lib/api/aladhan';
 import { fetchELMTimes } from '../../../lib/api/londonPrayerTimes';
 import { supabase } from '../../../lib/supabase';
+import { adjustClockTime, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
 
 export const runtime = 'nodejs';
 
@@ -18,6 +19,7 @@ type NearbyRpcRow = {
   prayer_school: number | null;
   distance_km: number;
   prayer_source: string | null;
+  prayer_time_adjustments?: PrayerTimeAdjustments | null;
   next_prayer: string | null;
   next_adhan_at: string | null;
   is_live: boolean;
@@ -49,7 +51,7 @@ const cache = new Map<string, { at: number; rows: NearbyMosqueContext[] }>();
 const CALCULATION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const calculationCache = new Map<
   string,
-  { expiresAt: number; value: Promise<Record<PrayerName, string | null | undefined> | null> }
+  { expiresAt: number; value: Promise<Record<PrayerName, { time: string; dayOffset: number } | null> | null> }
 >();
 const PRAYERS: PrayerName[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
@@ -139,8 +141,9 @@ function locationBucket(value: number) {
 }
 
 function calculationCacheKey(row: NearbyRpcRow, dateIso: string, timeZone: string) {
+  const adjustmentKey = JSON.stringify(normalizePrayerTimeAdjustments(row.prayer_time_adjustments));
   if (row.prayer_source === 'elm') {
-    return ['elm', dateIso, row.prayer_school ?? 0].join(':');
+    return ['elm', dateIso, row.prayer_school ?? 0, adjustmentKey].join(':');
   }
   return [
     'aladhan',
@@ -150,6 +153,7 @@ function calculationCacheKey(row: NearbyRpcRow, dateIso: string, timeZone: strin
     row.prayer_school ?? 0,
     locationBucket(row.latitude),
     locationBucket(row.longitude),
+    adjustmentKey,
   ].join(':');
 }
 
@@ -166,33 +170,32 @@ function calculatedDay(row: NearbyRpcRow, dateIso: string, timeZone: string) {
   }
 
   const value = (async () => {
+    let base: Record<PrayerName, string | null | undefined> | null = null;
     if (row.prayer_source === 'elm') {
       const elm = await fetchELMTimes(dateIso);
       if (elm) {
-        return {
+        base = {
           fajr: elm.fajr,
           dhuhr: elm.dhuhr,
           asr: row.prayer_school === 1 ? elm.asr_2 : elm.asr,
           maghrib: elm.magrib,
           isha: elm.isha,
-        } satisfies Record<PrayerName, string | null | undefined>;
+        };
       }
     }
-
-    const timings = await fetchAladhanTimes(
-      locationBucket(row.latitude),
-      locationBucket(row.longitude),
-      dateIso,
-      row.prayer_calculation_method ?? 3,
-      row.prayer_school ?? 0
-    );
-    return timings ? {
-      fajr: timings.Fajr,
-      dhuhr: timings.Dhuhr,
-      asr: timings.Asr,
-      maghrib: timings.Maghrib,
-      isha: timings.Isha,
-    } satisfies Record<PrayerName, string | null | undefined> : null;
+    if (!base) {
+      const timings = await fetchAladhanTimes(
+        locationBucket(row.latitude), locationBucket(row.longitude), dateIso,
+        row.prayer_calculation_method ?? 3, row.prayer_school ?? 0
+      );
+      base = timings ? { fajr: timings.Fajr, dhuhr: timings.Dhuhr, asr: timings.Asr, maghrib: timings.Maghrib, isha: timings.Isha } : null;
+    }
+    if (!base) return null;
+    const adjustments = normalizePrayerTimeAdjustments(row.prayer_time_adjustments);
+    return Object.fromEntries(PRAYERS.map((prayer) => [
+      prayer,
+      base?.[prayer] ? adjustClockTime(base[prayer]!, adjustments[prayer]) : null,
+    ])) as Record<PrayerName, { time: string; dayOffset: number } | null>;
   })().catch(() => null);
 
   calculationCache.set(key, {
@@ -216,7 +219,9 @@ async function calculatedNextPrayer(row: NearbyRpcRow, now: Date) {
     timings
       ? PRAYERS.map((prayer) => ({
           prayer,
-          at: zonedTimeToUtc(dateIso, timings[prayer] ?? '', timeZone),
+          at: timings[prayer]
+            ? zonedTimeToUtc(addDays(dateIso, timings[prayer]!.dayOffset), timings[prayer]!.time, timeZone)
+            : null,
         }))
       : []
   ));
@@ -274,7 +279,7 @@ async function enrichRows(rows: NearbyRpcRow[], now: Date) {
 async function fallbackNearbyRows(latitude: number, longitude: number, radiusKm: number, limit: number) {
   const { data, error } = await supabase
     .from('mosques')
-    .select('id,name,city,country,lat,lng,time_zone,timezone,prayer_source,prayer_calculation_method,prayer_school')
+    .select('id,name,city,country,lat,lng,time_zone,timezone,prayer_source,prayer_calculation_method,prayer_school,prayer_time_adjustments')
     .eq('status', 'active')
     .eq('is_active', true)
     .not('lat', 'is', null)
@@ -308,6 +313,7 @@ async function fallbackNearbyRows(latitude: number, longitude: number, radiusKm:
       prayer_school: mosque.prayer_school,
       distance_km: distanceKm,
       prayer_source: mosque.prayer_source,
+      prayer_time_adjustments: mosque.prayer_time_adjustments,
       next_prayer: null,
       next_adhan_at: null,
       is_live: false,
@@ -345,9 +351,17 @@ export async function GET(request: Request) {
       p_limit: limit,
     });
 
-    const rows = error
+    let rows = error
       ? await fallbackNearbyRows(latitude, longitude, radiusKm, limit)
       : (data ?? []) as NearbyRpcRow[];
+    if (!error && rows.length > 0) {
+      const { data: configs } = await supabase
+        .from('mosques')
+        .select('id, prayer_time_adjustments')
+        .in('id', rows.map((row) => row.id));
+      const byId = new Map((configs ?? []).map((config) => [config.id, config.prayer_time_adjustments]));
+      rows = rows.map((row) => ({ ...row, prayer_time_adjustments: byId.get(row.id) ?? null }));
+    }
     const now = new Date();
     const enriched = await enrichRows(rows, now);
     const sorted = enriched.sort((a, b) => {

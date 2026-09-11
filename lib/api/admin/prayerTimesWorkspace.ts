@@ -3,12 +3,21 @@ import { supabase } from '../../supabase';
 import { getDailyPrayerTimes } from '../prayerTimesUnified';
 import { getPrayerTimesByDate, type PrayerTimesRow } from './prayerTimes';
 import { listPrayerScheduleImports, type PrayerScheduleImportRecord } from './prayerScheduleImports';
+import { normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '../../prayerTimeAdjustments';
+
+export type MosquePrayerSettings = {
+  prayerSource: 'aladhan' | 'elm';
+  calculationMethod: number;
+  school: 0 | 1;
+  adjustments: PrayerTimeAdjustments;
+};
 
 export type PrayerTimesWorkspacePayload = {
   currentRow: PrayerTimesRow | null;
   fallbackRow: PrayerTimesRow | null;
   fallbackSource: 'mosque_prayer_times' | 'staff_rota' | null;
   importHistory: PrayerScheduleImportRecord[];
+  prayerSettings: MosquePrayerSettings;
 };
 
 async function loadPrayerTimesWorkspaceFallback(
@@ -36,11 +45,20 @@ async function loadPrayerTimesWorkspaceFallback(
           isha_iqama_time: fallbackNormalized.isha.iqama?.toISOString() ?? null,
         } satisfies PrayerTimesRow);
   const importHistory = await listPrayerScheduleImports(mosqueId, historyLimit).catch(() => []);
+  const { data: mosque } = await supabase.from('mosques')
+    .select('prayer_source, prayer_calculation_method, prayer_school, prayer_time_adjustments')
+    .eq('id', mosqueId).maybeSingle();
   return {
     currentRow,
     fallbackRow,
     fallbackSource: fallbackRow ? 'mosque_prayer_times' : null,
     importHistory,
+    prayerSettings: {
+      prayerSource: mosque?.prayer_source === 'elm' ? 'elm' : 'aladhan',
+      calculationMethod: mosque?.prayer_calculation_method ?? 3,
+      school: mosque?.prayer_school === 1 ? 1 : 0,
+      adjustments: normalizePrayerTimeAdjustments(mosque?.prayer_time_adjustments),
+    },
   };
 }
 
@@ -85,6 +103,14 @@ export async function loadPrayerTimesWorkspace(
       fallbackRow: (payload.fallbackRow ?? null) as PrayerTimesRow | null,
       fallbackSource: (payload.fallbackSource ?? null) as PrayerTimesWorkspacePayload['fallbackSource'],
       importHistory: (payload.importHistory ?? []) as PrayerScheduleImportRecord[],
+      prayerSettings: payload.prayerSettings
+        ? {
+            prayerSource: payload.prayerSettings.prayerSource === 'elm' ? 'elm' : 'aladhan',
+            calculationMethod: payload.prayerSettings.calculationMethod ?? 3,
+            school: payload.prayerSettings.school === 1 ? 1 : 0,
+            adjustments: normalizePrayerTimeAdjustments(payload.prayerSettings.adjustments),
+          }
+        : { prayerSource: 'aladhan', calculationMethod: 3, school: 0, adjustments: normalizePrayerTimeAdjustments(null) },
     };
   } catch (error) {
     console.warn('[loadPrayerTimesWorkspace] server fallback', error);

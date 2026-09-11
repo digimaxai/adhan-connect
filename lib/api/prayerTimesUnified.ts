@@ -3,6 +3,7 @@ import { PrayerName } from '../adhans';
 import { fetchServerApi, resolveApiUrls, supportsServerApi } from './apiBaseUrl';
 import { DEFAULT_ALADHAN_METHOD, fetchAladhanTimes } from './aladhan';
 import { fetchELMTimes } from './londonPrayerTimes';
+import { addMinutes, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '../prayerTimeAdjustments';
 
 export type PrayerTimeSlot = { adhan: Date | null; iqama: Date | null };
 export type NormalizedPrayerTimes = Record<PrayerName, PrayerTimeSlot>;
@@ -44,6 +45,7 @@ type MosquePrayerGeoRow = {
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
   prayer_source?: string | null;
+  prayer_time_adjustments?: PrayerTimeAdjustments | null;
 };
 
 type SourceTimingMaps = {
@@ -136,7 +138,7 @@ async function loadDailyPrayerTimesViaServer(
 async function loadMosquePrayerGeo(mosqueId: string): Promise<MosquePrayerGeoRow | null> {
   const { data: geoFull, error: geoFullErr } = await supabase
     .from('mosques')
-    .select('lat, lng, prayer_calculation_method, prayer_school, prayer_source')
+    .select('lat, lng, prayer_calculation_method, prayer_school, prayer_source, prayer_time_adjustments')
     .eq('id', mosqueId)
     .maybeSingle<MosquePrayerGeoRow>();
 
@@ -245,7 +247,10 @@ async function fillPartialPrayerTimesFromSource(
     };
     nullPrayers.forEach((p) => {
       if (sourceTimings.adhan[p]) {
-        filled[p] = { adhan: safeDateWithBase(sourceTimings.adhan[p], dateIso), iqama: filled[p].iqama };
+        filled[p] = {
+          adhan: addMinutes(safeDateWithBase(sourceTimings.adhan[p], dateIso), normalizePrayerTimeAdjustments(geoRow?.prayer_time_adjustments)[p]),
+          iqama: filled[p].iqama,
+        };
       }
     });
     return filled;
@@ -389,7 +394,7 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   }
 
   // Last resort: auto-calculate from the mosque's configured source (ELM or Aladhan).
-  // ELM also populates iqama from jamaat times; Aladhan provides adhan only.
+  // Both sources provide beginning times only; congregation times remain mosque controlled.
   try {
     const mosqueGeo = await loadMosquePrayerGeo(mosqueId);
     const sourceTimings = await fetchSourceTimingMaps(mosqueGeo, dateIso);
@@ -398,8 +403,8 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
     const calculated = emptyNormalized();
     PRAYER_NAMES.forEach((prayer) => {
       calculated[prayer] = {
-        adhan: safeDateWithBase(sourceTimings.adhan[prayer], dateIso),
-        iqama: safeDateWithBase(sourceTimings.iqama[prayer], dateIso),
+        adhan: addMinutes(safeDateWithBase(sourceTimings.adhan[prayer], dateIso), normalizePrayerTimeAdjustments(mosqueGeo?.prayer_time_adjustments)[prayer]),
+        iqama: null,
       };
     });
     return calculated;

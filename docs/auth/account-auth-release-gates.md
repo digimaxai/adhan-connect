@@ -185,6 +185,15 @@ is ready.
 
 ### Privacy/store configuration
 
+Pre-production legal checkpoint added 9 September 2026 at the owner's request.
+Keep the following as unpublished drafts until the planned release is verified:
+
+- [ ] Finalise the [privacy notice](../legal/privacy-notice-simplified-draft-2026-09-08.md) and [terms](../legal/terms-of-use-draft-2026-09-08.md) against the actual no-sign-up experience and staff controls.
+- [ ] Complete the [publication checklist](../legal/privacy-notice-publication-checklist-2026-09-08.md) and resolve applicable pre-release items in the [UK/EU risk assessment](../legal/uk-eu-risk-assessment-2026-09-09.md).
+- [ ] Confirm company details, purposes/legal bases, retention, transfers, children's approach, reporting/review and data-rights controls. Assess straightforward mosque follows separately from prayer-attendance records and staff roles.
+- [ ] Record review/sign-off, freeze document versions and effective dates, then publish and verify app/site links and any required acceptance or consent flows. Do not treat this checkpoint as approval to publish now.
+
+
 - Confirm Supabase project region, DPA, subprocessors, backups and log periods.
 - Complete LiveKit, EAS, Vercel, Web3Forms, Aladhan, SMTP, Apple and Google
   provider/transfer/retention review.

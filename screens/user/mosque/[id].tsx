@@ -1,7 +1,7 @@
 // app/mosque/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, LayoutChangeEvent, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,6 +37,7 @@ type Mosque = {
   management_info?: string | null;
   services?: string[] | null;
   prayers_not_offered?: string[] | null;
+  prayers_not_offered_reasons?: Record<string, string> | null;
 };
 
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
@@ -177,6 +178,8 @@ export default function MosquePage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [resolvedId, setResolvedId] = useState<string | null>(null);
   const [expandedNoticeIds, setExpandedNoticeIds] = useState<Set<string>>(() => new Set());
+  const [expandedPrayer, setExpandedPrayer] = useState<string | null>(null);
+  const [enquirySummary, setEnquirySummary] = useState({ total: 0, replies: 0 });
   const scrollRef = useRef<ScrollView>(null);
   const sectionOffsetsRef = useRef<Record<string, number>>({});
 
@@ -209,7 +212,7 @@ export default function MosquePage() {
       setLoading(true);
       try {
         let base = null as any;
-        const selectCols = 'id,name,city,country,slug,description,address_line1,address_line2,postcode,contact_phone,contact_email,website,management_info,services,prayers_not_offered';
+        const selectCols = 'id,name,city,country,slug,description,address_line1,address_line2,postcode,contact_phone,contact_email,website,management_info,services,prayers_not_offered,prayers_not_offered_reasons';
 
         if (id && isUuid(id)) {
           const { data } = await supabase.from('mosques').select(selectCols).eq('id', id).maybeSingle();
@@ -379,6 +382,26 @@ export default function MosquePage() {
     load();
   }, [cityParam, countryParam, fallbackMosqueName, id, nameParam, userId]);
 
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    const loadEnquirySummary = async () => {
+      if (!userId || !resolvedId) { if (active) setEnquirySummary({ total: 0, replies: 0 }); return; }
+      const { data, error } = await supabase
+        .from('mosque_enquiries')
+        .select('status')
+        .eq('account_id', userId)
+        .eq('mosque_id', resolvedId)
+        .eq('deleted_by_listener', false);
+      if (!active || error) return;
+      setEnquirySummary({
+        total: data?.length ?? 0,
+        replies: (data ?? []).filter((row) => row.status === 'waiting_for_listener').length,
+      });
+    };
+    void loadEnquirySummary();
+    return () => { active = false; };
+  }, [resolvedId, userId]));
+
   const toggleFollow = async () => {
     const targetMosqueId = resolvedId || (id && isUuid(id) ? id : null);
     if (!userId) {
@@ -539,7 +562,7 @@ export default function MosquePage() {
           <Pressable onPress={() => router.back()} hitSlop={10}>
             <Ionicons name="chevron-back" size={22} color="#0F172A" />
           </Pressable>
-          <Text style={styles.title} numberOfLines={1}>{mosque?.name ?? 'Mosque'}</Text>
+          <Text style={styles.title}>{mosque?.name ?? 'Mosque'}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Pressable onPress={shareMosque} hitSlop={10}>
               <Ionicons name="share-outline" size={18} color="#0F172A" />
@@ -553,7 +576,7 @@ export default function MosquePage() {
             <Text style={styles.identityInitials}>{mosque?.name?.slice(0, 2).toUpperCase() ?? 'MS'}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.identityName} numberOfLines={1}>{mosque?.name ?? 'Mosque'}</Text>
+            <Text style={styles.identityName}>{mosque?.name ?? 'Mosque'}</Text>
             <Text style={styles.identityCity} numberOfLines={1}>{city || 'City, Country'}</Text>
           </View>
           <Pressable
@@ -659,26 +682,76 @@ export default function MosquePage() {
             {displayTimes.map((row) => {
               const isNext = row.key === nextPrayerName;
               const notOffered = mosque?.prayers_not_offered?.includes(row.key.toLowerCase());
+              const prayerKey = row.key.toLowerCase();
+              const reason = mosque?.prayers_not_offered_reasons?.[prayerKey]?.trim();
               return (
-                <View key={row.key} style={[styles.timeRow, isNext && styles.timeRowNext]}>
-                  <Text style={[styles.timeName, isNext && styles.timeNameNext]}>{row.name}</Text>
+                <View key={row.key} style={styles.prayerRowGroup}>
+                  <View style={[styles.timeRow, isNext && !notOffered && styles.timeRowNext]}>
+                    <Text style={[styles.timeName, isNext && !notOffered && styles.timeNameNext]}>{row.name}</Text>
+                    <Text style={[styles.timeValue, isNext && !notOffered && styles.timeValueNext]}>{row.adhan}</Text>
+                    {hasIqamaTimes && (
+                      <Text style={[styles.timeIqama, isNext && !notOffered && styles.timeValueNext]}>
+                        {row.iqama ?? '-'}
+                      </Text>
+                    )}
+                  </View>
                   {notOffered ? (
-                    <Text style={styles.notOfferedLabel} numberOfLines={1}>Not offered here</Text>
-                  ) : (
                     <>
-                      <Text style={[styles.timeValue, isNext && styles.timeValueNext]}>{row.adhan}</Text>
-                      {hasIqamaTimes && (
-                        <Text style={[styles.timeIqama, isNext && styles.timeValueNext]}>
-                          {row.iqama ?? '-'}
-                        </Text>
-                      )}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: expandedPrayer === prayerKey }}
+                        accessibilityLabel={`${row.name} is not offered here. Show reason.`}
+                        onPress={() => setExpandedPrayer((current) => current === prayerKey ? null : prayerKey)}
+                        style={styles.notOfferedTag}
+                      >
+                        <Ionicons name="information-circle-outline" size={14} color="#92400E" />
+                        <Text style={styles.notOfferedLabel}>Not offered here</Text>
+                        <Ionicons name={expandedPrayer === prayerKey ? 'chevron-up' : 'chevron-down'} size={12} color="#92400E" />
+                      </Pressable>
+                      {expandedPrayer === prayerKey ? (
+                        <Text style={styles.notOfferedReason}>{reason || 'A reason has not been provided. Please contact the mosque for details.'}</Text>
+                      ) : null}
                     </>
-                  )}
+                  ) : null}
                 </View>
               );
             })}
           </View>
         </View>
+
+        {/* Jumu'ah follows the daily prayer timetable. */}
+        {showJumuahSection && (
+          <View onLayout={rememberSection('jumuah')} style={[styles.card, styles.shadow]}>
+            <View style={styles.cardHeaderRow}>
+              <View>
+                <Text style={styles.cardTitle}>{isFridayToday() ? "Jumu'ah Today" : "Jumu'ah This Friday"}</Text>
+                <Text style={styles.cardSubtitle}>Friday prayer times.</Text>
+              </View>
+            </View>
+            <View style={styles.divider} />
+            {previewJumuahSlots.map((slot) => (
+              <View key={slot.id} style={styles.jumuahRow}>
+                <View style={styles.jumuahTimeBox}>
+                  <Text style={styles.jumuahTime}>{formatJumuahTime(slot.salah_at) ?? '--:--'}</Text>
+                  {slot.khutbah_at ? <Text style={styles.jumuahKhutbah}>Khutbah {formatJumuahTime(slot.khutbah_at)}</Text> : null}
+                </View>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={styles.jumuahTitle} numberOfLines={1}>{slot.label ?? "Jumu'ah"}</Text>
+                  {[slot.venue, slot.language].filter(Boolean).length
+                    ? <Text style={styles.jumuahMeta} numberOfLines={1}>{[slot.venue, slot.language].filter(Boolean).join(' / ')}</Text>
+                    : null}
+                </View>
+              </View>
+            ))}
+            <Pressable onPress={openJumuahPage} style={({ pressed }) => [styles.jumuahCta, pressed && styles.pressed]}>
+              <View>
+                <Text style={styles.jumuahCtaText}>{"See all Jumu'ah times"}</Text>
+                {hiddenJumuahCount > 0 ? <Text style={styles.jumuahMoreText}>+{hiddenJumuahCount} more time{hiddenJumuahCount === 1 ? '' : 's'} available</Text> : null}
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#0369A1" />
+            </Pressable>
+          </View>
+        )}
 
         {visibleEventsForSection.length > 0 && (
           <View onLayout={rememberSection('events')} style={[styles.card, styles.shadow]}>
@@ -801,45 +874,40 @@ export default function MosquePage() {
           </View>
         )}
 
-        {/* Jumu'ah */}
-        {showJumuahSection && (
-          <View onLayout={rememberSection('jumuah')} style={[styles.card, styles.shadow]}>
-            <View style={styles.cardHeaderRow}>
-              <View>
-                <Text style={styles.cardTitle}>{isFridayToday() ? "Jumu'ah Today" : "Jumu'ah This Friday"}</Text>
-                <Text style={styles.cardSubtitle}>Friday prayer times.</Text>
-              </View>
-            </View>
-            <View style={styles.divider} />
-            {previewJumuahSlots.map((slot) => {
-              return (
-                <View key={slot.id} style={styles.jumuahRow}>
-                  <View style={styles.jumuahTimeBox}>
-                    <Text style={styles.jumuahTime}>{formatJumuahTime(slot.salah_at) ?? '--:--'}</Text>
-                    {slot.khutbah_at
-                      ? <Text style={styles.jumuahKhutbah}>Khutbah {formatJumuahTime(slot.khutbah_at)}</Text>
-                      : null}
-                  </View>
-                  <View style={{ flex: 1, gap: 4 }}>
-                    <Text style={styles.jumuahTitle} numberOfLines={1}>{slot.label ?? "Jumu'ah"}</Text>
-                    {[slot.venue, slot.language].filter(Boolean).length
-                      ? <Text style={styles.jumuahMeta} numberOfLines={1}>{[slot.venue, slot.language].filter(Boolean).join(' / ')}</Text>
-                      : null}
-                  </View>
+        {userId && resolvedId ? (
+          <View style={styles.contactActions}>
+            {enquirySummary.total > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="View my enquiries and mosque replies"
+                onPress={() => router.push('/(user)/mosque-enquiries' as any)}
+                style={({ pressed }) => [styles.enquiriesBtn, pressed && styles.pressed]}
+              >
+                <Ionicons name="mail-unread-outline" size={18} color="#075985" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.enquiriesBtnTitle}>My enquiries & replies</Text>
+                  <Text style={styles.enquiriesBtnMeta}>
+                    {enquirySummary.replies > 0
+                      ? `${enquirySummary.replies} ${enquirySummary.replies === 1 ? 'reply needs' : 'replies need'} your attention`
+                      : `${enquirySummary.total} ${enquirySummary.total === 1 ? 'enquiry' : 'enquiries'} with this mosque`}
+                  </Text>
                 </View>
-              );
-            })}
-            <Pressable onPress={openJumuahPage} style={({ pressed }) => [styles.jumuahCta, pressed && styles.pressed]}>
-              <View>
-                <Text style={styles.jumuahCtaText}>{"See all Jumu'ah times"}</Text>
-                {hiddenJumuahCount > 0
-                  ? <Text style={styles.jumuahMoreText}>+{hiddenJumuahCount} more time{hiddenJumuahCount === 1 ? '' : 's'} available</Text>
-                  : null}
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#0369A1" />
+                {enquirySummary.replies > 0 ? <View style={styles.replyBadge}><Text style={styles.replyBadgeText}>{enquirySummary.replies}</Text></View> : null}
+                <Ionicons name="chevron-forward" size={15} color="#075985" />
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Start a new enquiry with ${mosque?.name ?? 'this mosque'}`}
+              onPress={() => router.push({ pathname: '/(user)/mosque-messages/[mosqueId]', params: { mosqueId: resolvedId } } as any)}
+              style={({ pressed }) => [styles.messageBtn, pressed && styles.pressed]}
+            >
+              <Ionicons name="create-outline" size={17} color="#0369A1" />
+              <Text style={styles.messageBtnText}>Contact your mosque</Text>
+              <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
             </Pressable>
           </View>
-        )}
+        ) : null}
 
         {/* ── About ── */}
         {(mosque?.description || mosque?.address_line1 || mosque?.contact_phone || mosque?.contact_email || mosque?.website || mosque?.management_info || mosque?.services?.length || city) ? (
@@ -965,8 +1033,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8F8F9' },
   body: { paddingHorizontal: 16, paddingBottom: 32, gap: 16 },
   pressed: { opacity: 0.85 },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
-  title: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '800', color: '#0F172A', paddingHorizontal: 12 },
+  topBar: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingVertical: 10 },
+  title: { flex: 1, textAlign: 'center', fontSize: 20, lineHeight: 25, fontWeight: '800', color: '#0F172A', paddingHorizontal: 12 },
 
   identityCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12 },
   identityAvatar: {
@@ -981,6 +1049,28 @@ const styles = StyleSheet.create({
   identityInitials: { fontWeight: '800', color: '#0369A1', fontSize: 16 },
   identityName: { fontWeight: '800', color: '#0F172A', fontSize: 16 },
   identityCity: { color: '#475569', marginTop: 2, fontSize: 13 },
+
+  messageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  messageBtnText: { flex: 1, color: '#1D4ED8', fontSize: 14, fontWeight: '600' },
+  contactActions: { gap: 10 },
+  enquiriesBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#E0F2FE',
+    borderRadius: 12, padding: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: '#7DD3FC',
+  },
+  enquiriesBtnTitle: { color: '#075985', fontSize: 14, fontWeight: '800' },
+  enquiriesBtnMeta: { color: '#0369A1', fontSize: 12, marginTop: 2 },
+  replyBadge: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0284C7' },
+  replyBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
 
   liveCard: { backgroundColor: '#FFF4F4', borderRadius: 16, padding: 16, gap: 12 },
   liveIconWrap: { padding: 6, borderRadius: 12, backgroundColor: '#FFECEC' },
@@ -1030,6 +1120,7 @@ const styles = StyleSheet.create({
     minWidth: 72,
     textAlign: 'right',
   },
+  prayerRowGroup: { paddingVertical: 3 },
   timeRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 3 },
   timeRowNext: {
     backgroundColor: '#EFF6FF',
@@ -1042,7 +1133,9 @@ const styles = StyleSheet.create({
   timeValue: { minWidth: 72, textAlign: 'right', fontWeight: '800', color: '#0F172A', fontSize: 14 },
   timeValueNext: { color: '#0369A1' },
   timeIqama: { minWidth: 72, textAlign: 'right', fontWeight: '700', color: '#475569', fontSize: 14 },
-  notOfferedLabel: { flex: 1, textAlign: 'right', fontSize: 12, fontStyle: 'italic', color: '#94A3B8' },
+  notOfferedTag: { alignSelf: 'flex-start', marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: '#FEF3C7', paddingHorizontal: 9, paddingVertical: 5 },
+  notOfferedLabel: { fontSize: 11, fontWeight: '800', color: '#92400E' },
+  notOfferedReason: { marginTop: 6, marginLeft: 4, color: '#78350F', backgroundColor: '#FFFBEB', borderRadius: 8, padding: 9, fontSize: 12, lineHeight: 17 },
 
   jumuahRow: { flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   jumuahTimeBox: { width: 78, alignItems: 'flex-start', gap: 3 },

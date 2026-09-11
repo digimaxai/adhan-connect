@@ -10,7 +10,7 @@
  * is set to 'elm'. Times sourced directly from East London Mosque, not calculated.
  */
 
-const ELM_API_KEY = process.env.EXPO_PUBLIC_LPT_API_KEY ?? '';
+const ELM_API_KEY = process.env.LPT_API_KEY ?? process.env.EXPO_PUBLIC_LPT_API_KEY ?? '';
 const ELM_BASE_URL = 'https://www.londonprayertimes.com/api/times/';
 
 type ELMTimeValue = string | null;
@@ -92,7 +92,7 @@ function normalizeELMTimings(value: unknown, dateIso: string): ELMTimings | null
  */
 export async function fetchELMTimes(dateIso: string): Promise<ELMTimings | null> {
   if (!ELM_API_KEY) {
-    console.warn('[fetchELMTimes] EXPO_PUBLIC_LPT_API_KEY is not set - skipping ELM fetch');
+    console.warn('[fetchELMTimes] LPT_API_KEY is not set - skipping ELM fetch');
     return null;
   }
 

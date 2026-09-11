@@ -158,6 +158,33 @@ export async function buildAccountExport(
       .range(from, to)
   );
 
+  await addSection(collection, 'mosqueRequests', (from, to) =>
+    supabaseAdmin.from('mosque_add_requests')
+      .select('id, request_type, status, mosque_name, area_description, contact_name, contact_email, contact_phone, contact_website, submitter_role_at_mosque, note, created_at')
+      .eq('submitted_by', userId).order('id').range(from, to)
+  );
+
+  await addSection(collection, 'mosqueMessages', (from, to) =>
+    supabaseAdmin.from('mosque_messages')
+      .select('id, mosque_id, listener_id, sender_id, sender_type, body, read_by_admin, read_by_listener, deleted_by_listener, archived_by_admin, created_at')
+      .or(`listener_id.eq.${userId},sender_id.eq.${userId}`).order('id').range(from, to),
+    (row) => ({ ...row, listener_id: redactOtherUser(row.listener_id, userId), sender_id: redactOtherUser(row.sender_id, userId) })
+  );
+
+  await addSection(collection, 'mosqueEnquiries', (from, to) =>
+    supabaseAdmin.from('mosque_enquiries').select('id, mosque_id, contact_name, contact_email, callback_phone, category, reason, details, status, created_at, updated_at')
+      .eq('account_id', userId).order('id').range(from, to)
+  );
+  await addSection(collection, 'mosqueEnquiryReplies', (from, to) =>
+    supabaseAdmin.from('mosque_enquiry_replies').select('id, enquiry_id, sender_type, body, created_at, mosque_enquiries!inner(account_id)')
+      .eq('mosque_enquiries.account_id', userId).order('id').range(from, to),
+    ({ mosque_enquiries: _owner, ...row }) => row
+  );
+  await addSection(collection, 'mosqueEnquiryStaffReplies', (from, to) =>
+    supabaseAdmin.from('mosque_enquiry_replies').select('id, enquiry_id, sender_type, body, created_at')
+      .eq('sender_id', userId).eq('sender_type', 'admin').order('id').range(from, to)
+  );
+
   await addSection(collection, 'mosqueSubscriptions', (from, to) =>
     supabaseAdmin
       .from('subscriptions')

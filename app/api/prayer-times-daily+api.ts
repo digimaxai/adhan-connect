@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { DEFAULT_ALADHAN_METHOD, fetchAladhanTimes } from '../../lib/api/aladhan';
 import { fetchELMTimes } from '../../lib/api/londonPrayerTimes';
+import { addMinutes, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '../../lib/prayerTimeAdjustments';
 
 type PrayerTimesRow = {
   date?: string | null;
@@ -25,6 +26,7 @@ type MosqueRow = {
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
   prayer_source?: string | null;
+  prayer_time_adjustments?: PrayerTimeAdjustments | null;
 };
 
 const PRAYER_ADHAN_FIELDS = {
@@ -48,6 +50,7 @@ const PRAYER_IQAMA_FIELDS = {
 type SourceTimingMaps = {
   adhan: Partial<Record<PrayerKey, string | null>>;
   iqama: Partial<Record<PrayerKey, string | null>>;
+  effectiveSource: 'elm' | 'aladhan';
 };
 
 function json(body: unknown, status = 200) {
@@ -93,7 +96,7 @@ async function fetchSourceTimingMaps(mosque: MosqueRow | null, dateIso: string):
 
   if (source !== 'elm') {
     const adhan = await fetchAladhanTimingMap(mosque, dateIso, school);
-    return adhan ? { adhan, iqama: {} } : null;
+    return adhan ? { adhan, iqama: {}, effectiveSource: 'aladhan' } : null;
   }
 
   const elmTimings = await fetchELMTimes(dateIso);
@@ -101,7 +104,7 @@ async function fetchSourceTimingMaps(mosque: MosqueRow | null, dateIso: string):
 
   if (!elmTimings) {
     const adhan = await aladhanFallback();
-    return adhan ? { adhan, iqama: {} } : null;
+    return adhan ? { adhan, iqama: {}, effectiveSource: 'aladhan' } : null;
   }
 
   const adhan: SourceTimingMaps['adhan'] = {
@@ -129,7 +132,14 @@ async function fetchSourceTimingMaps(mosque: MosqueRow | null, dateIso: string):
       maghrib: elmTimings.magrib_jamat,
       isha: elmTimings.isha_jamat,
     },
+    effectiveSource: 'elm',
   };
+}
+
+function adjustedIso(dateIso: string, value: string | null | undefined, minutes: number) {
+  const iso = buildIso(dateIso, value);
+  if (!iso) return null;
+  return addMinutes(new Date(iso), minutes)?.toISOString() ?? null;
 }
 
 export const GET: RequestHandler = async (request) => {
@@ -168,7 +178,7 @@ export const GET: RequestHandler = async (request) => {
 
   const mosqueFull = await supabaseAdmin
     .from('mosques')
-    .select('id, status, lat, lng, prayer_calculation_method, prayer_school, prayer_source')
+    .select('id, status, lat, lng, prayer_calculation_method, prayer_school, prayer_source, prayer_time_adjustments')
     .eq('id', mosqueId)
     .maybeSingle<MosqueRow>();
   if (mosqueFull.error?.code === '42703') {
@@ -211,12 +221,13 @@ export const GET: RequestHandler = async (request) => {
 
     if (nullPrayers.length > 0) {
       const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso);
+      const adjustments = normalizePrayerTimeAdjustments(mosque.prayer_time_adjustments);
       if (sourceTimings) {
         nullPrayers.forEach((prayer) => {
           const fallbackTime = sourceTimings.adhan[prayer] ?? null;
           if (fallbackTime) {
             const field = PRAYER_ADHAN_FIELDS[prayer];
-            primaryRow[field] = buildIso(dateIso, fallbackTime);
+            primaryRow[field] = adjustedIso(dateIso, fallbackTime, adjustments[prayer]);
           }
         });
       }
@@ -294,11 +305,12 @@ export const GET: RequestHandler = async (request) => {
   const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso);
   if (sourceTimings) {
     const calculated: PrayerTimesRow = { date: dateIso };
+    const adjustments = normalizePrayerTimeAdjustments(mosque.prayer_time_adjustments);
     (Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[]).forEach((prayer) => {
-      calculated[PRAYER_ADHAN_FIELDS[prayer]] = buildIso(dateIso, sourceTimings.adhan[prayer] ?? null);
-      calculated[PRAYER_IQAMA_FIELDS[prayer]] = buildIso(dateIso, sourceTimings.iqama[prayer] ?? null);
+      calculated[PRAYER_ADHAN_FIELDS[prayer]] = adjustedIso(dateIso, sourceTimings.adhan[prayer] ?? null, adjustments[prayer]);
+      calculated[PRAYER_IQAMA_FIELDS[prayer]] = null;
     });
-    return json({ row: calculated, source: 'auto_calculated' });
+    return json({ row: calculated, source: `auto_calculated_${sourceTimings.effectiveSource}`, adjustments });
   }
 
   return json({ row: null });

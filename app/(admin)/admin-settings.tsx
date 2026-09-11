@@ -214,14 +214,14 @@ export default function AdminSettingsScreen() {
       {/* ── Nav header ── */}
       <View style={styles.navHeader}>
         <Pressable
-          onPress={() => router.push('/(admin)' as any)}
+          onPress={() => router.canGoBack() ? router.back() : router.replace('/(admin)' as any)}
           style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
         >
           <Ionicons name="chevron-back" size={20} color={tokens.color.text.primary} />
-          <AppText style={styles.backLabel}>Console</AppText>
+          <AppText style={styles.backLabel}>Back</AppText>
         </Pressable>
         <AppText style={styles.pageTitle}>Settings</AppText>
-        <View style={styles.backBtn} pointerEvents="none" />
+        <View style={styles.backPlaceholder} pointerEvents="none" />
       </View>
 
       {/* ── Profile card ── */}
@@ -555,7 +555,8 @@ const styles = StyleSheet.create({
 
   // Nav
   navHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, minHeight: 40 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, minWidth: 80 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, minWidth: 80, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#E0F2FE' },
+  backPlaceholder: { minWidth: 80 },
   backLabel: { fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary, fontSize: 15 },
   pageTitle: { fontWeight: tokens.typography.weight.bold, fontSize: 17, color: tokens.color.text.primary },
 

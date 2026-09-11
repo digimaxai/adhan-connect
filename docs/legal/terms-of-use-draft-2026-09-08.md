@@ -1,212 +1,100 @@
 # Adhan Connect Terms of Use
 
-**Draft prepared 8 September 2026 — for legal review before publication.**
-**Not yet published in the app or on any website.**
+**Revised 9 September 2026. Review draft for the planned no-sign-up release; not published.** Reporting, review and acceptance arrangements below must be operational before publication. Read the internal UK/EU risk assessment and publication checklist separately.
 
-Effective date: [to be set on publication]
+Effective date: [insert date]
 
-## Before you rely on this document
+## 1. Who we are and these terms
 
-This is a professionally structured working draft, not a finished legal
-instrument. A qualified lawyer should review it against Maksums Limited's
-actual insurance position, entity structure, and the specific risks of
-operating a faith-community platform before it is published. It should be
-read alongside the companion Privacy Notice (`privacy-notice-draft-2026-09-08.md`),
-which these Terms incorporate by reference, and
-`docs/auth/listener-no-login-review-2026-09-08.md`, the engineering proposal
-describing how "no account required" is intended to actually work — Section
-3 below should be re-checked against whatever implementation is eventually
-built.
+Adhan Connect is developed by **Maksums Digital Agency**, a trading name of **Maksums Ltd**, which operates the service (“we”, “us”).
 
----
+Registered office: [insert]
 
-## 1. Acceptance of these terms
+Company number and registration jurisdiction: [insert]
 
-These Terms of Use ("Terms") govern your use of the Adhan Connect mobile
-application and any related services (together, the "Service"), a product
-developed and operated by **Maksums Limited**, trading as **Maksums
-Digital Agency** ("we", "us", "our"). By using the Service, you agree to
-these Terms. If you do not agree, please do not use the Service.
+Contact for service, content or privacy requests: **privacy@adhanconnect.app**
 
-If you use the app's everyday features, you do not create an account and
-are not asked to click "I agree" — using the app constitutes acceptance of
-these Terms. If you hold a mosque staff role, you will be asked to accept
-these Terms and our Privacy Notice explicitly when your account is created.
+Adhan Connect brings together mosque updates, prayer times and live Adhan in one place. These terms explain what you can expect from us and how we can keep the service useful and respectful for everyone. Please read them before using the service. We will make them available before asking you to accept them and keep a copy accessible. Acceptance does not require a named account. If you do not agree, do not use the service.
 
-## 2. What the Service is
+Our Privacy Notice separately explains how we handle personal information. Agreeing to these terms does not give consent to every use of personal information or replace any separate consent we request.
 
-Adhan Connect helps people find mosques, view prayer times, listen to live
-Adhan broadcasts, follow community updates, and plan attendance at events
-and Friday Jumu'ah prayer. It also gives mosque staff tools to manage
-prayer schedules, staff rotas, live broadcasts, and community content for
-their own mosque.
+## 2. Using Adhan Connect
 
-## 3. Who can use the Service
+You can view prayer times, listen to live Adhan, follow mosques and plan attendance without providing a name or email or creating a staff account. Technical sessions remember your choices as explained in the Privacy Notice. Clearing storage, reinstalling or changing devices may lose access to those choices; automatic recovery or cross-device synchronisation is not promised.
 
-- **Everyday features** — finding mosques, prayer times, live Adhan,
-  following mosques, attendance planning — are available generally,
-  without an account or age verification, because the Service does not ask
-  for the kind of information that would make age verification meaningful.
-  The Service is intended for a general audience; see the Privacy Notice's
-  Children section for the status of our review of what this means for
-  younger users.
-- **Mosque staff accounts** are intended for adults performing an
-  operational role for a mosque, and are gated to those with an
-  administrator or muezzin invitation from a recognised mosque.
+Following a mosque means choosing to receive its information and updates. It does not declare your faith, make you a member of the mosque or indicate that you attend. You can use these features for community information as well as prayer-related updates.
 
-## 4. Prayer times are estimates, not religious rulings
+Mosque-management tools require an authorised staff account. Staff accounts are for people aged 16 or over, subject to applicable law and the mosque's authority to appoint them. A mosque role does not make you our employee or agent, or establish your authority beyond the permissions granted.
 
-Prayer times shown in the app are either published directly by a mosque, or
-calculated using standard astronomical methods (for example, via the
-Aladhan calculation service) when a mosque has not published its own
-schedule. Calculated times are estimates and can be affected by your
-location's precision, the calculation method selected, daylight saving
-transitions, and other factors.
+We give you permission to use the app for its intended purposes while you follow these terms. You retain all rights that applicable law gives you. Additional paid services, if introduced, will have their price and applicable conditions explained before you agree to pay.
 
-**A mosque's own published schedule always takes precedence, and if you are
-ever in doubt about a prayer time, contact the mosque directly or consult a
-qualified religious authority.** We are not a religious authority, we do
-not issue religious rulings (fatawa), and nothing in the Service should be
-treated as one. We are not liable for any consequence of relying on a
-calculated or published time that later proves inaccurate.
+## 3. Prayer times, notifications and guidance
 
-## 5. Live broadcasts
+Times may come from a mosque, imported timetable or calculation using location and a selected method. They can be affected by source errors, timezone settings and timetable changes. Check the mosque's current schedule where timing is important and report apparent mistakes. We do not issue religious rulings; seek appropriate guidance for religious questions.
 
-Live Adhan broadcasts are provided by individual mosques, using either our
-in-app tools or their own external streaming provider. We do not control,
-edit, or verify the content of a live broadcast, and we do not guarantee
-that a broadcast will be available, uninterrupted, or of any particular
-audio quality. Responsibility for the content and conduct of a live
-broadcast rests with the mosque and the individual broadcasting it.
+Broadcasts and notifications depend on the mosque, connectivity, device settings and delivery services. They may be delayed, interrupted or unavailable. Do not rely on the app as your only alarm or as an emergency communication service. These limitations do not remove our responsibility to exercise reasonable care and skill or your legal remedies.
 
-If you believe a broadcast contains inappropriate content, contact us at
-privacy@adhanconnect.app or use any in-app reporting mechanism made
-available.
+Where staff use schedule-import or content-assistance tools, they must check the proposed times, sources and content before publishing. An automatically prepared draft is not confirmation that information is accurate.
 
-## 6. Attendance planning is not a reservation
+## 4. Events, attendance and external links
 
-Where the Service lets you indicate you plan to attend an event or Jumu'ah
-prayer, this is **a planning tool to help the mosque estimate numbers — it
-is not a ticket, a reservation, or a guarantee of a place.** Mosques set
-their own capacity guidance and may not be able to accommodate everyone who
-indicates an intention to attend, particularly where a venue has a genuine
-physical capacity limit. We are not responsible for a mosque's capacity
-decisions or for any inconvenience arising from attendance exceeding
-expectations.
+When you make an attendance plan, you are letting the mosque know you hope to come. This does not reserve a place or provide a ticket, guarantee admission or confirm safe venue occupancy. Counts may change and may not represent distinct people. The organiser controls admission, capacity, accessibility arrangements, changes and cancellations. Contact the organiser to confirm important details before travelling.
 
-## 7. Mosque and community content
+Mosques are responsible for the event and campaign information they submit. An external donation or payment link is not our endorsement or guarantee of the recipient. Check the recipient and applicable conditions before paying; transactions on external services are governed by the relevant organiser's and payment provider's arrangements. We remain responsible for our own legal obligations and actions.
 
-Events, campaigns, announcements, prayer availability information, service
-listings, and other content in the app are created and maintained by each
-mosque's own administrators, not by us. We do not independently verify the
-accuracy of mosque-provided content. Each mosque is responsible for the
-accuracy of the information it publishes through the Service, including
-prayer availability, service listings, and event details.
+## 5. Managing your mosque and sharing content
 
-We reserve the right, but do not undertake an obligation, to remove content
-that we reasonably believe violates these Terms, applicable law, or is
-harmful to users of the Service.
+Use staff tools only for a mosque you are authorised to represent. Keep information accurate, correct material errors promptly, take reasonable care of your credentials and tell us promptly if your authority ends or you suspect compromise. You are not automatically responsible for unauthorised activity you did not cause or negligently enable.
 
-## 8. Acceptable use
+Only broadcast or upload material you have the necessary rights and permissions to share. This includes recordings, performances, photographs, documents and information about other people. Inform people appropriately before broadcasting and avoid capturing private conversations or personal information unnecessarily. Check the permissions and safeguarding arrangements for any child who may be recorded.
 
-You agree not to:
+You or the relevant rights holder keep ownership of submitted content. You grant us a non-exclusive, worldwide, royalty-free licence to host, copy, technically adapt, display and transmit it only as needed to operate and secure the service and deliver it to its intended audience. We may authorise our service providers to perform those tasks. This is not permission to sell your content or use it in unrelated advertising.
 
-- use the Service for any unlawful purpose, or to harass, abuse, or harm
-  another person;
-- attempt to gain unauthorised access to any part of the Service, another
-  user's account, or another mosque's administrative tools;
-- interfere with or disrupt the Service, including live broadcasts, by
-  technical or other means;
-- misrepresent your affiliation with a mosque, or impersonate mosque staff;
-- use any automated system to access the Service in a way that sends more
-  request messages than a human could reasonably produce in the same period,
-  except as expressly permitted;
-- reverse engineer, decompile, or attempt to extract the source code of the
-  application, except to the extent applicable law expressly permits this.
+The licence ends when content is removed from the service, except for limited backup, security or legal retention explained in the Privacy Notice. Those retained copies will not be newly published using this exception. Removal cannot undo transmissions already received by others. If you lose the required rights, stop broadcasting and remove the affected content or contact us.
 
-## 9. Mosque staff accounts
+## 6. Keeping the service respectful and safe
 
-If you hold a mosque staff account, you are responsible for maintaining the
-confidentiality of your credentials and for all activity under your
-account. Notify us immediately at privacy@adhanconnect.app if you suspect
-unauthorised access. We may suspend or terminate a staff account that
-violates these Terms, misuses administrative privileges, or where a
-mosque's own management asks us to remove your access.
+Do not use the service to:
 
-## 10. Intellectual property
+- publish unlawful content, threats, harassment, unlawful discrimination, terrorist material or sexual exploitation material;
+- defame others, disclose private information without a lawful basis, or infringe copyright or other rights;
+- impersonate a mosque or person, publish fraudulent campaigns, or mislead people about events, donations or your authority;
+- deliberately manipulate attendance figures, send spam or disrupt broadcasts;
+- gain unauthorised access, bypass permissions, distribute malware or overload the service;
+- extract personal information or reuse content unlawfully, or reverse engineer the app except where the law permits it.
 
-The Adhan Connect application, its design, and its underlying software are
-owned by Maksums Limited or our licensors and protected by intellectual
-property law. Mosques and their staff retain ownership of the content they
-create and publish through the Service (events, announcements, campaign
-descriptions, uploaded media), and grant us a licence to host, display, and
-transmit that content as necessary to operate the Service.
+These rules apply to broadcasts, uploads, links and staff activity. They do not prohibit lawful criticism, genuine complaints or responsible reporting of security concerns.
 
-## 11. Third-party services
+## 7. Letting us know when something is wrong
 
-The Service relies on third-party infrastructure (described in the Privacy
-Notice) and may link to or display content from external sources (for
-example, a mosque's own website or a linked donation page). We are not
-responsible for the content, accuracy, or practices of third-party
-services we do not control.
+Report illegal, unsafe or infringing content to **privacy@adhanconnect.app**. Include the mosque, event, link or broadcast time, what concerns you and relevant supporting details. If possible, provide a way to contact you. Do not send us illegal images or recordings; identify where the material appears instead. For copyright complaints, explain your rights and identify the allegedly infringing material. If someone is in immediate danger, contact emergency services.
 
-## 12. Disclaimers
+We will assess reports and take appropriate, proportionate action. This can include requesting clarification, correcting or removing content, ending a broadcast, restricting a feature or suspending access. We may act urgently to address a serious safety, security or legal risk. We do not promise that every live broadcast or upload is reviewed before others can access it.
 
-The Service is provided "as is" and "as available," without warranties of
-any kind, whether express or implied, including implied warranties of
-merchantability, fitness for a particular purpose, and non-infringement, to
-the fullest extent permitted by law. We do not warrant that the Service
-will be uninterrupted, error-free, or secure, or that prayer times, live
-broadcasts, or mosque-provided content will be accurate or available at
-any given time.
+Where we restrict your content or access, we will explain the action and reasons unless law, safety or the protection of an investigation prevents disclosure. You can ask us to review a decision by replying to our notice or emailing the contact above with relevant information. We will consider the request fairly and correct mistakes. These arrangements do not limit any reporting, appeal or other rights provided by law.
 
-## 13. Limitation of liability
+## 8. Service changes and ending access
 
-To the fullest extent permitted by law, Maksums Limited will not be liable
-for any indirect, incidental, special, consequential, or punitive damages,
-or any loss of data, use, or goodwill, arising from your use of, or
-inability to use, the Service — including reliance on a prayer time,
-attendance planning information, or a live broadcast. Nothing in these
-Terms excludes or limits liability that cannot lawfully be excluded or
-limited, including liability for death or personal injury caused by
-negligence, or for fraud.
+We may maintain, update or change features to improve the service, address security or legal requirements, or respond to operational constraints. We will give reasonable advance notice of a significant adverse change or planned closure where practicable, except where urgent action is needed. Where applicable law requires particular notice, consent, refunds or other remedies, we will provide them.
 
-## 14. Indemnification
+We may restrict access for serious or repeated breaches, security risks, legal requirements or loss of verified mosque authority. Action will be proportionate; we will normally provide notice and a chance to resolve a remediable issue unless urgency or law prevents this. A disputed request to transfer mosque control may require verification.
 
-If you hold a mosque staff account, you agree to indemnify Maksums Limited
-against claims, losses, or expenses arising from content you publish
-through the Service, or your breach of these Terms, to the extent permitted
-by law.
+You can stop using the app at any time. Staff can ask to end their access. Ending access and deleting personal information are separate processes; the Privacy Notice explains deletion rights and retention. A necessary mosque handover does not remove those rights.
 
-## 15. Termination
+## 9. Responsibility and your legal rights
 
-We may suspend or terminate access to the Service, in whole or in part, at
-any time, for violation of these Terms or for operational reasons. Because
-everyday use of the app does not involve an account, "termination" in that
-case means we may restrict access to specific features or the app
-generally, but there is no account to close. Mosque staff account
-termination is handled as described in the Privacy Notice's account
-deletion section.
+We will provide the service with reasonable care and skill. If our breach of these terms or failure to use reasonable care causes you loss, we are responsible for loss that was reasonably foreseeable. Loss is foreseeable if it was an obvious consequence or was contemplated by you and us when the agreement was made.
 
-## 16. Changes to these Terms
+We are not responsible for loss caused solely by your breach of these terms or by an event outside our reasonable control that reasonable precautions could not have prevented. This does not excuse our own failure to take reasonable care, respond appropriately or meet a legal duty.
 
-We may update these Terms from time to time. We will post the effective
-date at the top of this document, and for material changes, make reasonable
-efforts to notify mosque staff accounts in-app. Continued use of the
-Service after a change takes effect constitutes acceptance of the updated
-Terms.
+If you use the service as a consumer for personal purposes, it is not supplied for business use, and we are not responsible for business losses such as lost profit or business interruption arising from that personal use. Organisational service commitments and any negotiated business liability limits must be set out in a separate agreement with the mosque. A volunteer or staff title alone does not remove an individual's consumer rights.
 
-## 17. Governing law and disputes
+Nothing in these terms excludes or limits liability for death or personal injury caused by negligence, fraud or fraudulent misrepresentation, or any liability or statutory right that cannot lawfully be excluded or limited. This includes applicable consumer remedies and data-protection rights. There is no blanket obligation for individual users or volunteers to reimburse us for all third-party claims.
 
-These Terms are governed by the laws of England and Wales, and any dispute
-arising from them will be subject to the exclusive jurisdiction of the
-courts of England and Wales, without prejudice to any mandatory consumer
-protections available to you in your country of residence.
+## 10. Changes, complaints and governing law
 
-## 18. Contact
+We may change these terms for the reasons described in section 8 or to clarify them. Changes will not retrospectively remove rights relating to an existing dispute. We will explain material changes through an appropriate in-app or other notice and request agreement where required. You can stop using the service if you do not agree, without losing accrued rights.
 
-**privacy@adhanconnect.app**
+Contact us first if you wish to raise a complaint, but this is not a condition of exercising legal rights. English and Welsh law governs these terms, subject to mandatory protections that apply where you habitually live. If you are a consumer, this choice does not deprive you of those protections or require you to use English courts where you are entitled to bring proceedings in your home courts. No mandatory arbitration or waiver of lawful collective remedies is imposed.
 
-Maksums Limited, trading as Maksums Digital Agency
-(operator of the Adhan Connect product)
-[Registered address to be added before publication]
+If a provision is unenforceable, the remaining terms continue where legally possible. Nothing in these terms transfers responsibility for our own legal duties to a mosque or an individual user.

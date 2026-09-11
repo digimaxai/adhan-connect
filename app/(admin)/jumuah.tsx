@@ -252,8 +252,9 @@ export default function AdminJumuahScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <View style={styles.navBar}>
-        <Pressable onPress={() => router.push('/(admin)' as any)} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
+        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(admin)' as any)} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
           <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
+          <AppText>Back</AppText>
         </Pressable>
         <View style={{ flex: 1 }}>
           <AppText variant="sectionTitle" style={styles.navTitle}>Jumuah</AppText>
@@ -428,7 +429,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: tokens.spacing.lg,
     paddingVertical: tokens.spacing.md,
   },
-  navBack: { padding: 4 },
+  navBack: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#E0F2FE' },
   navTitle: { fontSize: 22, fontWeight: tokens.typography.weight.extrabold },
   addBtn: {
     flexDirection: 'row',

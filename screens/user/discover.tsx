@@ -454,12 +454,48 @@ export default function DiscoverMosques() {
         ) : null}
 
         {(isSearching || viewMode === 'following') && directoryEmpty && (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>{isSearching ? 'No mosques found' : 'No followed mosques yet'}</Text>
-            <Text style={styles.emptySubtitle}>
-              {isSearching ? 'Try a different name, city, or postcode.' : 'Search for a mosque and choose Follow.'}
-            </Text>
-          </View>
+          isSearching ? (
+            <View style={styles.missingCard}>
+              <Text style={styles.missingTitle}>
+                {query.trim().length > 0 ? `"${query.trim()}" isn't on Adhan Connect yet` : 'No mosques found'}
+              </Text>
+              <Text style={styles.missingBody}>
+                Help us add it — takes 2 minutes and your congregation could be using Adhan Connect within days.
+              </Text>
+              <View style={styles.missingActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => router.push({ pathname: '/(user)/mosque-onboarding-hub', params: { name: query.trim() } } as any)}
+                  style={({ pressed }) => [styles.missingPrimary, pressed && styles.pressed]}
+                >
+                  <Text style={styles.missingPrimaryText}>Get it added</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setQuery('')}
+                  style={({ pressed }) => [styles.missingGhost, pressed && styles.pressed]}
+                >
+                  <Text style={styles.missingGhostText}>Try another search</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No followed mosques yet</Text>
+              <Text style={styles.emptySubtitle}>Search for a mosque and choose Follow.</Text>
+            </View>
+          )
+        )}
+
+        {!isMuezzinContext && !isLoading && directoryMosques.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/(user)/mosque-onboarding-hub', params: query.trim() ? { name: query.trim() } : {} } as any)}
+            style={({ pressed }) => [styles.missingStrip, pressed && styles.pressed]}
+          >
+            <Text style={styles.missingStripText}>Don't see your mosque?</Text>
+            <Text style={styles.missingStripLink}>Get it added →</Text>
+          </Pressable>
         )}
 
         <View style={styles.list}>
@@ -651,5 +687,49 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontWeight: '800', fontSize: 15, color: '#0F172A' },
   emptySubtitle: { color: '#64748B', fontSize: 13, marginTop: 6, textAlign: 'center' },
+
+  missingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  missingTitle: { fontWeight: '900', fontSize: 16, color: '#0F172A', lineHeight: 22 },
+  missingBody: { fontSize: 13, lineHeight: 19, color: '#64748B', fontWeight: '500' },
+  missingActions: { flexDirection: 'row', gap: 10, marginTop: 4, flexWrap: 'wrap' },
+  missingPrimary: {
+    backgroundColor: '#2F6B45',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  missingPrimaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
+  missingGhost: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  missingGhostText: { color: '#475569', fontWeight: '700', fontSize: 14 },
+
+  missingStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 2,
+    paddingHorizontal: 4,
+  },
+  missingStripText: { fontSize: 13, color: '#94A3B8', fontWeight: '600' },
+  missingStripLink: { fontSize: 13, color: '#0EA5E9', fontWeight: '800' },
+
   shadow: { shadowColor: '#0F172A', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
 });

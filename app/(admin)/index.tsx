@@ -209,6 +209,15 @@ export default function AdminDashboard() {
 
   const contentTools: ToolDef[] = [
     {
+      title: 'Enquiries',
+      description: 'Manage contact requests and replies from your congregation.',
+      href: '/(admin)/messages',
+      icon: 'chatbubbles-outline',
+      iconBg: '#EFF6FF',
+      iconColor: '#1D4ED8',
+      requiresMosque: true,
+    },
+    {
       title: 'Events',
       description: 'Review and manage upcoming mosque events.',
       href: '/(admin)/events',

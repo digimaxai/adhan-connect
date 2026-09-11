@@ -239,20 +239,15 @@ export default function SettingsScreen() {
               marginHorizontal: 18,
             }}
           >
-            Help your mosque join
+            Get your mosque on Adhan Connect
           </Text>
           <SectionCard>
+            <SettingsRow title="My enquiries" subtitle="View your mosque requests and replies" href="/(user)/mosque-enquiries" icon="mail-outline" />
             <SettingsRow
-              title="Invite a mosque"
-              subtitle="Share the management team's contact details"
-              href="/(user)/invite-mosque"
-              icon="paper-plane-outline"
-            />
-            <SettingsRow
-              title="Request a missing mosque"
-              subtitle="Tell us about a mosque you cannot find"
-              href="/(user)/request-mosque"
-              icon="add-circle-outline"
+              title="Get your mosque listed"
+              subtitle="Register, invite, or ask us to reach out — free for mosques"
+              href="/(user)/mosque-onboarding-hub"
+              icon="business-outline"
               last
             />
           </SectionCard>

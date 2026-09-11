@@ -384,11 +384,12 @@ export default function ContentHubScreen() {
       <View style={styles.fixedHeader}>
         <View style={styles.headerRow}>
           <Pressable
-            onPress={() => router.push('/(admin)' as any)}
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/(admin)' as any)}
             style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
             hitSlop={8}
           >
             <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
+            <AppText>Back</AppText>
           </Pressable>
           <View style={styles.headerTitles}>
             {selectedMosque ? (
@@ -487,7 +488,7 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.sm,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backBtn: { padding: 4 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#E0F2FE' },
   headerTitles: { flex: 1 },
   headerMosque: { color: '#0369A1', fontWeight: tokens.typography.weight.semibold, fontSize: tokens.typography.size.xs },
   headerTitle: { fontSize: 22, fontWeight: tokens.typography.weight.extrabold, lineHeight: 28 },

@@ -14,7 +14,7 @@ import { Button, Menu, MenuItem, Select } from '../../../components/admin/web/ui
 import { fetchAllMosqueRows } from '../../../lib/api/admin/mosqueDirectory';
 
 type RequestStatus = 'new' | 'contacted' | 'added' | 'declined';
-type RequestType = 'invite_known_mosque' | 'request_new_mosque';
+type RequestType = 'invite_known_mosque' | 'request_new_mosque' | 'mosque_admin_self';
 
 type MosqueAddRequestRow = {
   id: string;
@@ -26,6 +26,7 @@ type MosqueAddRequestRow = {
   contact_email: string | null;
   contact_phone: string | null;
   contact_website: string | null;
+  submitter_role_at_mosque: string | null;
   note: string | null;
   submitted_by: string;
   created_at: string;
@@ -76,7 +77,33 @@ function StatusPill({ status }: { status: RequestStatus }) {
 }
 
 function requestTypeLabel(type: RequestType) {
-  return type === 'invite_known_mosque' ? 'Invite' : 'Request add';
+  if (type === 'invite_known_mosque') return 'Invite';
+  if (type === 'mosque_admin_self') return 'Self-register';
+  return 'Request add';
+}
+
+const TYPE_COLORS: Record<RequestType, { bg: string; fg: string }> = {
+  mosque_admin_self: { bg: '#f0fdf4', fg: '#15803d' },
+  invite_known_mosque: { bg: '#eff6ff', fg: '#1d4ed8' },
+  request_new_mosque: { bg: '#f8fafc', fg: '#475569' },
+};
+
+function TypePill({ type }: { type: RequestType }) {
+  const config = TYPE_COLORS[type];
+  return (
+    <span
+      style={{
+        padding: '4px 9px',
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 700,
+        backgroundColor: config.bg,
+        color: config.fg,
+      }}
+    >
+      {requestTypeLabel(type)}
+    </span>
+  );
 }
 
 export default function MosqueRequestsPage() {
@@ -125,7 +152,7 @@ function MosqueRequestsShell() {
         let query = supabase
           .from('mosque_add_requests')
           .select(
-            'id, request_type, status, mosque_name, area_description, contact_name, contact_email, contact_phone, contact_website, note, submitted_by, created_at',
+            'id, request_type, status, mosque_name, area_description, contact_name, contact_email, contact_phone, contact_website, submitter_role_at_mosque, note, submitted_by, created_at',
             { count: 'exact' }
           )
           .order('created_at', { ascending: false });
@@ -210,7 +237,7 @@ function MosqueRequestsShell() {
     <AdminShell
       title="Mosque requests"
       breadcrumbs={[{ label: 'Dashboard', href: '/admin' }, { label: 'Mosque requests' }]}
-      description="Listener-submitted invites and add-requests for mosques not yet on the network."
+      description="Self-registrations from mosque staff, listener-submitted invites, and add-requests for mosques not yet on the network."
       mosques={mosqueOptions}
       notices={errorBanner ? <div role="alert" style={styles.errorBanner}>{errorBanner}</div> : null}
     >
@@ -222,7 +249,7 @@ function MosqueRequestsShell() {
 
       <AdminPanel
         title="Requests"
-        subtitle="Review invites for known mosques and add-requests from listeners, then update their status."
+        subtitle="Self-registrations (mosque staff) are the highest-priority leads. Review invites and add-requests, then update their status."
       >
         <div style={styles.toolbar}>
           <Select
@@ -244,6 +271,7 @@ function MosqueRequestsShell() {
             aria-label="Filter by request type"
           >
             <option value="all">All types</option>
+            <option value="mosque_admin_self">Self-register</option>
             <option value="invite_known_mosque">Invite</option>
             <option value="request_new_mosque">Request add</option>
           </Select>
@@ -285,9 +313,14 @@ function MosqueRequestsShell() {
                     {r.note ? <div style={styles.secondaryText}>{r.note}</div> : null}
                   </div>
                 </td>
-                <td style={styles.td}>{requestTypeLabel(r.request_type)}</td>
+                <td style={styles.td}><TypePill type={r.request_type} /></td>
                 <td style={styles.td}>
-                  {contactParts.length ? contactParts.join(' · ') : '—'}
+                  {r.submitter_role_at_mosque ? (
+                    <div style={styles.nameCell}>
+                      <div style={styles.primaryText}>{contactParts.join(' · ') || '—'}</div>
+                      <div style={styles.secondaryText}>{r.submitter_role_at_mosque}</div>
+                    </div>
+                  ) : contactParts.length ? contactParts.join(' · ') : '—'}
                 </td>
                 <td style={styles.td}>{submitter?.display_name || submitter?.email || r.submitted_by.slice(0, 8)}</td>
                 <td style={styles.td}>{new Date(r.created_at).toLocaleDateString()}</td>

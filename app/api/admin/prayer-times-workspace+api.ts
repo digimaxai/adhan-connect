@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'expo-router/server';
 import { hasMosqueAdminAccess, json, requireAdminAccess } from '../../../lib/server/adminAccess';
+import { normalizePrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
 
 type PrayerTimesRow = {
   id?: string;
@@ -154,7 +155,7 @@ export const GET: RequestHandler = async (request) => {
   }
 
   const { supabaseAdmin } = auth.context;
-  const [rowRes, importRes] = await Promise.all([
+  const [rowRes, importRes, mosqueRes] = await Promise.all([
     supabaseAdmin
       .from('prayer_times')
       .select('*')
@@ -171,6 +172,9 @@ export const GET: RequestHandler = async (request) => {
       .order('published_at', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(historyLimit),
+    supabaseAdmin.from('mosques')
+      .select('prayer_source, prayer_calculation_method, prayer_school, prayer_time_adjustments')
+      .eq('id', mosqueId).single(),
   ]);
 
   if (rowRes.error && rowRes.error.code !== 'PGRST116') {
@@ -180,6 +184,7 @@ export const GET: RequestHandler = async (request) => {
   if (importRes.error) {
     return json({ error: importRes.error.message || 'Unable to load prayer-time import history.' }, 500);
   }
+  if (mosqueRes.error) return json({ error: mosqueRes.error.message || 'Unable to load prayer settings.' }, 500);
 
   const currentRow = (rowRes.data ?? null) as PrayerTimesRow | null;
   const fallback: {
@@ -194,5 +199,11 @@ export const GET: RequestHandler = async (request) => {
     fallbackRow: fallback.fallbackRow,
     fallbackSource: fallback.fallbackSource,
     importHistory: (importRes.data ?? []) as PrayerScheduleImportRecord[],
+    prayerSettings: {
+      prayerSource: mosqueRes.data.prayer_source === 'elm' ? 'elm' : 'aladhan',
+      calculationMethod: mosqueRes.data.prayer_calculation_method ?? 3,
+      school: mosqueRes.data.prayer_school === 1 ? 1 : 0,
+      adjustments: normalizePrayerTimeAdjustments(mosqueRes.data.prayer_time_adjustments),
+    },
   });
 };

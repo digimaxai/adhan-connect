@@ -303,7 +303,7 @@ const MosquePickerSheet = React.memo(function MosquePickerSheet({
                 <View style={{ flex: 1 }}>
                   <AppText
                     style={[styles.pickerMosqueName, selected && styles.pickerMosqueNameSelected]}
-                    numberOfLines={1}
+                    numberOfLines={2}
                   >
                     {m.name}
                   </AppText>
@@ -379,7 +379,7 @@ const MosqueIdentityBar = React.memo(function MosqueIdentityBar({
         <AppText style={styles.identityAvatarText}>{initials(mosque.name)}</AppText>
       </View>
       <View style={{ flex: 1 }}>
-        <AppText style={styles.identityName} numberOfLines={1}>{mosque.name}</AppText>
+        <AppText style={styles.identityName}>{mosque.name}</AppText>
         {loc ? (
           <AppText variant="caption" style={styles.identityCity} numberOfLines={1}>{loc}</AppText>
         ) : null}
@@ -1055,6 +1055,7 @@ export default function HomeScreen() {
   const [todayQuote, setTodayQuote] = useState<DailyQuote | null>(null);
   const [crossMosqueAlerts, setCrossMosqueAlerts] = useState<CrossMosqueAlert[]>([]);
   const [homeLoaded, setHomeLoaded] = useState(false);
+  const [enquiryReplies, setEnquiryReplies] = useState(0);
 
   const prayerRequestIdRef = useRef(0);
   const prayerLoadedMosqueRef = useRef<string | null>(null);
@@ -1116,7 +1117,7 @@ export default function HomeScreen() {
   }, [userId]);
 
   const loadHomeData = React.useCallback(async () => {
-    const [mosqueRes, subsRes, streamsRes] = await Promise.all([
+    const [mosqueRes, subsRes, streamsRes, enquiryRes] = await Promise.all([
       supabase
         .from('mosques')
         .select('id, name, city, country, status, lat, lng, prayers_not_offered, prayers_not_offered_reasons')
@@ -1130,6 +1131,9 @@ export default function HomeScreen() {
         .select('id, mosque_id, type, is_live, status, started_at, current_prayer')
         .eq('is_live', true)
         .order('started_at', { ascending: false, nullsFirst: false }),
+      userId
+        ? supabase.from('mosque_enquiries').select('id', { count: 'exact', head: true }).eq('account_id', userId).eq('deleted_by_listener', false).eq('status', 'waiting_for_listener')
+        : Promise.resolve({ count: 0, error: null }),
     ]);
 
     let mosqueRows = !mosqueRes.error && mosqueRes.data ? (mosqueRes.data as Mosque[]) : [];
@@ -1168,6 +1172,7 @@ export default function HomeScreen() {
     } else {
       setLiveStreams({});
     }
+    if (!enquiryRes.error) setEnquiryReplies(enquiryRes.count ?? 0);
 
     setHomeLoaded(true);
 
@@ -1674,6 +1679,22 @@ export default function HomeScreen() {
         otherMosqueLive={otherMosqueLive}
       />
 
+      {enquiryReplies > 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${enquiryReplies} mosque ${enquiryReplies === 1 ? 'reply' : 'replies'} waiting. View my enquiries.`}
+          onPress={() => router.push('/(user)/mosque-enquiries' as any)}
+          style={({ pressed }) => [styles.enquiryReplyBanner, pressed && { opacity: 0.88 }]}
+        >
+          <View style={styles.enquiryReplyIcon}><Ionicons name="mail-unread" size={18} color="#FFFFFF" /></View>
+          <View style={{ flex: 1 }}>
+            <AppText style={styles.enquiryReplyTitle}>{enquiryReplies === 1 ? 'Your mosque has replied' : `${enquiryReplies} mosque replies`}</AppText>
+            <AppText style={styles.enquiryReplyText}>Open My enquiries & replies</AppText>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#075985" />
+        </Pressable>
+      ) : null}
+
       {/* ── Mosque picker modal ── */}
       <MosquePickerSheet
         visible={showMosquePicker}
@@ -1893,6 +1914,10 @@ const styles = StyleSheet.create({
     height: 58, paddingHorizontal: 0,
   },
   appTitle: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '700', letterSpacing: 0.2, color: '#0F172A' },
+  enquiryReplyBanner: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13, borderRadius: 16, backgroundColor: '#E0F2FE', borderWidth: 1, borderColor: '#7DD3FC' },
+  enquiryReplyIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0284C7' },
+  enquiryReplyTitle: { color: '#075985', fontSize: 14, fontWeight: '900' },
+  enquiryReplyText: { color: '#0369A1', fontSize: 12, marginTop: 2 },
 
   // ── First listener visit ──
   firstRunWrap: { gap: 14 },

@@ -27,6 +27,7 @@ import ConfirmDialog from '../../../components/admin/web/ConfirmDialog';
 import { Button, Modal, Pill, Select, TextInput } from '../../../components/admin/web/ui';
 import { ALADHAN_METHODS, DEFAULT_ALADHAN_METHOD } from '../../../lib/api/aladhan';
 import { isValidTimeZone, TIMEZONE_OPTIONS } from '../../../lib/timeZones';
+import { EMPTY_PRAYER_TIME_ADJUSTMENTS, normalizePrayerTimeAdjustments, PRAYER_ADJUSTMENT_KEYS, type PrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
 import type {
   BroadcastReadinessPayload,
   BroadcastReadinessPostAction,
@@ -53,6 +54,7 @@ type MosqueRow = {
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
   prayer_source?: string | null;
+  prayer_time_adjustments?: PrayerTimeAdjustments | null;
   lat?: number | null;
   lng?: number | null;
   description?: string | null;
@@ -235,6 +237,7 @@ function MosqueProfileShell() {
     prayerSource: 'aladhan' as 'aladhan' | 'elm',
     prayerCalculationMethod: DEFAULT_ALADHAN_METHOD,
     prayerSchool: 0,
+    prayerTimeAdjustments: { ...EMPTY_PRAYER_TIME_ADJUSTMENTS },
     liveStreamEnabled: false,
     liveStreamProvider: 'external',
     liveStreamPlaybackUrl: '',
@@ -370,6 +373,7 @@ function MosqueProfileShell() {
       prayerSource: (mosque.prayer_source === 'elm' ? 'elm' : 'aladhan') as 'aladhan' | 'elm',
       prayerCalculationMethod: mosque.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD,
       prayerSchool: mosque.prayer_school ?? 0,
+      prayerTimeAdjustments: normalizePrayerTimeAdjustments(mosque.prayer_time_adjustments),
       liveStreamEnabled: !!mosque.live_stream_enabled,
       liveStreamProvider: normalizeLiveStreamProvider(mosque.live_stream_provider),
       liveStreamPlaybackUrl: mosque.live_stream_playback_url ?? '',
@@ -412,9 +416,8 @@ function MosqueProfileShell() {
   const liveStreamStreamKeyConfigured = !!mosque?.live_stream_stream_key?.trim();
   const liveStreamStatusSecret = mosque?.live_stream_status_secret?.trim() || '';
   const liveStreamListenerSecret = mosque ? resolveLiveStreamListenerSecret(mosque) || '' : '';
-  const editCityIsLondon = editForm.city.trim().toLowerCase().includes('london');
   const editTimeZoneIsListed = TIMEZONE_OPTIONS.some((option) => option.value === editForm.timeZone);
-  const effectivePrayerSource = editCityIsLondon ? editForm.prayerSource : 'aladhan';
+  const effectivePrayerSource = editForm.prayerSource;
   const editProviderProfile = useMemo(() => getLiveStreamProviderProfile(editForm.liveStreamProvider), [editForm.liveStreamProvider]);
   const editProviderUsesExternalEncoder = editProviderProfile.supportsExternalEncoder;
   const editProviderUsesStreamCredential = editProviderProfile.supportsExternalEncoder || editProviderProfile.requiresStreamKey;
@@ -827,6 +830,7 @@ function MosqueProfileShell() {
       prayer_source: effectivePrayerSource,
       prayer_calculation_method: editForm.prayerCalculationMethod,
       prayer_school: editForm.prayerSchool,
+      prayer_time_adjustments: normalizePrayerTimeAdjustments(editForm.prayerTimeAdjustments),
       live_stream_enabled: editForm.liveStreamEnabled,
       live_stream_provider: lsp,
       live_stream_playback_url: lspProfile.requiresPlaybackUrl ? liveStreamPlaybackUrl : null,
@@ -1624,8 +1628,7 @@ function MosqueProfileShell() {
                   <option value="inactive">Inactive</option>
                 </Select>
               </div>
-              {editCityIsLondon && (
-                <div>
+              <div>
                   <label style={styles.label}>Prayer times source</label>
                   <div style={styles.toggleRow}>
                     <Button
@@ -1647,11 +1650,10 @@ function MosqueProfileShell() {
                   </div>
                   <div style={styles.helperText}>
                     {editForm.prayerSource === 'elm'
-                      ? 'Uses the official East London Mosque published timetable. Includes both adhan and congregation (jamaat) times. Manual schedules still take precedence when uploaded.'
+                      ? 'Uses the London Unified beginning-time timetable published by East London Mosque. Your mosque’s congregation times remain separate. Uploaded or manually entered schedules still take precedence.'
                       : 'Uses the Aladhan API to calculate prayer times from coordinates and the selected calculation method below.'}
                   </div>
-                </div>
-              )}
+              </div>
               {effectivePrayerSource === 'aladhan' && (
                 <div>
                   <label style={styles.label} htmlFor="edit-prayer-method">Prayer time calculation method</label>
@@ -1692,6 +1694,28 @@ function MosqueProfileShell() {
                     ? 'ELM provides both Asr times. Shafi: 1× shadow length (earlier). Hanafi: 2× shadow length (later, ~74 min difference in summer). Affects Asr only.'
                     : 'Shafi: shadow length = 1× object (default). Hanafi: shadow length = 2× object — common in South Asian / UK mosques. Affects Asr time only.'}
                 </div>
+              </div>
+              <div>
+                <label style={styles.label}>Automatic beginning-time adjustments</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 8 }}>
+                  {PRAYER_ADJUSTMENT_KEYS.map((prayer) => (
+                    <label key={prayer} style={styles.label}>
+                      {prayer.charAt(0).toUpperCase() + prayer.slice(1)} (minutes)
+                      <TextInput
+                        type="number" min={-30} max={30} step={1}
+                        value={String(editForm.prayerTimeAdjustments[prayer])}
+                        onChange={(event) => setEditForm((previous) => ({
+                          ...previous,
+                          prayerTimeAdjustments: normalizePrayerTimeAdjustments({
+                            ...previous.prayerTimeAdjustments,
+                            [prayer]: Number(event.target.value),
+                          }),
+                        }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div style={styles.helperText}>Use −30 to +30 minutes. Adjustments apply only to automatically calculated beginning times; uploaded and manual schedules remain unchanged.</div>
               </div>
               <div>
                 <label style={styles.label}>Cross-mosque admin access</label>
