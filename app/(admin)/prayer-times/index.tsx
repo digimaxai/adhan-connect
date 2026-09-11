@@ -1007,41 +1007,27 @@ export default function PrayerTimesAdminScreen({
       }
     >
       {showManualOverrideTools || !canManageImports ? (
-        <View style={[styles.workspaceGrid, isWeb ? styles.workspaceGridWeb : null]}>
-          <AppCard style={styles.utilityCard}>
-            <View style={styles.utilityHeader}>
-              <AppText variant="caption" color={tokens.color.text.secondary}>
-                Selected date
-              </AppText>
-              <AppText variant="title">Schedule date</AppText>
-            </View>
-            <DateSelector date={selectedDate} onChange={setSelectedDate} />
-          </AppCard>
-
-          <AppCard style={styles.statusCard}>
-            <View style={styles.utilityHeader}>
-              <AppText variant="caption" color={tokens.color.text.secondary}>
-                Published source
-              </AppText>
-              <AppText variant="title">Schedule status</AppText>
-            </View>
-            <AppText variant="body" style={styles.statusValue}>
-              {scheduleSourceLabel}
+        <AppCard style={styles.utilityCard}>
+          <View style={styles.utilityHeader}>
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              Prayer date
             </AppText>
-            {scheduleSourceMeta ? (
-              <AppText variant="caption" color={tokens.color.text.secondary}>
-                {scheduleSourceMeta}
+            <AppText variant="title">Schedule date</AppText>
+          </View>
+          <DateSelector date={selectedDate} onChange={setSelectedDate} />
+          {currentRow ? (
+            <View style={styles.sourceBadge}>
+              <AppText variant="caption" style={styles.sourceBadgeText}>
+                {currentRow.source_type === 'manual' ? 'Manual correction' : 'Published timetable'}
+                {scheduleSourceMeta ? ` · ${scheduleSourceMeta}` : ''}
               </AppText>
-            ) : null}
-            {currentRow?.source_type ? (
-              <View style={styles.sourceBadge}>
-                <AppText variant="caption" style={styles.sourceBadgeText}>
-                  {currentRow.source_type}
-                </AppText>
-              </View>
-            ) : null}
-          </AppCard>
-        </View>
+            </View>
+          ) : (
+            <View style={[styles.sourceBadge, styles.sourceBadgeMuted]}>
+              <AppText variant="caption" style={styles.sourceBadgeMutedText}>No published schedule · auto-calculated times apply</AppText>
+            </View>
+          )}
+        </AppCard>
       ) : (
         <AppCard subtle style={styles.compactManualCard}>
           <AppText variant="caption" color={tokens.color.text.secondary}>
@@ -1182,7 +1168,7 @@ export default function PrayerTimesAdminScreen({
                   <View key={prayer} style={styles.adjustmentRow}>
                     <AppText variant="body" style={styles.adjustmentLabel}>{prayer.charAt(0).toUpperCase() + prayer.slice(1)}</AppText>
                     <AppButton title="−" variant="ghost" onPress={() => setAdjustments((current) => normalizePrayerTimeAdjustments({ ...current, [prayer]: current[prayer] - 1 }))} disabled={adjustments[prayer] <= -30} />
-                    <AppText variant="body" style={styles.adjustmentValue}>{formatPrayerAdjustment(adjustments[prayer])}</AppText>
+                    <AppText variant="body" style={styles.adjustmentValue}>{adjustments[prayer] === 0 ? '—' : formatPrayerAdjustment(adjustments[prayer])}</AppText>
                     <AppButton title="+" variant="ghost" onPress={() => setAdjustments((current) => normalizePrayerTimeAdjustments({ ...current, [prayer]: current[prayer] + 1 }))} disabled={adjustments[prayer] >= 30} />
                   </View>
                 ))}
@@ -1993,20 +1979,7 @@ export default function PrayerTimesAdminScreen({
             through one controlled pipeline.
           </AppText>
         </AppCard>
-      ) : (
-        <AppCard subtle style={styles.mobileHintCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
-            Bulk import
-          </AppText>
-          <AppText variant="title" style={styles.mobileHintTitle}>
-            Use the web portal for annual timetable uploads
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary}>
-            This mobile screen stays optimized for quick day edits and corrections.
-            Use the web workspace to import, validate, and publish full timetables.
-          </AppText>
-        </AppCard>
-      )}
+      ) : null}
 
       <AppCard subtle style={styles.manualSectionShell}>
         <View style={styles.sectionHeaderRow}>
