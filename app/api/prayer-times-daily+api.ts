@@ -90,7 +90,24 @@ async function fetchAladhanTimingMap(
   };
 }
 
-async function fetchSourceTimingMaps(mosque: MosqueRow | null, dateIso: string): Promise<SourceTimingMaps | null> {
+async function fetchELMTimingsFromDB(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  dateIso: string
+): Promise<import('../../lib/api/londonPrayerTimes').ELMTimings | null> {
+  const { data, error } = await supabaseAdmin
+    .from('elm_timetable')
+    .select('fajr,fajr_jamat,sunrise,dhuhr,dhuhr_jamat,asr,asr_2,asr_jamat,magrib,magrib_jamat,isha,isha_jamat')
+    .eq('date', dateIso)
+    .maybeSingle();
+  if (error || !data) return null;
+  return { date: dateIso, ...data } as import('../../lib/api/londonPrayerTimes').ELMTimings;
+}
+
+async function fetchSourceTimingMaps(
+  mosque: MosqueRow | null,
+  dateIso: string,
+  supabaseAdmin?: ReturnType<typeof createClient>
+): Promise<SourceTimingMaps | null> {
   const source = mosque?.prayer_source ?? 'aladhan';
   const school = mosque?.prayer_school ?? 0;
 
@@ -99,7 +116,9 @@ async function fetchSourceTimingMaps(mosque: MosqueRow | null, dateIso: string):
     return adhan ? { adhan, iqama: {}, effectiveSource: 'aladhan' } : null;
   }
 
-  const elmTimings = await fetchELMTimes(dateIso);
+  // Try DB cache first; fall back to direct ELM API call
+  const elmTimings = (supabaseAdmin ? await fetchELMTimingsFromDB(supabaseAdmin, dateIso) : null)
+    ?? await fetchELMTimes(dateIso);
   const aladhanFallback = async () => fetchAladhanTimingMap(mosque, dateIso, school);
 
   if (!elmTimings) {
@@ -220,7 +239,7 @@ export const GET: RequestHandler = async (request) => {
     );
 
     if (nullPrayers.length > 0) {
-      const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso);
+      const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso, supabaseAdmin);
       const adjustments = normalizePrayerTimeAdjustments(mosque.prayer_time_adjustments);
       if (sourceTimings) {
         nullPrayers.forEach((prayer) => {
@@ -302,7 +321,7 @@ export const GET: RequestHandler = async (request) => {
     return json({ row: fallback, source: 'staff_rota' });
   }
 
-  const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso);
+  const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso, supabaseAdmin);
   if (sourceTimings) {
     const calculated: PrayerTimesRow = { date: dateIso };
     const adjustments = normalizePrayerTimeAdjustments(mosque.prayer_time_adjustments);

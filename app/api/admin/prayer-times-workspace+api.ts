@@ -1,8 +1,9 @@
+import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { hasMosqueAdminAccess, json, requireAdminAccess } from '../../../lib/server/adminAccess';
 import { normalizePrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
 import { fetchAladhanTimes, DEFAULT_ALADHAN_METHOD } from '../../../lib/api/aladhan';
-import { fetchELMTimes } from '../../../lib/api/londonPrayerTimes';
+import { fetchELMTimes, type ELMTimings } from '../../../lib/api/londonPrayerTimes';
 
 type PrayerTimesRow = {
   id?: string;
@@ -148,7 +149,13 @@ async function loadFallbackPrayerRow(
       const row = emptyPrayerRow(mosqueId, dateIso);
 
       if (source === 'elm') {
-        const elm = await fetchELMTimes(dateIso);
+        const elm = (await supabaseAdmin
+          .from('elm_timetable')
+          .select('fajr,fajr_jamat,sunrise,dhuhr,dhuhr_jamat,asr,asr_2,asr_jamat,magrib,magrib_jamat,isha,isha_jamat')
+          .eq('date', dateIso)
+          .maybeSingle()
+          .then(({ data }) => (data ? { date: dateIso, ...data } as ELMTimings : null))
+        ) ?? (await fetchELMTimes(dateIso));
         if (elm) {
           row.fajr_adhan_time = buildIso(dateIso, elm.fajr);
           row.fajr_iqama_time = buildIso(dateIso, elm.fajr_jamat);
