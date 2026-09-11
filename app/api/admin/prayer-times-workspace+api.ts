@@ -1,6 +1,8 @@
 import type { RequestHandler } from 'expo-router/server';
 import { hasMosqueAdminAccess, json, requireAdminAccess } from '../../../lib/server/adminAccess';
 import { normalizePrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
+import { fetchAladhanTimes, DEFAULT_ALADHAN_METHOD } from '../../../lib/api/aladhan';
+import { fetchELMTimes } from '../../../lib/api/londonPrayerTimes';
 
 type PrayerTimesRow = {
   id?: string;
@@ -55,6 +57,14 @@ type StaffRotaFallbackRow = {
   adhan_time?: string | null;
 };
 
+type MosqueGeoSettings = {
+  lat?: number | null;
+  lng?: number | null;
+  prayer_source?: string | null;
+  prayer_calculation_method?: number | null;
+  prayer_school?: number | null;
+};
+
 function buildIso(dateIso: string, timeValue?: string | null) {
   if (!timeValue) return null;
   const normalized = /^\d{1,2}:\d{2}$/.test(timeValue) ? `${timeValue}:00` : timeValue;
@@ -82,8 +92,9 @@ function emptyPrayerRow(mosqueId: string, dateIso: string): PrayerTimesRow {
 async function loadFallbackPrayerRow(
   supabaseAdmin: any,
   mosqueId: string,
-  dateIso: string
-): Promise<{ fallbackRow: PrayerTimesRow | null; fallbackSource: 'mosque_prayer_times' | 'staff_rota' | null }> {
+  dateIso: string,
+  mosqueGeo?: MosqueGeoSettings | null
+): Promise<{ fallbackRow: PrayerTimesRow | null; fallbackSource: 'mosque_prayer_times' | 'staff_rota' | 'auto' | null }> {
   const { data: legacyRow, error: legacyError } = await supabaseAdmin
     .from('mosque_prayer_times')
     .select('prayer_date, fajr, dhuhr, asr, maghrib, isha')
@@ -126,6 +137,48 @@ async function loadFallbackPrayerRow(
       if (prayer === 'isha') row.isha_adhan_time = value;
     });
     return { fallbackRow: row, fallbackSource: 'staff_rota' };
+  }
+
+  // Final fallback: auto-calculate from ELM or Aladhan (server has LPT_API_KEY)
+  if (mosqueGeo) {
+    try {
+      const source = mosqueGeo.prayer_source ?? 'aladhan';
+      const school = mosqueGeo.prayer_school ?? 0;
+      const method = mosqueGeo.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
+      const row = emptyPrayerRow(mosqueId, dateIso);
+
+      if (source === 'elm') {
+        const elm = await fetchELMTimes(dateIso);
+        if (elm) {
+          row.fajr_adhan_time = buildIso(dateIso, elm.fajr);
+          row.fajr_iqama_time = buildIso(dateIso, elm.fajr_jamat);
+          row.dhuhr_adhan_time = buildIso(dateIso, elm.dhuhr);
+          row.dhuhr_iqama_time = buildIso(dateIso, elm.dhuhr_jamat);
+          row.asr_adhan_time = buildIso(dateIso, school === 1 ? elm.asr_2 : elm.asr);
+          row.asr_iqama_time = buildIso(dateIso, elm.asr_jamat);
+          row.maghrib_adhan_time = buildIso(dateIso, elm.magrib);
+          row.maghrib_iqama_time = buildIso(dateIso, elm.magrib_jamat);
+          row.isha_adhan_time = buildIso(dateIso, elm.isha);
+          row.isha_iqama_time = buildIso(dateIso, elm.isha_jamat);
+          const hasTimes = [row.fajr_adhan_time, row.dhuhr_adhan_time, row.asr_adhan_time, row.maghrib_adhan_time, row.isha_adhan_time].some(Boolean);
+          if (hasTimes) return { fallbackRow: row, fallbackSource: 'auto' };
+        }
+      }
+
+      if (mosqueGeo.lat != null && mosqueGeo.lng != null) {
+        const timings = await fetchAladhanTimes(mosqueGeo.lat, mosqueGeo.lng, dateIso, method, school);
+        if (timings) {
+          row.fajr_adhan_time = buildIso(dateIso, timings.Fajr);
+          row.dhuhr_adhan_time = buildIso(dateIso, timings.Dhuhr);
+          row.asr_adhan_time = buildIso(dateIso, timings.Asr);
+          row.maghrib_adhan_time = buildIso(dateIso, timings.Maghrib);
+          row.isha_adhan_time = buildIso(dateIso, timings.Isha);
+          return { fallbackRow: row, fallbackSource: 'auto' };
+        }
+      }
+    } catch {
+      // auto-calc failure is non-fatal; form stays blank
+    }
   }
 
   return { fallbackRow: null, fallbackSource: null };
@@ -173,7 +226,7 @@ export const GET: RequestHandler = async (request) => {
       .order('created_at', { ascending: false })
       .limit(historyLimit),
     supabaseAdmin.from('mosques')
-      .select('prayer_source, prayer_calculation_method, prayer_school, prayer_time_adjustments')
+      .select('lat, lng, prayer_source, prayer_calculation_method, prayer_school, prayer_time_adjustments')
       .eq('id', mosqueId).single(),
   ]);
 
@@ -189,10 +242,10 @@ export const GET: RequestHandler = async (request) => {
   const currentRow = (rowRes.data ?? null) as PrayerTimesRow | null;
   const fallback: {
     fallbackRow: PrayerTimesRow | null;
-    fallbackSource: 'mosque_prayer_times' | 'staff_rota' | null;
+    fallbackSource: 'mosque_prayer_times' | 'staff_rota' | 'auto' | null;
   } = currentRow
     ? { fallbackRow: null, fallbackSource: null }
-    : await loadFallbackPrayerRow(supabaseAdmin, mosqueId, dateIso);
+    : await loadFallbackPrayerRow(supabaseAdmin, mosqueId, dateIso, mosqueRes.data);
 
   return json({
     currentRow,

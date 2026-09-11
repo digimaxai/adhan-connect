@@ -15,7 +15,7 @@ export type MosquePrayerSettings = {
 export type PrayerTimesWorkspacePayload = {
   currentRow: PrayerTimesRow | null;
   fallbackRow: PrayerTimesRow | null;
-  fallbackSource: 'mosque_prayer_times' | 'staff_rota' | null;
+  fallbackSource: 'mosque_prayer_times' | 'staff_rota' | 'auto' | null;
   importHistory: PrayerScheduleImportRecord[];
   prayerSettings: MosquePrayerSettings;
 };

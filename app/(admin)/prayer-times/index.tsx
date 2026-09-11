@@ -468,13 +468,19 @@ export default function PrayerTimesAdminScreen({
           setScheduleSourceLabel(
             payload.fallbackSource === 'staff_rota'
               ? 'Staff rota fallback schedule loaded'
-              : 'Legacy fallback schedule loaded'
+              : payload.fallbackSource === 'auto'
+                ? 'Auto-calculated times loaded'
+                : 'Legacy fallback schedule loaded'
           );
           setScheduleSourceMeta(
-            'Saving will publish a canonical prayer_times row for this date.'
+            payload.fallbackSource === 'auto'
+              ? 'Times are auto-calculated. Edit and save to create a correction for this date.'
+              : 'Saving will publish a canonical prayer_times row for this date.'
           );
           setNotice(
-            'Existing timings were loaded from the fallback source. Save to publish them into the canonical schedule.'
+            payload.fallbackSource === 'auto'
+              ? 'Auto-calculated beginning times are shown. Adjust the times below and save to create a manual correction.'
+              : 'Existing timings were loaded from the fallback source. Save to publish them into the canonical schedule.'
           );
         } else {
           setForm({
