@@ -10,7 +10,6 @@
  * is set to 'elm'. Times sourced directly from East London Mosque, not calculated.
  */
 
-const ELM_API_KEY = process.env.LPT_API_KEY ?? process.env.EXPO_PUBLIC_LPT_API_KEY ?? '';
 const ELM_BASE_URL = 'https://www.londonprayertimes.com/api/times/';
 
 type ELMTimeValue = string | null;
@@ -91,7 +90,8 @@ function normalizeELMTimings(value: unknown, dateIso: string): ELMTimings | null
  * @returns        ELM timings with HH:mm strings in London local time, or null on error
  */
 export async function fetchELMTimes(dateIso: string): Promise<ELMTimings | null> {
-  if (!ELM_API_KEY) {
+  const apiKey = process.env.LPT_API_KEY ?? process.env.EXPO_PUBLIC_LPT_API_KEY ?? '';
+  if (!apiKey) {
     console.warn('[fetchELMTimes] LPT_API_KEY is not set - skipping ELM fetch');
     return null;
   }
@@ -99,7 +99,7 @@ export async function fetchELMTimes(dateIso: string): Promise<ELMTimings | null>
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const url = `${ELM_BASE_URL}?format=json&key=${ELM_API_KEY}&date=${dateIso}&24hours=true`;
+    const url = `${ELM_BASE_URL}?format=json&key=${apiKey}&date=${dateIso}&24hours=true`;
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) return null;
 
