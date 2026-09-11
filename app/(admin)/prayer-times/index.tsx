@@ -527,7 +527,6 @@ export default function PrayerTimesAdminScreen({
         p_prayer_time_adjustments: normalizePrayerTimeAdjustments(adjustments),
       });
       if (saveError) throw saveError;
-      await loadPrayerTimes();
       setNotice('Automatic prayer-time settings saved. Existing uploaded and manual schedules were not changed.');
     } catch (saveError: any) {
       setError(saveError?.message || 'Unable to save automatic prayer-time settings.');
