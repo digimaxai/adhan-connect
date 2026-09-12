@@ -37,19 +37,6 @@ export default function MyRotaScreen() {
   const currentWeekStart = useMemo(() => startOfWeek(new Date()), []);
   const earliestWeekStart = useMemo(() => addDays(currentWeekStart, -7), [currentWeekStart]);
   const latestWeekStart = useMemo(() => addDays(currentWeekStart, 21), [currentWeekStart]);
-
-  const nextDuty = useMemo(() => {
-    if (!entries.length) return null;
-    const now = new Date();
-    const sorted = [...entries].sort((a, b) => {
-      const aDate = new Date(a.date ?? '');
-      const bDate = new Date(b.date ?? '');
-      return aDate.getTime() - bDate.getTime();
-    });
-    return sorted.find((e) => new Date(e.date ?? '') >= now) ?? sorted[sorted.length - 1] ?? null;
-  }, [entries]);
-
-  const totalActionItems = useMemo(() => myRequests.length + openRequests.length, [myRequests, openRequests]);
   const fetchRangeStart = earliestWeekStart;
   const fetchRangeEnd = useMemo(() => addDays(latestWeekStart, 6), [latestWeekStart]);
 
@@ -68,6 +55,19 @@ export default function MyRotaScreen() {
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
   const [requestReason, setRequestReason] = useState('');
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+
+  const nextDuty = useMemo(() => {
+    if (!entries.length) return null;
+    const now = new Date();
+    const sorted = [...entries].sort((a, b) => {
+      const aDate = new Date(a.date ?? '');
+      const bDate = new Date(b.date ?? '');
+      return aDate.getTime() - bDate.getTime();
+    });
+    return sorted.find((e) => new Date(e.date ?? '') >= now) ?? sorted[sorted.length - 1] ?? null;
+  }, [entries]);
+
+  const totalActionItems = useMemo(() => myRequests.length + openRequests.length, [myRequests, openRequests]);
 
   const loadRota = useCallback(async () => {
     setRefreshing(true);
