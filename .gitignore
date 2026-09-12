@@ -42,7 +42,14 @@ yarn-error.*
 app-example
 
 # generated native folders
-/ios
+# /ios is intentionally tracked as a committed baseline for Xcode Cloud, which
+# needs a real .xcodeproj/scheme to detect at workflow-setup time. It is
+# regenerated fresh on every Xcode Cloud run via ios/ci_scripts/ci_post_clone.sh,
+# so local changes to it should not normally be committed by hand — run
+# `expo prebuild --platform ios --clean` again and commit the result instead.
+/ios/Pods
+/ios/build
+/ios/*.xcworkspace
 /android
 
 # Claude Code — dynamic model routing (written per-turn by route-classifier hook)
