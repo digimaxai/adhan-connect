@@ -6,11 +6,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Linking,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -32,18 +30,15 @@ import { AppButton } from '../../components/ui/app-button';
 import { AppCard } from '../../components/ui/app-card';
 import { ScreenContainer } from '../../components/ui/screen-container';
 import { AppText } from '../../components/ui/app-text';
-import {
-  getDefaultMosqueId,
-  setDefaultMosqueId as persistDefaultMosqueId,
-} from '../../lib/mosquePreferences';
+import { getDefaultMosqueId } from '../../lib/mosquePreferences';
 import { useLiveStreamForMosque } from '../shared/hooks/useLiveStreamForMosque';
 import { usePrayerTimesRealtime } from '../shared/hooks/usePrayerTimesRealtime';
 import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/prayerTimesUnified';
 import { computeNextPrayerSummaryAcrossDays } from '../../lib/prayerTimesDisplay';
 import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
+import { MosqueStatusBadge, LiveCapabilityBadge, mosqueHasLiveCapability } from '../../components/MosqueStatusBadge';
 import { tokens } from '../../theme/tokens';
 import { NearYouNowCard } from '../../components/NearYouNowCard';
-import { NearbyHomeSummary } from '../../components/NearbyHomeSummary';
 import { HomeJumuahStrip } from '../../components/HomeJumuahStrip';
 import { useMosquesNearby, type NearbyMosque } from '../../lib/hooks/useMosquesNearby';
 
@@ -52,6 +47,9 @@ import { useMosquesNearby, type NearbyMosque } from '../../lib/hooks/useMosquesN
 type Mosque = {
   id: string; name: string; city?: string | null; country?: string | null;
   status?: string | null; lat?: number | null; lng?: number | null; prayers_not_offered?: string[] | null; prayers_not_offered_reasons?: Record<string, string> | null;
+  onboarding_status?: 'directory_only' | 'in_progress' | 'claimed' | null;
+  live_stream_enabled?: boolean | null;
+  live_stream_provider?: string | null;
 };
 type UserLocation = { latitude: number; longitude: number };
 type Subscription = { mosque_id: string };
@@ -69,9 +67,6 @@ type RawCampaign = {
 type StreamRow = {
   id?: string; mosque_id: string; type?: string | null; is_live: boolean;
   status?: string | null; started_at?: string | null; current_prayer?: string | null;
-};
-type DailyQuote = {
-  id: string; text_en: string; text_ar?: string | null; source?: string | null;
 };
 type CrossMosqueAlert = { announcement: RawAnnouncement; mosque: Mosque };
 
@@ -259,96 +254,19 @@ const MuezzinHero = React.memo(function MuezzinHero({ loading, broadcast, error,
   );
 });
 
-// ─── MosquePickerSheet ────────────────────────────────────────────────────────
-type MosquePickerSheetProps = {
-  visible: boolean;
-  mosques: Mosque[];
-  selectedId: string | null;
-  onSelect: (mosque: Mosque) => void;
-  onClose: () => void;
-  onManage: () => void;
-};
-
-const MosquePickerSheet = React.memo(function MosquePickerSheet({
-  visible, mosques, selectedId, onSelect, onClose, onManage,
-}: MosquePickerSheetProps) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.pickerOverlay} onPress={onClose} />
-      <View style={styles.pickerSheet}>
-        <View style={styles.pickerHandle} />
-        <AppText variant="sectionTitle" style={styles.pickerTitle}>Choose your mosque</AppText>
-        <AppText variant="caption" style={styles.pickerSub}>
-          Prayer times and updates will be based on this mosque.
-        </AppText>
-        <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
-          {mosques.map((m) => {
-            const selected = m.id === selectedId;
-            const loc = [m.city, m.country].filter(Boolean).join(', ');
-            return (
-              <Pressable
-                key={m.id}
-                onPress={() => onSelect(m)}
-                style={({ pressed }) => [
-                  styles.pickerRow,
-                  selected && styles.pickerRowSelected,
-                  pressed && styles.pickerRowPressed,
-                ]}
-              >
-                <View style={[styles.pickerAvatar, selected && styles.pickerAvatarSelected]}>
-                  <AppText style={[styles.pickerAvatarText, selected && styles.pickerAvatarTextSelected]}>
-                    {initials(m.name)}
-                  </AppText>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <AppText
-                    style={[styles.pickerMosqueName, selected && styles.pickerMosqueNameSelected]}
-                    numberOfLines={2}
-                  >
-                    {m.name}
-                  </AppText>
-                  {loc ? (
-                    <AppText variant="caption" style={styles.pickerMosqueCity} numberOfLines={1}>
-                      {loc}
-                    </AppText>
-                  ) : null}
-                </View>
-                {selected ? <Ionicons name="checkmark-circle" size={22} color="#0EA5E9" /> : null}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-        <View style={styles.pickerFooter}>
-          <Pressable
-            onPress={onManage}
-            style={({ pressed }) => [styles.pickerManage, pressed && { opacity: 0.75 }]}
-          >
-            <AppText style={styles.pickerManageText}>Manage</AppText>
-          </Pressable>
-          <Pressable
-            onPress={onClose}
-            style={({ pressed }) => [styles.pickerCancel, pressed && { opacity: 0.75 }]}
-          >
-            <AppText style={styles.pickerCancelText}>Cancel</AppText>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
-  );
-});
-
 // ─── MosqueIdentityBar ────────────────────────────────────────────────────────
 type MosqueIdentityBarProps = {
   mosque: Mosque | null;
-  canSwitch: boolean;
-  onSwitch: () => void;
+  hasOtherMosques: boolean;
+  onOpenMosque: () => void;
   onDiscover: () => void;
+  onManageMosques: () => void;
   hasSubscriptions: boolean;
   otherMosqueLive: boolean;
 };
 
 const MosqueIdentityBar = React.memo(function MosqueIdentityBar({
-  mosque, canSwitch, onSwitch, onDiscover, hasSubscriptions, otherMosqueLive,
+  mosque, hasOtherMosques, onOpenMosque, onDiscover, onManageMosques, hasSubscriptions, otherMosqueLive,
 }: MosqueIdentityBarProps) {
   if (!mosque && !hasSubscriptions) {
     return (
@@ -369,28 +287,35 @@ const MosqueIdentityBar = React.memo(function MosqueIdentityBar({
   const loc = [mosque.city, mosque.country].filter(Boolean).join(', ');
   return (
     <Pressable
-      onPress={canSwitch ? onSwitch : undefined}
-      style={({ pressed }) => [
-        styles.identityBar,
-        canSwitch && pressed && styles.identityBarPressed,
-      ]}
+      onPress={onOpenMosque}
+      style={({ pressed }) => [styles.identityBar, pressed && styles.identityBarPressed]}
     >
       <View style={styles.identityAvatar}>
         <AppText style={styles.identityAvatarText}>{initials(mosque.name)}</AppText>
+        {otherMosqueLive ? <View style={styles.identityLiveDot} /> : null}
       </View>
       <View style={{ flex: 1 }}>
         <AppText style={styles.identityName}>{mosque.name}</AppText>
         {loc ? (
           <AppText variant="caption" style={styles.identityCity} numberOfLines={1}>{loc}</AppText>
         ) : null}
-      </View>
-      {canSwitch ? (
-        <View style={styles.identitySwitchPill}>
-          {otherMosqueLive ? <View style={styles.identityLiveDot} /> : null}
-          <AppText style={styles.identitySwitchText}>Switch</AppText>
-          <Ionicons name="chevron-down" size={12} color="#0369A1" />
+        <View style={styles.identityBadgeRow}>
+          <MosqueStatusBadge status={mosque.onboarding_status} compact />
+          <LiveCapabilityBadge capable={mosqueHasLiveCapability(mosque)} compact />
         </View>
-      ) : null}
+      </View>
+      {hasOtherMosques ? (
+        <Pressable
+          onPress={onManageMosques}
+          hitSlop={8}
+          style={({ pressed }) => [styles.identityMosquesPill, pressed && { opacity: 0.8 }]}
+        >
+          <Ionicons name="business-outline" size={12} color="#0369A1" />
+          <AppText style={styles.identitySwitchText}>My mosques</AppText>
+        </Pressable>
+      ) : (
+        <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+      )}
     </Pressable>
   );
 });
@@ -734,27 +659,6 @@ const RemainingPrayersStrip = React.memo(function RemainingPrayersStrip({
   );
 });
 
-// ─── QuoteOfTheDayCard ────────────────────────────────────────────────────────
-type QuoteOfTheDayCardProps = { quote: DailyQuote };
-
-const QuoteOfTheDayCard = React.memo(function QuoteOfTheDayCard({ quote }: QuoteOfTheDayCardProps) {
-  return (
-    <View style={styles.quoteCard}>
-      <View style={styles.quoteAccentBar} />
-      <View style={styles.quoteBody}>
-        <Text style={styles.quoteLabel}>Daily Reflection</Text>
-        {quote.text_ar ? (
-          <Text style={styles.quoteArabic}>{quote.text_ar}</Text>
-        ) : null}
-        <Text style={styles.quoteText}>{`“${quote.text_en}”`}</Text>
-        {quote.source ? (
-          <Text style={styles.quoteSource}>— {quote.source}</Text>
-        ) : null}
-      </View>
-    </View>
-  );
-});
-
 // ─── Contextual helpers — UNTOUCHED ───────────────────────────────────────────
 
 type LocationChipProps = { status: 'idle' | 'loading' | 'denied'; onPress: () => void };
@@ -780,84 +684,6 @@ const TravelBanner = React.memo(function TravelBanner({ mosqueName, distanceKm, 
       </Text>
       <Ionicons name="chevron-forward" size={14} color="#92400E" />
     </Pressable>
-  );
-});
-
-type MyMosquesStripProps = {
-  mosques: Mosque[];
-  primaryMosqueId: string | null;
-  liveMosqueIds: Set<string>;
-  router: ReturnType<typeof useRouter>;
-};
-
-const MyMosquesStrip = React.memo(function MyMosquesStrip({
-  mosques, primaryMosqueId, liveMosqueIds, router,
-}: MyMosquesStripProps) {
-  const orderedMosques = useMemo(() => {
-    return [...mosques].sort((a, b) => {
-      if (a.id === primaryMosqueId) return -1;
-      if (b.id === primaryMosqueId) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [mosques, primaryMosqueId]);
-
-  if (!orderedMosques.length) return null;
-
-  return (
-    <AppCard style={styles.cardContainer}>
-      <View style={styles.sectionHeader}>
-        <AppText variant="sectionTitle">My Mosques</AppText>
-        <Pressable onPress={() => router.push('/(user)/manage-mosques')} hitSlop={6}>
-          <AppText variant="body" color={tokens.color.text.accent} style={styles.manageLink}>
-            Manage
-          </AppText>
-        </Pressable>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.mosqueStripContent}
-      >
-        {orderedMosques.map((mosque) => {
-          const isPrimary = mosque.id === primaryMosqueId;
-          const isLive = liveMosqueIds.has(mosque.id);
-          return (
-            <Pressable
-              key={mosque.id}
-              onPress={() =>
-                router.push({
-                  pathname: '/(user)/mosque/[id]',
-                  params: {
-                    id: mosque.id,
-                    name: mosque.name,
-                    city: mosque.city ?? '',
-                    country: mosque.country ?? '',
-                  },
-                } as any)
-              }
-              style={({ pressed }) => [styles.mosqueStripChip, pressed && { opacity: 0.82 }]}
-            >
-              <View style={[styles.stripAvatar, isPrimary && styles.stripAvatarPrimary, isLive && styles.stripAvatarLive]}>
-                <AppText style={[styles.stripAvatarText, isLive && styles.stripAvatarTextLive]}>
-                  {initials(mosque.name)}
-                </AppText>
-                {isLive ? <View style={styles.stripLiveDot} /> : null}
-              </View>
-              <AppText style={styles.stripName} numberOfLines={1}>{mosque.name}</AppText>
-              {isLive ? (
-                <View style={styles.stripLivePill}>
-                  <AppText style={styles.stripLivePillText}>LIVE</AppText>
-                </View>
-              ) : isPrimary ? (
-                <AppText style={styles.stripMetaText} numberOfLines={1}>Selected</AppText>
-              ) : mosque.city ? (
-                <AppText style={styles.stripMetaText} numberOfLines={1}>{mosque.city}</AppText>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </AppCard>
   );
 });
 
@@ -1031,7 +857,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
-  const accessToken = session?.access_token ?? null;
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [mosques, setMosques] = useState<Mosque[]>([]);
@@ -1050,9 +875,7 @@ export default function HomeScreen() {
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'enabled' | 'denied'>('idle');
-  const [showMosquePicker, setShowMosquePicker] = useState(false);
   const [contentRefreshKey, setContentRefreshKey] = useState(0);
-  const [todayQuote, setTodayQuote] = useState<DailyQuote | null>(null);
   const [crossMosqueAlerts, setCrossMosqueAlerts] = useState<CrossMosqueAlert[]>([]);
   const [homeLoaded, setHomeLoaded] = useState(false);
   const [enquiryReplies, setEnquiryReplies] = useState(0);
@@ -1120,7 +943,7 @@ export default function HomeScreen() {
     const [mosqueRes, subsRes, streamsRes, enquiryRes] = await Promise.all([
       supabase
         .from('mosques')
-        .select('id, name, city, country, status, lat, lng, prayers_not_offered, prayers_not_offered_reasons')
+        .select('id, name, city, country, status, lat, lng, prayers_not_offered, prayers_not_offered_reasons, onboarding_status, live_stream_enabled, live_stream_provider')
         .order('name', { ascending: true })
         .limit(200),
       userId
@@ -1148,7 +971,7 @@ export default function HomeScreen() {
     if (missingIds.length) {
       const { data: extra, error: extraErr } = await supabase
         .from('mosques')
-        .select('id, name, city, country, status, prayers_not_offered, prayers_not_offered_reasons')
+        .select('id, name, city, country, status, prayers_not_offered, prayers_not_offered_reasons, onboarding_status, live_stream_enabled, live_stream_provider')
         .in('id', missingIds);
       if (!extraErr && extra) mosqueRows = mergeMosqueRows(mosqueRows, extra as Mosque[]);
     }
@@ -1232,17 +1055,6 @@ export default function HomeScreen() {
     }
   }, [locationStatus]);
 
-  const handleSwitchMosque = useCallback(
-    async (mosque: Mosque) => {
-      setShowMosquePicker(false);
-      setDefaultMosqueId(mosque.id);
-      try {
-        await persistDefaultMosqueId(userId, mosque.id, accessToken);
-      } catch { /* best-effort persistence */ }
-    },
-    [accessToken, userId]
-  );
-
   const onRefresh = React.useCallback(async () => {
     const refreshId = ++refreshIdRef.current;
     const visibleMosqueId = primaryMosque?.id ?? defaultMosqueId ?? subs[0]?.mosque_id ?? null;
@@ -1293,21 +1105,24 @@ export default function HomeScreen() {
 
   // ── Stable UI callbacks (prevent React.memo thrashing on memoised children) ──
 
-  const openMosquePicker = useCallback(() => setShowMosquePicker(true), []);
-  const closeMosquePicker = useCallback(() => setShowMosquePicker(false), []);
   const openDiscover = useCallback(() => router.push('/(user)/discover'), [router]);
-  const openNearbyMosques = useCallback(
-    () => router.push({ pathname: '/(user)/discover', params: { view: 'nearby' } }),
-    [router]
-  );
   const requestMissingMosque = useCallback(
     () => router.push('/(user)/request-mosque'),
     [router]
   );
-  const manageMosques = useCallback(() => {
-    setShowMosquePicker(false);
-    router.push('/(user)/manage-mosques');
-  }, [router]);
+  const manageMosques = useCallback(() => router.push('/(user)/manage-mosques'), [router]);
+  const openPrimaryMosque = useCallback(() => {
+    if (!primaryMosque) return;
+    router.push({
+      pathname: '/(user)/mosque/[id]',
+      params: {
+        id: primaryMosque.id,
+        name: primaryMosque.name,
+        city: primaryMosque.city ?? '',
+        country: primaryMosque.country ?? '',
+      },
+    });
+  }, [router, primaryMosque]);
   const handleListenLive = useCallback(
     (mosqueId: string) =>
       router.push({
@@ -1380,7 +1195,7 @@ export default function HomeScreen() {
     (async () => {
       const { data, error } = await supabase
         .from('mosques')
-        .select('id, name, city, country, status, prayers_not_offered, prayers_not_offered_reasons')
+        .select('id, name, city, country, status, prayers_not_offered, prayers_not_offered_reasons, onboarding_status, live_stream_enabled, live_stream_provider')
         .eq('id', defaultMosqueId)
         .maybeSingle();
       if (!cancelled && data && !error) setMosques((prev) => [...prev, data]);
@@ -1404,7 +1219,6 @@ export default function HomeScreen() {
       setRawEvents([]);
       setRawCampaigns([]);
       setPrimaryJumuah(null);
-      setTodayQuote(null);
       return;
     }
 
@@ -1414,7 +1228,7 @@ export default function HomeScreen() {
       const todayStartIso = startOfTodayIso(now);
       const todayDateIso = formatLocalDate(now);
 
-      const [announcementRes, eventRes, campaignRes, jumuahRes, quoteRes] = await Promise.all([
+      const [announcementRes, eventRes, campaignRes, jumuahRes] = await Promise.all([
         supabase
           .from('announcements')
           .select('id,mosque_id,title,summary,created_at,is_urgent,is_pinned')
@@ -1448,12 +1262,6 @@ export default function HomeScreen() {
           .eq('is_active', true)
           .order('sort_order', { ascending: true })
           .order('salah_at', { ascending: true }),
-        supabase
-          .from('mosque_daily_quotes')
-          .select('id,text_en,text_ar,source')
-          .eq('mosque_id', primaryMosque.id)
-          .eq('quote_date', todayDateIso)
-          .maybeSingle(),
       ]);
 
       if (cancelled) return;
@@ -1461,7 +1269,6 @@ export default function HomeScreen() {
       setRawEvents(eventRes.error ? [] : (eventRes.data ?? []) as RawEvent[]);
       setRawCampaigns(campaignRes.error ? [] : (campaignRes.data ?? []) as RawCampaign[]);
       setPrimaryJumuah({ mosqueId: primaryMosque.id, slots: jumuahRes.error ? [] : (jumuahRes.data ?? []) as JumuahSlot[] });
-      setTodayQuote(!quoteRes.error && quoteRes.data ? (quoteRes.data as DailyQuote) : null);
     })();
 
     return () => { cancelled = true; };
@@ -1549,7 +1356,6 @@ export default function HomeScreen() {
     }
     return next;
   }, [liveStreams]);
-  const liveMosqueIds = useMemo(() => new Set(Object.keys(freshLiveStreams)), [freshLiveStreams]);
 
   // ── Live broadcast state for primary mosque (UNTOUCHED logic) ─────────────
 
@@ -1672,9 +1478,10 @@ export default function HomeScreen() {
       {/* ── Mosque identity bar ── */}
       <MosqueIdentityBar
         mosque={primaryMosque}
-        canSwitch={followedMosques.length > 1}
-        onSwitch={openMosquePicker}
+        hasOtherMosques={followedMosques.length > 1}
+        onOpenMosque={openPrimaryMosque}
         onDiscover={openDiscover}
+        onManageMosques={manageMosques}
         hasSubscriptions={subs.length > 0}
         otherMosqueLive={otherMosqueLive}
       />
@@ -1694,16 +1501,6 @@ export default function HomeScreen() {
           <Ionicons name="chevron-forward" size={18} color="#075985" />
         </Pressable>
       ) : null}
-
-      {/* ── Mosque picker modal ── */}
-      <MosquePickerSheet
-        visible={showMosquePicker}
-        mosques={followedMosques}
-        selectedId={primaryMosque?.id ?? null}
-        onSelect={handleSwitchMosque}
-        onClose={closeMosquePicker}
-        onManage={manageMosques}
-      />
 
       {/* ── Discover CTA for new users with no mosque ── */}
       {subs.length === 0 && (
@@ -1840,17 +1637,6 @@ export default function HomeScreen() {
         />
       ) : null}
 
-      {/* ── Daily spiritual reflection ── */}
-      {todayQuote ? <QuoteOfTheDayCard quote={todayQuote} /> : null}
-
-      {/* My mosques */}
-      <MyMosquesStrip
-        mosques={followedMosques}
-        primaryMosqueId={primaryMosque?.id ?? null}
-        liveMosqueIds={liveMosqueIds}
-        router={router}
-      />
-
       {/* ── Other live broadcasts from followed mosques ── */}
       {otherLive.length > 0 && (
         <AppCard style={[styles.cardContainer, { gap: 10 }]}>
@@ -1888,18 +1674,6 @@ export default function HomeScreen() {
           })}
         </AppCard>
       )}
-
-      {/* Nearby context stays compact so the primary mosque and prayer remain first. */}
-      {currentAreaLocation ? (
-        <NearbyHomeSummary
-          mosques={nearby.mosques}
-          loading={nearby.loading}
-          error={nearby.error}
-          onOpenNearby={openNearbyMosques}
-          onListen={(mosque) => handleListenLive(mosque.id)}
-          onRefresh={() => void nearby.refetch()}
-        />
-      ) : null}
 
     </ScreenContainer>
   );
@@ -2085,6 +1859,7 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: tokens.color.bg.tintSoft,
     alignItems: 'center', justifyContent: 'center',
+    position: 'relative',
   },
   identityAvatarText: { fontWeight: '800', color: '#0369A1', fontSize: 13 },
   identityAvatarEmpty: {
@@ -2094,62 +1869,19 @@ const styles = StyleSheet.create({
   identityEmptyText: { flex: 1, color: '#1D4ED8', fontWeight: '700', fontSize: 13 },
   identityName: { color: tokens.color.text.primary, fontWeight: '800', fontSize: 14 },
   identityCity: { color: tokens.color.text.secondary, marginTop: 1 },
-  identitySwitchPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
+  identityBadgeRow: { flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap' },
+  identityMosquesPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 5,
     backgroundColor: '#EFF6FF', borderRadius: tokens.radius.pill,
   },
   identitySwitchText: { color: '#0369A1', fontWeight: '800', fontSize: 12 },
   identityLiveDot: {
-    width: 7, height: 7, borderRadius: 4,
+    position: 'absolute', top: -1, right: -1,
+    width: 10, height: 10, borderRadius: 5,
     backgroundColor: '#F53B57',
+    borderWidth: 2, borderColor: '#FFFFFF',
   },
-
-  // ── Mosque picker ──
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
-  pickerSheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingTop: 12, paddingBottom: 36, paddingHorizontal: 20,
-    maxHeight: '75%',
-  },
-  pickerHandle: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1',
-    alignSelf: 'center', marginBottom: 16,
-  },
-  pickerTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A', marginBottom: 4 },
-  pickerSub: { color: tokens.color.text.secondary, marginBottom: 16 },
-  pickerList: { maxHeight: 320 },
-  pickerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 12, paddingHorizontal: 10,
-    borderRadius: tokens.radius.md, marginBottom: 4,
-  },
-  pickerRowSelected: { backgroundColor: '#EFF6FF' },
-  pickerRowPressed: { opacity: 0.82 },
-  pickerAvatar: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center',
-  },
-  pickerAvatarSelected: { backgroundColor: '#DBEAFE' },
-  pickerAvatarText: { fontWeight: '800', color: '#475569', fontSize: 14 },
-  pickerAvatarTextSelected: { color: '#1D4ED8' },
-  pickerMosqueName: { fontWeight: '700', fontSize: 15, color: '#0F172A' },
-  pickerMosqueNameSelected: { color: '#1D4ED8' },
-  pickerMosqueCity: { color: tokens.color.text.secondary, marginTop: 2 },
-  pickerFooter: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  pickerManage: {
-    flex: 1, paddingVertical: 14,
-    backgroundColor: '#EFF6FF', borderRadius: tokens.radius.lg,
-    alignItems: 'center',
-  },
-  pickerManageText: { fontWeight: '800', color: '#0369A1', fontSize: 15 },
-  pickerCancel: {
-    flex: 1, paddingVertical: 14,
-    backgroundColor: '#F1F5F9', borderRadius: tokens.radius.lg,
-    alignItems: 'center',
-  },
-  pickerCancelText: { fontWeight: '800', color: '#475569', fontSize: 15 },
 
   // ── Hero card — dark (UNTOUCHED) ──
   eyebrow: { color: '#0EA5E9', fontWeight: '700', fontSize: 12, letterSpacing: 0.5 },
@@ -2179,7 +1911,6 @@ const styles = StyleSheet.create({
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardSubtitle: { color: '#7A8290', fontSize: 12, marginTop: 2 },
-  manageLink: { color: '#0EA5E9', fontWeight: '700', fontSize: 13 },
   titleDivider: { height: 1, backgroundColor: '#E6E8EB', marginVertical: 12 },
 
   // ── Prayer table (UNTOUCHED) ──
@@ -2241,30 +1972,6 @@ const styles = StyleSheet.create({
   // ── Campaign progress ──
   campaignTrack: { height: 6, borderRadius: 999, backgroundColor: '#E2E8F0', overflow: 'hidden' },
   campaignFill: { height: '100%', borderRadius: 999, backgroundColor: '#10B981' },
-
-  // ── Horizontal mosque strip ──
-  mosqueStripContent: { paddingTop: 12, paddingHorizontal: 2, paddingBottom: 4, gap: 12 },
-  mosqueStripChip: { alignItems: 'center', width: 76, gap: 5 },
-  stripAvatar: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: '#E0F2FE', alignItems: 'center', justifyContent: 'center',
-  },
-  stripAvatarPrimary: { borderWidth: 2, borderColor: '#38BDF8' },
-  stripAvatarLive: { backgroundColor: '#FEE2E2', borderWidth: 2, borderColor: '#F53B57' },
-  stripAvatarText: { fontWeight: '800', color: '#0369A1', fontSize: 14 },
-  stripAvatarTextLive: { color: '#B91C1C' },
-  stripLiveDot: {
-    position: 'absolute', top: 2, right: 2,
-    width: 10, height: 10, borderRadius: 5,
-    backgroundColor: '#F53B57', borderWidth: 2, borderColor: '#FFFFFF',
-  },
-  stripName: { fontWeight: '700', fontSize: 12, color: '#0F172A', textAlign: 'center' },
-  stripMetaText: { color: '#64748B', fontWeight: '700', fontSize: 10, textAlign: 'center' },
-  stripLivePill: {
-    backgroundColor: '#F53B57', borderRadius: 999,
-    paddingHorizontal: 7, paddingVertical: 2,
-  },
-  stripLivePillText: { color: '#FFFFFF', fontWeight: '800', fontSize: 10 },
 
   // ── Nearby / other live ──
   otherLiveRow: {
@@ -2390,51 +2097,6 @@ const styles = StyleSheet.create({
     borderColor: '#BBF7D0',
   },
   tomorrowFajrChipText: { fontSize: 11, fontWeight: '800', color: '#15803D' },
-
-  // ── Daily reflection / Quote of the Day ──
-  quoteCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFBF2',
-    borderRadius: 18,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    shadowColor: '#F59E0B',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  quoteAccentBar: { width: 4, backgroundColor: '#F59E0B' },
-  quoteBody: { flex: 1, paddingHorizontal: 16, paddingVertical: 14, gap: 6 },
-  quoteLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#D97706',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  quoteArabic: {
-    fontSize: 17,
-    color: '#92400E',
-    textAlign: 'right',
-    lineHeight: 28,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  quoteText: {
-    fontSize: 14,
-    color: '#1C1917',
-    lineHeight: 22,
-    fontStyle: 'italic',
-    fontWeight: '500',
-  },
-  quoteSource: {
-    fontSize: 12,
-    color: '#92400E',
-    fontWeight: '700',
-    marginTop: 2,
-  },
 
   // ── Discover CTA ──
   discoveryCard: {

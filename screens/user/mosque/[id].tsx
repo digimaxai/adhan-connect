@@ -16,6 +16,13 @@ import { promptForSignIn } from '../../../lib/guestAccess';
 import { FOLLOWED_MOSQUE_LIMIT } from '../../../lib/subscriptionLimits';
 import { mosqueServiceLabel } from '../../../lib/mosqueServices';
 import {
+  MosqueStatusBadge,
+  LiveCapabilityBadge,
+  mosqueHasLiveCapability,
+  mosqueStatusDescription,
+  resolveOnboardingStatus,
+} from '../../../components/MosqueStatusBadge';
+import {
   formatJumuahTime,
   isFridayToday,
   JumuahSlot,
@@ -38,6 +45,9 @@ type Mosque = {
   services?: string[] | null;
   prayers_not_offered?: string[] | null;
   prayers_not_offered_reasons?: Record<string, string> | null;
+  onboarding_status?: 'directory_only' | 'in_progress' | 'claimed' | null;
+  live_stream_enabled?: boolean | null;
+  live_stream_provider?: string | null;
 };
 
 type PrayerTimes = Partial<Record<PrayerName, string | null>>;
@@ -212,7 +222,7 @@ export default function MosquePage() {
       setLoading(true);
       try {
         let base = null as any;
-        const selectCols = 'id,name,city,country,slug,description,address_line1,address_line2,postcode,contact_phone,contact_email,website,management_info,services,prayers_not_offered,prayers_not_offered_reasons';
+        const selectCols = 'id,name,city,country,slug,description,address_line1,address_line2,postcode,contact_phone,contact_email,website,management_info,services,prayers_not_offered,prayers_not_offered_reasons,onboarding_status,live_stream_enabled,live_stream_provider';
 
         if (id && isUuid(id)) {
           const { data } = await supabase.from('mosques').select(selectCols).eq('id', id).maybeSingle();
@@ -578,6 +588,10 @@ export default function MosquePage() {
           <View style={{ flex: 1 }}>
             <Text style={styles.identityName}>{mosque?.name ?? 'Mosque'}</Text>
             <Text style={styles.identityCity} numberOfLines={1}>{city || 'City, Country'}</Text>
+            <View style={styles.identityBadgeRow}>
+              <MosqueStatusBadge status={mosque?.onboarding_status} />
+              <LiveCapabilityBadge capable={mosqueHasLiveCapability(mosque)} />
+            </View>
           </View>
           <Pressable
             accessibilityRole="button"
@@ -607,6 +621,13 @@ export default function MosquePage() {
         {userId && !following && subCount >= FOLLOWED_MOSQUE_LIMIT && (
           <Text style={styles.limitNote}>{`You are following ${FOLLOWED_MOSQUE_LIMIT} mosques (maximum).`}</Text>
         )}
+
+        {mosque && resolveOnboardingStatus(mosque.onboarding_status) !== 'claimed' ? (
+          <View style={styles.statusNoteCard}>
+            <Ionicons name="information-circle-outline" size={16} color="#64748B" />
+            <Text style={styles.statusNoteText}>{mosqueStatusDescription(mosque.onboarding_status)}</Text>
+          </View>
+        ) : null}
 
         {/* ── Live broadcast ── */}
         {liveInfo.isLive && (
@@ -1049,6 +1070,20 @@ const styles = StyleSheet.create({
   identityInitials: { fontWeight: '800', color: '#0369A1', fontSize: 16 },
   identityName: { fontWeight: '800', color: '#0F172A', fontSize: 16 },
   identityCity: { color: '#475569', marginTop: 2, fontSize: 13 },
+  identityBadgeRow: { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
+
+  statusNoteCard: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  statusNoteText: { flex: 1, color: '#475569', fontSize: 12, lineHeight: 18 },
 
   messageBtn: {
     flexDirection: 'row',

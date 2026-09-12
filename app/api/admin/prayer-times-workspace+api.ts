@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { hasMosqueAdminAccess, json, requireAdminAccess } from '../../../lib/server/adminAccess';
-import { normalizePrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
+import { addMinutes, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
 import { fetchAladhanTimes, DEFAULT_ALADHAN_METHOD } from '../../../lib/api/aladhan';
 import { fetchELMTimes, type ELMTimings } from '../../../lib/api/londonPrayerTimes';
 
@@ -64,13 +64,44 @@ type MosqueGeoSettings = {
   prayer_source?: string | null;
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
+  prayer_time_adjustments?: PrayerTimeAdjustments | null;
 };
+
+function getLondonOffsetMinutes(dateIso: string): number {
+  // Get London UTC offset at noon on the given date (avoids DST edge cases)
+  const utcNoon = new Date(`${dateIso}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(utcNoon);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 12);
+  const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  return h * 60 + m - 720; // London hours/mins at UTC noon minus 720 = offset in minutes
+}
 
 function buildIso(dateIso: string, timeValue?: string | null) {
   if (!timeValue) return null;
   const normalized = /^\d{1,2}:\d{2}$/.test(timeValue) ? `${timeValue}:00` : timeValue;
-  const parsed = new Date(`${dateIso}T${normalized}`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  const [hStr, mStr, sStr = '0'] = normalized.split(':');
+  const h = Number(hStr), min = Number(mStr), s = Number(sStr);
+  if (Number.isNaN(h) || Number.isNaN(min)) return null;
+  // ELM/prayer times are London local — convert to UTC before building ISO
+  const offsetMin = getLondonOffsetMinutes(dateIso);
+  const utcMs = Date.UTC(
+    Number(dateIso.slice(0, 4)),
+    Number(dateIso.slice(5, 7)) - 1,
+    Number(dateIso.slice(8, 10)),
+    h, min, s
+  ) - offsetMin * 60 * 1000;
+  return new Date(utcMs).toISOString();
+}
+
+function adjustedIso(dateIso: string, timeValue: string | null | undefined, minutes: number) {
+  const iso = buildIso(dateIso, timeValue);
+  if (!iso) return null;
+  return addMinutes(new Date(iso), minutes)?.toISOString() ?? null;
 }
 
 function emptyPrayerRow(mosqueId: string, dateIso: string): PrayerTimesRow {
@@ -146,6 +177,7 @@ async function loadFallbackPrayerRow(
       const source = mosqueGeo.prayer_source ?? 'aladhan';
       const school = mosqueGeo.prayer_school ?? 0;
       const method = mosqueGeo.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD;
+      const adjustments = normalizePrayerTimeAdjustments(mosqueGeo.prayer_time_adjustments);
       const row = emptyPrayerRow(mosqueId, dateIso);
 
       if (source === 'elm') {
@@ -157,15 +189,15 @@ async function loadFallbackPrayerRow(
           .then(({ data }) => (data ? { date: dateIso, ...data } as ELMTimings : null))
         ) ?? (await fetchELMTimes(dateIso));
         if (elm) {
-          row.fajr_adhan_time = buildIso(dateIso, elm.fajr);
+          row.fajr_adhan_time = adjustedIso(dateIso, elm.fajr, adjustments.fajr);
           row.fajr_iqama_time = buildIso(dateIso, elm.fajr_jamat);
-          row.dhuhr_adhan_time = buildIso(dateIso, elm.dhuhr);
+          row.dhuhr_adhan_time = adjustedIso(dateIso, elm.dhuhr, adjustments.dhuhr);
           row.dhuhr_iqama_time = buildIso(dateIso, elm.dhuhr_jamat);
-          row.asr_adhan_time = buildIso(dateIso, school === 1 ? elm.asr_2 : elm.asr);
+          row.asr_adhan_time = adjustedIso(dateIso, school === 1 ? elm.asr_2 : elm.asr, adjustments.asr);
           row.asr_iqama_time = buildIso(dateIso, elm.asr_jamat);
-          row.maghrib_adhan_time = buildIso(dateIso, elm.magrib);
+          row.maghrib_adhan_time = adjustedIso(dateIso, elm.magrib, adjustments.maghrib);
           row.maghrib_iqama_time = buildIso(dateIso, elm.magrib_jamat);
-          row.isha_adhan_time = buildIso(dateIso, elm.isha);
+          row.isha_adhan_time = adjustedIso(dateIso, elm.isha, adjustments.isha);
           row.isha_iqama_time = buildIso(dateIso, elm.isha_jamat);
           const hasTimes = [row.fajr_adhan_time, row.dhuhr_adhan_time, row.asr_adhan_time, row.maghrib_adhan_time, row.isha_adhan_time].some(Boolean);
           if (hasTimes) return { fallbackRow: row, fallbackSource: 'auto' };
@@ -175,11 +207,11 @@ async function loadFallbackPrayerRow(
       if (mosqueGeo.lat != null && mosqueGeo.lng != null) {
         const timings = await fetchAladhanTimes(mosqueGeo.lat, mosqueGeo.lng, dateIso, method, school);
         if (timings) {
-          row.fajr_adhan_time = buildIso(dateIso, timings.Fajr);
-          row.dhuhr_adhan_time = buildIso(dateIso, timings.Dhuhr);
-          row.asr_adhan_time = buildIso(dateIso, timings.Asr);
-          row.maghrib_adhan_time = buildIso(dateIso, timings.Maghrib);
-          row.isha_adhan_time = buildIso(dateIso, timings.Isha);
+          row.fajr_adhan_time = adjustedIso(dateIso, timings.Fajr, adjustments.fajr);
+          row.dhuhr_adhan_time = adjustedIso(dateIso, timings.Dhuhr, adjustments.dhuhr);
+          row.asr_adhan_time = adjustedIso(dateIso, timings.Asr, adjustments.asr);
+          row.maghrib_adhan_time = adjustedIso(dateIso, timings.Maghrib, adjustments.maghrib);
+          row.isha_adhan_time = adjustedIso(dateIso, timings.Isha, adjustments.isha);
           return { fallbackRow: row, fallbackSource: 'auto' };
         }
       }

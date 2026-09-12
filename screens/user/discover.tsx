@@ -21,6 +21,7 @@ import { FOLLOWED_MOSQUE_LIMIT } from '../../lib/subscriptionLimits';
 import { supabase } from '../../lib/supabase';
 import { NearYouNowCard } from '../../components/NearYouNowCard';
 import { useMosquesNearby, type NearbyMosque } from '../../lib/hooks/useMosquesNearby';
+import { MosqueStatusBadge, LiveCapabilityBadge, mosqueHasLiveCapability, type MosqueOnboardingStatus } from '../../components/MosqueStatusBadge';
 
 type MosqueView = 'nearby' | 'following';
 
@@ -33,6 +34,9 @@ type MosqueRow = {
   is_live?: boolean | null;
   lat?: number | null;
   lng?: number | null;
+  onboarding_status?: MosqueOnboardingStatus;
+  live_stream_enabled?: boolean | null;
+  live_stream_provider?: string | null;
 };
 
 type UserLocation = {
@@ -40,7 +44,7 @@ type UserLocation = {
   longitude: number;
 };
 
-const MOSQUE_SELECT = 'id,name,city,country,lat,lng';
+const MOSQUE_SELECT = 'id,name,city,country,lat,lng,onboarding_status,live_stream_enabled,live_stream_provider';
 
 const toRadians = (degrees: number) => degrees * (Math.PI / 180);
 
@@ -151,6 +155,27 @@ export default function DiscoverMosques() {
     return rows.map((row) => ({ ...row, ...coordinateMap.get(row.id) }));
   }, []);
 
+  const attachMissingOnboardingInfo = useCallback(async (rows: MosqueRow[]) => {
+    const missingIds = rows
+      .filter((row) => row.id && row.onboarding_status === undefined)
+      .map((row) => row.id);
+
+    if (!missingIds.length) return rows;
+
+    const { data, error } = await supabase
+      .from('mosques')
+      .select('id,onboarding_status,live_stream_enabled,live_stream_provider')
+      .in('id', Array.from(new Set(missingIds)));
+
+    if (error || !Array.isArray(data)) return rows;
+
+    const infoMap = new Map(
+      (data as Pick<MosqueRow, 'id' | 'onboarding_status' | 'live_stream_enabled' | 'live_stream_provider'>[]).map((row) => [row.id, row])
+    );
+
+    return rows.map((row) => ({ ...row, ...infoMap.get(row.id) }));
+  }, []);
+
   const fetchMosqueFallback = useCallback(async (term: string) => {
     const safeTerm = escapePostgrestSearchTerm(term);
     const buildQuery = (select: string) => {
@@ -190,6 +215,7 @@ export default function DiscoverMosques() {
       }
 
       if (activeLocation) rows = await attachMissingCoordinates(rows);
+      rows = await attachMissingOnboardingInfo(rows);
 
       setMosques(sortMosques(withDistances(rows, activeLocation ?? null), activeLocation ?? null));
     } catch {
@@ -197,7 +223,7 @@ export default function DiscoverMosques() {
     } finally {
       setIsLoading(false);
     }
-  }, [attachMissingCoordinates, fetchMosqueFallback, userLocation]);
+  }, [attachMissingCoordinates, attachMissingOnboardingInfo, fetchMosqueFallback, userLocation]);
 
   useEffect(() => {
     void fetchFollowing();
@@ -532,6 +558,10 @@ export default function DiscoverMosques() {
                       {[m.city, m.country].filter(Boolean).join(', ')}
                     </Text>
                     {distanceLabel && <Text style={styles.rowMeta}>{distanceLabel}</Text>}
+                    <View style={styles.rowBadges}>
+                      <MosqueStatusBadge status={m.onboarding_status} compact />
+                      <LiveCapabilityBadge capable={mosqueHasLiveCapability(m)} compact />
+                    </View>
                   </View>
                 </Pressable>
                 <Pressable
@@ -653,6 +683,7 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A', flexShrink: 1 },
   rowSub: { color: '#475569', fontSize: 13, marginTop: 2 },
   rowMeta: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
+  rowBadges: { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
   livePill: { backgroundColor: '#FEE2E2', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   livePillText: { color: '#B91C1C', fontWeight: '700', fontSize: 11 },
   btnPrimary: {
