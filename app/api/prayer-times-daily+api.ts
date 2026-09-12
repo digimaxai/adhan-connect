@@ -63,11 +63,35 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function getLondonOffsetMinutes(dateIso: string): number {
+  // Get London UTC offset at noon on the given date (avoids DST edge cases)
+  const utcNoon = new Date(`${dateIso}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(utcNoon);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 12);
+  const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  return h * 60 + m - 720; // London hours/mins at UTC noon minus 720 = offset in minutes
+}
+
 function buildIso(dateIso: string, timeValue?: string | null) {
   if (!timeValue) return null;
   const normalized = /^\d{1,2}:\d{2}$/.test(timeValue) ? `${timeValue}:00` : timeValue;
-  const parsed = new Date(`${dateIso}T${normalized}`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  const [hStr, mStr, sStr = '0'] = normalized.split(':');
+  const h = Number(hStr), min = Number(mStr), s = Number(sStr);
+  if (Number.isNaN(h) || Number.isNaN(min)) return null;
+  // ELM/prayer times are London local — convert to UTC before building ISO
+  const offsetMin = getLondonOffsetMinutes(dateIso);
+  const utcMs = Date.UTC(
+    Number(dateIso.slice(0, 4)),
+    Number(dateIso.slice(5, 7)) - 1,
+    Number(dateIso.slice(8, 10)),
+    h, min, s
+  ) - offsetMin * 60 * 1000;
+  return new Date(utcMs).toISOString();
 }
 
 async function fetchAladhanTimingMap(
