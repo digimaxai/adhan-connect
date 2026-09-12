@@ -232,10 +232,36 @@ function getPrayerTimeValue(row: PrayerTimesRow | undefined, prayerName: string,
   return null;
 }
 
+async function loadElmTimetableRows(supabaseAdmin: any, startIso: string, endIso: string) {
+  const { data } = await supabaseAdmin
+    .from('elm_timetable')
+    .select('date,fajr,fajr_jamat,dhuhr,dhuhr_jamat,asr,asr_2,asr_jamat,magrib,magrib_jamat,isha,isha_jamat')
+    .gte('date', startIso)
+    .lte('date', endIso);
+  return (data ?? []) as any[];
+}
+
+function elmRowToPrayerTimesRow(row: any, prayerSchool: string | null): PrayerTimesRow {
+  const isHanafi = prayerSchool === 'hanafi';
+  return {
+    date: row.date,
+    fajr_adhan_time: row.fajr ?? null,
+    fajr_iqama_time: row.fajr_jamat ?? null,
+    dhuhr_adhan_time: row.dhuhr ?? null,
+    dhuhr_iqama_time: row.dhuhr_jamat ?? null,
+    asr_adhan_time: (isHanafi ? row.asr_2 : row.asr) ?? null,
+    asr_iqama_time: row.asr_jamat ?? null,
+    maghrib_adhan_time: row.magrib ?? null,
+    maghrib_iqama_time: row.magrib_jamat ?? null,
+    isha_adhan_time: row.isha ?? null,
+    isha_iqama_time: row.isha_jamat ?? null,
+  };
+}
+
 async function loadDefaultMuezzinUserId(supabaseAdmin: any, mosqueId: string) {
   const { data: mosqueRow, error: mosqueError } = await supabaseAdmin
     .from('mosques')
-    .select('default_muezzin_user_id')
+    .select('default_muezzin_user_id, prayer_school')
     .eq('id', mosqueId)
     .maybeSingle();
 
@@ -244,8 +270,10 @@ async function loadDefaultMuezzinUserId(supabaseAdmin: any, mosqueId: string) {
     throw mosqueError;
   }
 
-  const defaultUserId = (mosqueRow as { default_muezzin_user_id?: string | null } | null)?.default_muezzin_user_id ?? null;
-  if (!defaultUserId) return null;
+  const mosqueData = mosqueRow as { default_muezzin_user_id?: string | null; prayer_school?: string | null } | null;
+  const prayerSchool = mosqueData?.prayer_school ?? null;
+  const defaultUserId = mosqueData?.default_muezzin_user_id ?? null;
+  if (!defaultUserId) return { defaultMuezzinUserId: null, prayerSchool };
 
   const { data: assignment, error: assignmentError } = await supabaseAdmin
     .from('muezzins')
@@ -259,7 +287,8 @@ async function loadDefaultMuezzinUserId(supabaseAdmin: any, mosqueId: string) {
   }
 
   const assignmentRow = assignment as { user_id?: string | null; is_active?: boolean | null } | null;
-  return assignmentRow?.user_id && assignmentRow.is_active !== false ? defaultUserId : null;
+  const resolvedUserId = assignmentRow?.user_id && assignmentRow.is_active !== false ? defaultUserId : null;
+  return { defaultMuezzinUserId: resolvedUserId, prayerSchool };
 }
 
 function buildExplicitSlotKeys(rows: any[]) {
@@ -392,14 +421,24 @@ export const GET: RequestHandler = async (request) => {
   const mosqueName = primaryMosque.name ?? null;
 
   try {
-    const [staffRows, coverOverrides, requestRows, prayerTimesRows, defaultMuezzinUserId] = await Promise.all([
+    const [staffRows, coverOverrides, requestRows, prayerTimesRows, mosqueDefaults, elmRows] = await Promise.all([
       loadStaffRotaRows(supabaseAdmin, mosqueId, startIso, endIso),
       loadCoverOverrides(supabaseAdmin, mosqueId, startIso, endIso),
       loadActiveRequests(supabaseAdmin, mosqueId),
       loadPrayerTimesRows(supabaseAdmin, mosqueId, startIso, endIso),
       loadDefaultMuezzinUserId(supabaseAdmin, mosqueId),
+      loadElmTimetableRows(supabaseAdmin, startIso, endIso),
     ]);
-    const prayerTimesByDate = Object.fromEntries(prayerTimesRows.map((row) => [row.date, row]));
+    const { defaultMuezzinUserId, prayerSchool } = mosqueDefaults ?? { defaultMuezzinUserId: null, prayerSchool: null };
+    const prayerTimesByDate: Record<string, PrayerTimesRow | undefined> = Object.fromEntries(
+      prayerTimesRows.map((row) => [row.date, row])
+    );
+    // Fill in any dates missing from prayer_times with ELM timetable cache
+    elmRows.forEach((elmRow: any) => {
+      if (elmRow?.date && !prayerTimesByDate[elmRow.date]) {
+        prayerTimesByDate[elmRow.date] = elmRowToPrayerTimesRow(elmRow, prayerSchool);
+      }
+    });
     const explicitSlotKeys = buildExplicitSlotKeys(staffRows);
 
     const explicitEntries: StaffRotaEntry[] = staffRows
