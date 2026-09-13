@@ -185,6 +185,52 @@ function adjustedIso(dateIso: string, value: string | null | undefined, minutes:
   return addMinutes(new Date(iso), minutes)?.toISOString() ?? null;
 }
 
+async function resolveIqamaFromSchedule(
+  supabaseAdmin: any,
+  mosqueId: string,
+  prayer: PrayerKey,
+  dateIso: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('mosque_iqamah_schedules')
+    .select('iqama_time')
+    .eq('mosque_id', mosqueId)
+    .eq('prayer', prayer)
+    .lte('start_date', dateIso)
+    .or(`end_date.is.null,end_date.gte.${dateIso}`)
+    .order('start_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { iqama_time: string }).iqama_time ?? null;
+}
+
+// Resolves iqama for prayers whose field is currently null in `row`, trying
+// mosque_iqamah_schedules first, then ELM jamat (when sourceTimings carries
+// it). Mutates `row` in place for the given prayer keys.
+async function fillMissingIqama(
+  supabaseAdmin: any,
+  mosqueId: string,
+  dateIso: string,
+  row: PrayerTimesRow,
+  prayers: PrayerKey[],
+  sourceTimings: SourceTimingMaps | null
+) {
+  for (const prayer of prayers) {
+    const field = PRAYER_IQAMA_FIELDS[prayer];
+    if (row[field]) continue;
+    const scheduled = await resolveIqamaFromSchedule(supabaseAdmin, mosqueId, prayer, dateIso);
+    if (scheduled) {
+      row[field] = buildIso(dateIso, scheduled);
+      continue;
+    }
+    const jamat = sourceTimings?.iqama[prayer];
+    if (jamat) {
+      row[field] = buildIso(dateIso, jamat);
+    }
+  }
+}
+
 export const GET: RequestHandler = async (request) => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -258,15 +304,15 @@ export const GET: RequestHandler = async (request) => {
 
   if (row) {
     const primaryRow = { ...(row as PrayerTimesRow) };
-    const nullPrayers = (Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[]).filter(
-      (prayer) => !primaryRow[PRAYER_ADHAN_FIELDS[prayer]]
-    );
+    const allPrayers = Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[];
+    const nullAdhanPrayers = allPrayers.filter((prayer) => !primaryRow[PRAYER_ADHAN_FIELDS[prayer]]);
+    const nullIqamaPrayers = allPrayers.filter((prayer) => !primaryRow[PRAYER_IQAMA_FIELDS[prayer]]);
 
-    if (nullPrayers.length > 0) {
+    if (nullAdhanPrayers.length > 0 || nullIqamaPrayers.length > 0) {
       const sourceTimings = await fetchSourceTimingMaps(mosque, dateIso, supabaseAdmin);
       const adjustments = normalizePrayerTimeAdjustments(mosque.prayer_time_adjustments);
       if (sourceTimings) {
-        nullPrayers.forEach((prayer) => {
+        nullAdhanPrayers.forEach((prayer) => {
           const fallbackTime = sourceTimings.adhan[prayer] ?? null;
           if (fallbackTime) {
             const field = PRAYER_ADHAN_FIELDS[prayer];
@@ -274,6 +320,7 @@ export const GET: RequestHandler = async (request) => {
           }
         });
       }
+      await fillMissingIqama(supabaseAdmin, mosqueId, dateIso, primaryRow, nullIqamaPrayers, sourceTimings);
     }
 
     return json({ row: primaryRow, source: 'prayer_times' });
@@ -287,22 +334,29 @@ export const GET: RequestHandler = async (request) => {
     .maybeSingle();
 
   if (!legacyError && legacy) {
-    return json({
-      row: {
-        date: dateIso,
-        fajr_adhan_time: buildIso(dateIso, legacy.fajr ?? null),
-        fajr_iqama_time: null,
-        dhuhr_adhan_time: buildIso(dateIso, legacy.dhuhr ?? null),
-        dhuhr_iqama_time: null,
-        asr_adhan_time: buildIso(dateIso, legacy.asr ?? null),
-        asr_iqama_time: null,
-        maghrib_adhan_time: buildIso(dateIso, legacy.maghrib ?? null),
-        maghrib_iqama_time: null,
-        isha_adhan_time: buildIso(dateIso, legacy.isha ?? null),
-        isha_iqama_time: null,
-      } satisfies PrayerTimesRow,
-      source: 'mosque_prayer_times',
-    });
+    const legacyRow: PrayerTimesRow = {
+      date: dateIso,
+      fajr_adhan_time: buildIso(dateIso, legacy.fajr ?? null),
+      fajr_iqama_time: null,
+      dhuhr_adhan_time: buildIso(dateIso, legacy.dhuhr ?? null),
+      dhuhr_iqama_time: null,
+      asr_adhan_time: buildIso(dateIso, legacy.asr ?? null),
+      asr_iqama_time: null,
+      maghrib_adhan_time: buildIso(dateIso, legacy.maghrib ?? null),
+      maghrib_iqama_time: null,
+      isha_adhan_time: buildIso(dateIso, legacy.isha ?? null),
+      isha_iqama_time: null,
+    };
+    const legacySourceTimings = await fetchSourceTimingMaps(mosque, dateIso, supabaseAdmin);
+    await fillMissingIqama(
+      supabaseAdmin,
+      mosqueId,
+      dateIso,
+      legacyRow,
+      Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[],
+      legacySourceTimings
+    );
+    return json({ row: legacyRow, source: 'mosque_prayer_times' });
   }
 
   let rotaRows: { prayer_name?: string | null; adhan_time?: string | null }[] = [];
@@ -342,6 +396,15 @@ export const GET: RequestHandler = async (request) => {
       if (prayer === 'maghrib') fallback.maghrib_adhan_time = rotaRow.adhan_time ?? null;
       if (prayer === 'isha') fallback.isha_adhan_time = rotaRow.adhan_time ?? null;
     });
+    const rotaSourceTimings = await fetchSourceTimingMaps(mosque, dateIso, supabaseAdmin);
+    await fillMissingIqama(
+      supabaseAdmin,
+      mosqueId,
+      dateIso,
+      fallback,
+      Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[],
+      rotaSourceTimings
+    );
     return json({ row: fallback, source: 'staff_rota' });
   }
 
@@ -353,6 +416,14 @@ export const GET: RequestHandler = async (request) => {
       calculated[PRAYER_ADHAN_FIELDS[prayer]] = adjustedIso(dateIso, sourceTimings.adhan[prayer] ?? null, adjustments[prayer]);
       calculated[PRAYER_IQAMA_FIELDS[prayer]] = null;
     });
+    await fillMissingIqama(
+      supabaseAdmin,
+      mosqueId,
+      dateIso,
+      calculated,
+      Object.keys(PRAYER_ADHAN_FIELDS) as PrayerKey[],
+      sourceTimings
+    );
     return json({ row: calculated, source: `auto_calculated_${sourceTimings.effectiveSource}`, adjustments });
   }
 

@@ -259,38 +259,86 @@ async function fetchSourceTimingMaps(geoRow: MosquePrayerGeoRow | null, dateIso:
   };
 }
 
+async function resolveIqamaFromSchedule(
+  mosqueId: string,
+  prayer: PrayerName,
+  dateIso: string
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('mosque_iqamah_schedules')
+      .select('iqama_time')
+      .eq('mosque_id', mosqueId)
+      .eq('prayer', prayer)
+      .lte('start_date', dateIso)
+      .or(`end_date.is.null,end_date.gte.${dateIso}`)
+      .order('start_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data.iqama_time ?? null;
+  } catch (err) {
+    console.warn('[resolveIqamaFromSchedule] lookup failed', err);
+    return null;
+  }
+}
+
 async function fillPartialPrayerTimesFromSource(
   mosqueId: string,
   dateIso: string,
   normalized: NormalizedPrayerTimes
 ): Promise<NormalizedPrayerTimes> {
-  const nullPrayers = PRAYER_NAMES.filter((p) => normalized[p].adhan === null);
-  if (nullPrayers.length === 0) return normalized;
+  const nullAdhanPrayers = PRAYER_NAMES.filter((p) => normalized[p].adhan === null);
+  const nullIqamaPrayers = PRAYER_NAMES.filter((p) => normalized[p].iqama === null);
+  if (nullAdhanPrayers.length === 0 && nullIqamaPrayers.length === 0) return normalized;
+
+  const filled: NormalizedPrayerTimes = {
+    fajr: { ...normalized.fajr },
+    dhuhr: { ...normalized.dhuhr },
+    asr: { ...normalized.asr },
+    maghrib: { ...normalized.maghrib },
+    isha: { ...normalized.isha },
+  };
+
+  // Iqama has its own resolution chain (schedule, then ELM jamat) that is
+  // independent of whether adhan needed filling, so it's resolved even when
+  // this row's adhan is already fully set (e.g. explicit adhan correction,
+  // no iqama override). See mosque_iqamah_schedules migration for precedence.
+  if (nullIqamaPrayers.length) {
+    for (const p of nullIqamaPrayers) {
+      const scheduled = await resolveIqamaFromSchedule(mosqueId, p, dateIso);
+      if (scheduled) {
+        filled[p] = { adhan: filled[p].adhan, iqama: safeDateWithBase(scheduled, dateIso) };
+      }
+    }
+  }
+
+  const stillNullIqamaPrayers = nullIqamaPrayers.filter((p) => filled[p].iqama === null);
+  if (nullAdhanPrayers.length === 0 && stillNullIqamaPrayers.length === 0) return filled;
 
   try {
     const geoRow = await loadMosquePrayerGeo(mosqueId);
     const sourceTimings = await fetchSourceTimingMaps(geoRow, dateIso);
-    if (!sourceTimings) return normalized;
+    if (!sourceTimings) return filled;
 
-    const filled: NormalizedPrayerTimes = {
-      fajr: { ...normalized.fajr },
-      dhuhr: { ...normalized.dhuhr },
-      asr: { ...normalized.asr },
-      maghrib: { ...normalized.maghrib },
-      isha: { ...normalized.isha },
-    };
-    nullPrayers.forEach((p) => {
-      if (sourceTimings.adhan[p]) {
+    const nullAdhanSet = new Set(nullAdhanPrayers);
+    [...new Set([...nullAdhanPrayers, ...stillNullIqamaPrayers])].forEach((p) => {
+      if (nullAdhanSet.has(p) && sourceTimings.adhan[p]) {
         filled[p] = {
           adhan: addMinutes(safeDateWithBase(sourceTimings.adhan[p], dateIso), normalizePrayerTimeAdjustments(geoRow?.prayer_time_adjustments)[p]),
           iqama: filled[p].iqama,
         };
       }
+      // Iqama already resolved above from schedule; ELM jamat is the final
+      // fallback only when no schedule row matched this prayer/date.
+      if (filled[p].iqama === null && sourceTimings.iqama[p]) {
+        filled[p] = { adhan: filled[p].adhan, iqama: safeDateWithBase(sourceTimings.iqama[p], dateIso) };
+      }
     });
     return filled;
   } catch (fillErr: any) {
     console.warn('[getDailyPrayerTimes] partial fill threw', fillErr?.message ?? fillErr);
-    return normalized;
+    return filled;
   }
 }
 

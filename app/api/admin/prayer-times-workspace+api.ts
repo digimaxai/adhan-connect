@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { hasMosqueAdminAccess, json, requireAdminAccess } from '../../../lib/server/adminAccess';
 import { addMinutes, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
@@ -104,6 +103,64 @@ function adjustedIso(dateIso: string, timeValue: string | null | undefined, minu
   return addMinutes(new Date(iso), minutes)?.toISOString() ?? null;
 }
 
+const PRAYER_IQAMA_FIELDS = {
+  fajr: 'fajr_iqama_time',
+  dhuhr: 'dhuhr_iqama_time',
+  asr: 'asr_iqama_time',
+  maghrib: 'maghrib_iqama_time',
+  isha: 'isha_iqama_time',
+} as const;
+type PrayerKey = keyof typeof PRAYER_IQAMA_FIELDS;
+
+async function resolveIqamaFromSchedule(
+  supabaseAdmin: any,
+  mosqueId: string,
+  prayer: PrayerKey,
+  dateIso: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('mosque_iqamah_schedules')
+    .select('iqama_time')
+    .eq('mosque_id', mosqueId)
+    .eq('prayer', prayer)
+    .lte('start_date', dateIso)
+    .or(`end_date.is.null,end_date.gte.${dateIso}`)
+    .order('start_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { iqama_time: string }).iqama_time ?? null;
+}
+
+// Fills null iqama fields on `row` in place: schedule first, then ELM jamat
+// (when provided). Returns the list of prayers that were auto-filled, so the
+// caller/UI can distinguish "resolved automatically" from "explicit override".
+async function fillMissingIqama(
+  supabaseAdmin: any,
+  mosqueId: string,
+  dateIso: string,
+  row: PrayerTimesRow,
+  elmJamat?: Partial<Record<PrayerKey, string | null>> | null
+): Promise<PrayerKey[]> {
+  const filled: PrayerKey[] = [];
+  for (const prayer of Object.keys(PRAYER_IQAMA_FIELDS) as PrayerKey[]) {
+    const field = PRAYER_IQAMA_FIELDS[prayer];
+    if (row[field]) continue;
+    const scheduled = await resolveIqamaFromSchedule(supabaseAdmin, mosqueId, prayer, dateIso);
+    if (scheduled) {
+      row[field] = buildIso(dateIso, scheduled);
+      filled.push(prayer);
+      continue;
+    }
+    const jamat = elmJamat?.[prayer];
+    if (jamat) {
+      row[field] = buildIso(dateIso, jamat);
+      filled.push(prayer);
+    }
+  }
+  return filled;
+}
+
 function emptyPrayerRow(mosqueId: string, dateIso: string): PrayerTimesRow {
   return {
     mosque_id: mosqueId,
@@ -141,6 +198,7 @@ async function loadFallbackPrayerRow(
     row.asr_adhan_time = buildIso(dateIso, legacyRow.asr ?? null);
     row.maghrib_adhan_time = buildIso(dateIso, legacyRow.maghrib ?? null);
     row.isha_adhan_time = buildIso(dateIso, legacyRow.isha ?? null);
+    await fillMissingIqama(supabaseAdmin, mosqueId, dateIso, row);
     return { fallbackRow: row, fallbackSource: 'mosque_prayer_times' };
   }
 
@@ -168,6 +226,7 @@ async function loadFallbackPrayerRow(
       if (prayer === 'maghrib') row.maghrib_adhan_time = value;
       if (prayer === 'isha') row.isha_adhan_time = value;
     });
+    await fillMissingIqama(supabaseAdmin, mosqueId, dateIso, row);
     return { fallbackRow: row, fallbackSource: 'staff_rota' };
   }
 
@@ -190,15 +249,17 @@ async function loadFallbackPrayerRow(
         ) ?? (await fetchELMTimes(dateIso));
         if (elm) {
           row.fajr_adhan_time = adjustedIso(dateIso, elm.fajr, adjustments.fajr);
-          row.fajr_iqama_time = buildIso(dateIso, elm.fajr_jamat);
           row.dhuhr_adhan_time = adjustedIso(dateIso, elm.dhuhr, adjustments.dhuhr);
-          row.dhuhr_iqama_time = buildIso(dateIso, elm.dhuhr_jamat);
           row.asr_adhan_time = adjustedIso(dateIso, school === 1 ? elm.asr_2 : elm.asr, adjustments.asr);
-          row.asr_iqama_time = buildIso(dateIso, elm.asr_jamat);
           row.maghrib_adhan_time = adjustedIso(dateIso, elm.magrib, adjustments.maghrib);
-          row.maghrib_iqama_time = buildIso(dateIso, elm.magrib_jamat);
           row.isha_adhan_time = adjustedIso(dateIso, elm.isha, adjustments.isha);
-          row.isha_iqama_time = buildIso(dateIso, elm.isha_jamat);
+          await fillMissingIqama(supabaseAdmin, mosqueId, dateIso, row, {
+            fajr: elm.fajr_jamat,
+            dhuhr: elm.dhuhr_jamat,
+            asr: elm.asr_jamat,
+            maghrib: elm.magrib_jamat,
+            isha: elm.isha_jamat,
+          });
           const hasTimes = [row.fajr_adhan_time, row.dhuhr_adhan_time, row.asr_adhan_time, row.maghrib_adhan_time, row.isha_adhan_time].some(Boolean);
           if (hasTimes) return { fallbackRow: row, fallbackSource: 'auto' };
         }
@@ -212,6 +273,7 @@ async function loadFallbackPrayerRow(
           row.asr_adhan_time = adjustedIso(dateIso, timings.Asr, adjustments.asr);
           row.maghrib_adhan_time = adjustedIso(dateIso, timings.Maghrib, adjustments.maghrib);
           row.isha_adhan_time = adjustedIso(dateIso, timings.Isha, adjustments.isha);
+          await fillMissingIqama(supabaseAdmin, mosqueId, dateIso, row);
           return { fallbackRow: row, fallbackSource: 'auto' };
         }
       }
@@ -286,8 +348,36 @@ export const GET: RequestHandler = async (request) => {
     ? { fallbackRow: null, fallbackSource: null }
     : await loadFallbackPrayerRow(supabaseAdmin, mosqueId, dateIso, mosqueRes.data);
 
+  // A saved prayer_times row can still have null iqama fields (the local
+  // admin never set an explicit day-specific exception for that prayer) —
+  // resolve those from the iqamah schedule / ELM jamat too, and report which
+  // prayers were auto-filled so the client can render them read-only with a
+  // "resolved automatically" label instead of an editable override.
+  let autoFilledIqama: PrayerKey[] = [];
+  if (currentRow) {
+    let elmJamat: Partial<Record<PrayerKey, string | null>> | null = null;
+    if (mosqueRes.data?.prayer_source === 'elm') {
+      const { data: elm } = await supabaseAdmin
+        .from('elm_timetable')
+        .select('fajr_jamat,dhuhr_jamat,asr_jamat,magrib_jamat,isha_jamat')
+        .eq('date', dateIso)
+        .maybeSingle();
+      if (elm) {
+        elmJamat = {
+          fajr: elm.fajr_jamat,
+          dhuhr: elm.dhuhr_jamat,
+          asr: elm.asr_jamat,
+          maghrib: elm.magrib_jamat,
+          isha: elm.isha_jamat,
+        };
+      }
+    }
+    autoFilledIqama = await fillMissingIqama(supabaseAdmin, mosqueId, dateIso, currentRow, elmJamat);
+  }
+
   return json({
     currentRow,
+    autoFilledIqama,
     fallbackRow: fallback.fallbackRow,
     fallbackSource: fallback.fallbackSource,
     importHistory: (importRes.data ?? []) as PrayerScheduleImportRecord[],

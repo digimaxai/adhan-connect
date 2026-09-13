@@ -266,6 +266,11 @@ export default function PrayerTimesAdminScreen({
   const [showPicker, setShowPicker] = useState(false);
   const [tempValue, setTempValue] = useState<Date | null>(null);
   const [currentRow, setCurrentRow] = useState<PrayerTimesRow | null>(null);
+  // Which prayers have an explicit day-specific iqama exception for this
+  // date. Unset prayers show the resolved (schedule/ELM) iqama read-only and
+  // are saved as null so that source keeps resolving it live — this avoids
+  // silently freezing iqama the same way the Hanafi Asr bug froze adhan.
+  const [iqamaOverridden, setIqamaOverridden] = useState<Partial<Record<keyof PrayerTimeForm, boolean>>>({});
   const [prayerSource, setPrayerSource] = useState<'aladhan' | 'elm'>('aladhan');
   const [calculationMethod, setCalculationMethod] = useState(DEFAULT_ALADHAN_METHOD);
   const [prayerSchool, setPrayerSchool] = useState<0 | 1>(0);
@@ -461,9 +466,20 @@ export default function PrayerTimesAdminScreen({
         setScheduleSourceMeta(
           payload.currentRow.updated_at ? `Last updated ${formatDateTime(payload.currentRow.updated_at)}` : null
         );
+        // A prayer counts as an explicit day-specific exception only if it
+        // has a saved iqama value AND wasn't just auto-filled by the
+        // workspace loader (schedule/ELM) for display purposes.
+        const autoFilled = new Set(payload.autoFilledIqama ?? []);
+        const overridden: Partial<Record<keyof PrayerTimeForm, boolean>> = {};
+        (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as const).forEach((key) => {
+          const field = `${key}_iqama_time` as const;
+          overridden[key] = !!(payload.currentRow as any)?.[field] && !autoFilled.has(key);
+        });
+        setIqamaOverridden(overridden);
         return { hasManualOverride: true };
       } else {
         setCurrentRow(null);
+        setIqamaOverridden({});
         if (payload.fallbackRow) {
           setForm(mapRowToForm(payload.fallbackRow));
           setScheduleSourceLabel(
@@ -633,7 +649,7 @@ export default function PrayerTimesAdminScreen({
     setSaving(true);
 
     try {
-      const payload = mapFormToRow(normalizedForm, selectedDate);
+      const payload = mapFormToRow(normalizedForm, selectedDate, iqamaOverridden);
       await upsertPrayerTimes(selectedMosque.mosqueId, dateIso, payload, {
         sourceType: 'manual',
         generatedMethod: 'quick_edit',
@@ -1046,11 +1062,18 @@ export default function PrayerTimesAdminScreen({
     >
       {showManualOverrideTools || !canManageImports ? (
         <AppCard style={styles.utilityCard}>
-          <View style={styles.utilityHeader}>
-            <AppText variant="caption" color={tokens.color.text.secondary}>
-              Single-date correction
-            </AppText>
-            <AppText variant="title">Correct this day</AppText>
+          <View style={styles.utilityHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="caption" color={tokens.color.text.secondary}>
+                Single-date correction
+              </AppText>
+              <AppText variant="title">Correct this day</AppText>
+            </View>
+            <AppButton
+              title="Manage iqamah schedules"
+              variant="ghost"
+              onPress={() => router.push('/(admin)/iqamah-schedules' as any)}
+            />
           </View>
           <DateSelector date={selectedDate} onChange={setSelectedDate} />
           {currentRow ? (
@@ -1191,7 +1214,7 @@ export default function PrayerTimesAdminScreen({
                   </View>
                 </View>
               ) : (
-                <AppText variant="caption" color={tokens.color.text.secondary}>Uses East London Mosque's published London Unified beginning times as the base.</AppText>
+                <AppText variant="caption" color={tokens.color.text.secondary}>Uses East London Mosque&apos;s published London Unified beginning times as the base.</AppText>
               )}
               <View style={styles.settingsGroup}>
                 <AppText variant="caption" color={tokens.color.text.secondary}>Asr school</AppText>
@@ -2079,19 +2102,40 @@ export default function PrayerTimesAdminScreen({
                     <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
                       Iqama
                     </AppText>
-                    {isWeb ? (
-                      <WebTimeInput
-                        value={form[p.key].iqama}
-                        onChangeText={(value) => updateFormTime(p.key, 'iqama', value)}
-                        disabled={disableForNoMosque}
-                      />
+                    {iqamaOverridden[p.key] ? (
+                      isWeb ? (
+                        <WebTimeInput
+                          value={form[p.key].iqama}
+                          onChangeText={(value) => updateFormTime(p.key, 'iqama', value)}
+                          disabled={disableForNoMosque}
+                        />
+                      ) : (
+                        <TimeButton
+                          label={form[p.key].iqama}
+                          onPress={() => openTimePicker(p.key, 'iqama')}
+                          disabled={disableForNoMosque}
+                        />
+                      )
                     ) : (
-                      <TimeButton
-                        label={form[p.key].iqama}
-                        onPress={() => openTimePicker(p.key, 'iqama')}
-                        disabled={disableForNoMosque}
-                      />
+                      <AppText variant="body" style={styles.autoIqamaValue}>
+                        {form[p.key].iqama ?? '—'} <AppText variant="caption" color={tokens.color.text.secondary}>(auto)</AppText>
+                      </AppText>
                     )}
+                  </View>
+                  <View style={styles.row}>
+                    <AppText variant="caption" color={tokens.color.text.secondary} style={styles.label}>
+                      {iqamaOverridden[p.key]
+                        ? 'Overriding just this date — this iqamah stays fixed until you revert.'
+                        : 'Resolved from the iqamah schedule or ELM jamaat. Override only if this date needs an exception.'}
+                    </AppText>
+                    <AppButton
+                      title={iqamaOverridden[p.key] ? 'Use auto time' : 'Override this date'}
+                      variant="ghost"
+                      onPress={() =>
+                        setIqamaOverridden((prev) => ({ ...prev, [p.key]: !prev[p.key] }))
+                      }
+                      disabled={disableForNoMosque}
+                    />
                   </View>
                 </AppCard>
               ))
@@ -2415,18 +2459,26 @@ function mapPublishedPrayerTimesRowToPreviewRow(row: PrayerTimesRow): PrayerSche
   };
 }
 
-function mapFormToRow(form: PrayerTimeForm, date: Date): Partial<PrayerTimesRow> {
+function mapFormToRow(
+  form: PrayerTimeForm,
+  date: Date,
+  iqamaOverridden: Partial<Record<keyof PrayerTimeForm, boolean>> = {}
+): Partial<PrayerTimesRow> {
+  // Iqama is only written when explicitly overridden for this date; leaving
+  // it null lets the iqamah schedule / ELM jamat keep resolving it live
+  // instead of silently freezing whatever was on screen at save time.
+  const iqama = (key: keyof PrayerTimeForm) => (iqamaOverridden[key] ? combine(date, form[key].iqama) : null);
   return {
     fajr_adhan_time: combine(date, form.fajr.adhan),
-    fajr_iqama_time: combine(date, form.fajr.iqama),
+    fajr_iqama_time: iqama('fajr'),
     dhuhr_adhan_time: combine(date, form.dhuhr.adhan),
-    dhuhr_iqama_time: combine(date, form.dhuhr.iqama),
+    dhuhr_iqama_time: iqama('dhuhr'),
     asr_adhan_time: combine(date, form.asr.adhan),
-    asr_iqama_time: combine(date, form.asr.iqama),
+    asr_iqama_time: iqama('asr'),
     maghrib_adhan_time: combine(date, form.maghrib.adhan),
-    maghrib_iqama_time: combine(date, form.maghrib.iqama),
+    maghrib_iqama_time: iqama('maghrib'),
     isha_adhan_time: combine(date, form.isha.adhan),
-    isha_iqama_time: combine(date, form.isha.iqama),
+    isha_iqama_time: iqama('isha'),
   };
 }
 
@@ -3072,6 +3124,7 @@ function WebTimeInput({
 
 const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
+  autoIqamaValue: { flex: 1 },
   pressed: { opacity: 0.9 },
   feedbackText: { marginTop: 8 },
   workspaceGrid: { gap: tokens.spacing.sm },
@@ -3104,6 +3157,7 @@ const styles = StyleSheet.create({
   sourceBadgeMutedText: { color: '#64748B', fontWeight: tokens.typography.weight.bold },
   compactManualCard: { gap: 8, borderRadius: 18 },
   utilityHeader: { gap: 2 },
+  utilityHeaderRow: { gap: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statusValue: { fontWeight: tokens.typography.weight.extrabold },
   sourceBadge: {
     alignSelf: 'flex-start',
