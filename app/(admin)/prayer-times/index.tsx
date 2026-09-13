@@ -422,7 +422,7 @@ export default function PrayerTimesAdminScreen({
     setCoverageIntent(coverageAnalysis.recommendedIntent);
   }, [coverageAnalysis, coverageIntent, importPreview]);
 
-  const loadPrayerTimes = useCallback(async () => {
+  const loadPrayerTimes = useCallback(async (): Promise<{ hasManualOverride: boolean }> => {
     if (!selectedMosque) {
       setCurrentRow(null);
       setScheduleSourceLabel(
@@ -439,7 +439,7 @@ export default function PrayerTimesAdminScreen({
         maghrib: emptyPair,
         isha: emptyPair,
       });
-      return;
+      return { hasManualOverride: false };
     }
 
     setLoading(true);
@@ -461,6 +461,7 @@ export default function PrayerTimesAdminScreen({
         setScheduleSourceMeta(
           payload.currentRow.updated_at ? `Last updated ${formatDateTime(payload.currentRow.updated_at)}` : null
         );
+        return { hasManualOverride: true };
       } else {
         setCurrentRow(null);
         if (payload.fallbackRow) {
@@ -496,6 +497,7 @@ export default function PrayerTimesAdminScreen({
             'No prayer times exist for this date yet. Set the times below and save to create them.'
           );
         }
+        return { hasManualOverride: false };
       }
     } catch (e: any) {
       console.warn('load prayer times', e?.message ?? e);
@@ -503,6 +505,7 @@ export default function PrayerTimesAdminScreen({
       setCurrentRow(null);
       setScheduleSourceLabel('Unable to inspect the current schedule.');
       setScheduleSourceMeta(null);
+      return { hasManualOverride: false };
     } finally {
       setLoading(false);
     }
@@ -534,8 +537,14 @@ export default function PrayerTimesAdminScreen({
       });
       if (saveError) throw saveError;
       setShowSettings(false);
-      await loadPrayerTimes();
-      setNotice('Automatic settings saved. The times below now reflect your updated calculation basis and adjustments.');
+      const { hasManualOverride } = await loadPrayerTimes();
+      if (hasManualOverride) {
+        setNotice(
+          'Automatic settings saved. This date has a manually published correction — the new calculation basis and school will apply to dates without a saved correction. To apply the updated auto times to this date too, edit the times below and save.'
+        );
+      } else {
+        setNotice('Automatic settings saved. The times below now reflect your updated calculation basis and adjustments.');
+      }
     } catch (saveError: any) {
       setError(saveError?.message || 'Unable to save automatic prayer-time settings.');
     } finally { setSavingSettings(false); }

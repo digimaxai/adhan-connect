@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const ELM_BASE_URL = 'https://www.londonprayertimes.com/api/times/';
+const DAYS_BACK = 7;
 const DAYS_AHEAD = 60;
 
 const TIME_FIELDS = [
@@ -49,7 +50,7 @@ Deno.serve(async (_req) => {
   const rows: Record<string, unknown>[] = [];
   const errors: string[] = [];
 
-  for (let i = 0; i < DAYS_AHEAD; i++) {
+  for (let i = -DAYS_BACK; i < DAYS_AHEAD; i++) {
     const dateIso = addDays(today, i);
     try {
       const url = `${ELM_BASE_URL}?format=json&key=${apiKey}&date=${dateIso}&24hours=true`;
