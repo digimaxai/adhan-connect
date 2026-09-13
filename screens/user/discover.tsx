@@ -21,7 +21,9 @@ import { FOLLOWED_MOSQUE_LIMIT } from '../../lib/subscriptionLimits';
 import { supabase } from '../../lib/supabase';
 import { NearYouNowCard } from '../../components/NearYouNowCard';
 import { useMosquesNearby, type NearbyMosque } from '../../lib/hooks/useMosquesNearby';
-import { MosqueStatusBadge, LiveCapabilityBadge, mosqueHasLiveCapability, type MosqueOnboardingStatus } from '../../components/MosqueStatusBadge';
+import { Ionicons } from '@expo/vector-icons';
+import { resolveOnboardingStatus, mosqueHasLiveCapability, type MosqueOnboardingStatus } from '../../components/MosqueStatusBadge';
+import { AppText } from '../../components/ui/app-text';
 
 type MosqueView = 'nearby' | 'following';
 
@@ -559,8 +561,18 @@ export default function DiscoverMosques() {
                     </Text>
                     {distanceLabel && <Text style={styles.rowMeta}>{distanceLabel}</Text>}
                     <View style={styles.rowBadges}>
-                      <MosqueStatusBadge status={m.onboarding_status} compact />
-                      <LiveCapabilityBadge capable={mosqueHasLiveCapability(m)} compact />
+                      {resolveOnboardingStatus(m.onboarding_status) === 'claimed' && (
+                        <View style={styles.verifiedChip}>
+                          <Ionicons name="checkmark-circle" size={11} color="#15803D" />
+                          <AppText style={styles.verifiedChipText}>Verified</AppText>
+                        </View>
+                      )}
+                      {mosqueHasLiveCapability(m) && (
+                        <View style={styles.liveCapChip}>
+                          <Ionicons name="radio-outline" size={11} color="#B91C1C" />
+                          <AppText style={styles.liveCapChipText}>Live Adhan</AppText>
+                        </View>
+                      )}
                     </View>
                   </View>
                 </Pressable>
@@ -684,6 +696,10 @@ const styles = StyleSheet.create({
   rowSub: { color: '#475569', fontSize: 13, marginTop: 2 },
   rowMeta: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
   rowBadges: { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
+  verifiedChip: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#DCFCE7', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  verifiedChipText: { color: '#15803D', fontSize: 10, fontWeight: '700' },
+  liveCapChip: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FEE2E2', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  liveCapChipText: { color: '#B91C1C', fontSize: 10, fontWeight: '700' },
   livePill: { backgroundColor: '#FEE2E2', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   livePillText: { color: '#B91C1C', fontWeight: '700', fontSize: 11 },
   btnPrimary: {

@@ -1185,9 +1185,14 @@ export default function PrayerTimesAdminScreen({
               <View style={styles.settingsGroup}>
                 <AppText variant="caption" color={tokens.color.text.secondary}>Asr school</AppText>
                 <View style={styles.choiceRow}>
-                  <AppButton title="Standard" variant={prayerSchool === 0 ? 'primary' : 'ghost'} onPress={() => setPrayerSchool(0)} />
+                  <AppButton title="Standard (Shafi)" variant={prayerSchool === 0 ? 'primary' : 'ghost'} onPress={() => setPrayerSchool(0)} />
                   <AppButton title="Hanafi" variant={prayerSchool === 1 ? 'primary' : 'ghost'} onPress={() => setPrayerSchool(1)} />
                 </View>
+                <AppText variant="caption" color={tokens.color.text.secondary}>
+                  {prayerSchool === 1
+                    ? 'Hanafi Asr is typically 1–1.5 hours later than Standard. This is correct — it reflects the shadow-twice jurisprudence, not an error.'
+                    : 'Standard (Shafi/Maliki/Hanbali) Asr uses shadow-once calculation. Choose Hanafi if your mosque follows the Hanafi school.'}
+                </AppText>
               </View>
               <View style={styles.settingsGroup}>
                 <AppText variant="caption" color={tokens.color.text.secondary}>Fine-tune each beginning time (−30 to +30 min). Use this to account for local geographic differences.</AppText>

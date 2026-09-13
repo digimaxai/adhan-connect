@@ -18,6 +18,7 @@ import { mosqueServiceLabel } from '../../../lib/mosqueServices';
 import {
   mosqueStatusDescription,
   resolveOnboardingStatus,
+  mosqueHasLiveCapability,
 } from '../../../components/MosqueStatusBadge';
 import {
   formatJumuahTime,
@@ -924,13 +925,29 @@ export default function MosquePage() {
         ) : null}
 
         {/* ── About ── */}
-        {(mosque?.description || mosque?.address_line1 || mosque?.contact_phone || mosque?.contact_email || mosque?.website || mosque?.management_info || mosque?.services?.length || city) ? (
+        {(mosque?.description || mosque?.address_line1 || mosque?.contact_phone || mosque?.contact_email || mosque?.website || mosque?.management_info || mosque?.services?.length || city || resolveOnboardingStatus(mosque?.onboarding_status) === 'claimed' || mosqueHasLiveCapability(mosque)) ? (
           <View style={[styles.card, styles.shadow]}>
             <Text style={styles.cardTitle}>About</Text>
 
             {mosque?.description ? (
               <Text style={styles.aboutDescription}>{mosque.description}</Text>
             ) : null}
+
+            {/* Verified status */}
+            {resolveOnboardingStatus(mosque?.onboarding_status) === 'claimed' && (
+              <View style={styles.aboutRow}>
+                <Ionicons name="checkmark-circle" size={15} color="#15803D" style={{ marginTop: 2 }} />
+                <Text style={[styles.aboutText, { color: '#15803D', fontWeight: '600' }]}>Verified — managed by mosque staff</Text>
+              </View>
+            )}
+
+            {/* Live Adhan capability */}
+            {mosqueHasLiveCapability(mosque) && (
+              <View style={styles.aboutRow}>
+                <Ionicons name="radio-outline" size={15} color="#B91C1C" style={{ marginTop: 2 }} />
+                <Text style={[styles.aboutText, { color: '#B91C1C', fontWeight: '600' }]}>Broadcasts live Adhan</Text>
+              </View>
+            )}
 
             {/* Address */}
             {(mosque?.address_line1 || city) ? (
