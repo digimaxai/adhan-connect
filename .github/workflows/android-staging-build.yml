@@ -28,6 +28,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The release Gradle variant bundles JS via a plain Node process that
+      # does not go through Expo CLI's own dotenv loader (unlike `expo
+      # prebuild`/the debug variant's bundling, which picked these up fine
+      # from the job-level env above) — it only reliably reads EXPO_PUBLIC_*
+      # values from an actual .env file, same as local development.
+      - name: Write .env.local for release JS bundling
+        run: |
+          cat > .env.local <<EOF
+          EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY}
+          EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB=${EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB}
+          EXPO_PUBLIC_SUPABASE_REDIRECT_URL_NATIVE=${EXPO_PUBLIC_SUPABASE_REDIRECT_URL_NATIVE}
+          EXPO_PUBLIC_API_BASE_URL=${EXPO_PUBLIC_API_BASE_URL}
+          EXPO_PUBLIC_APPLE_AUTH_ENABLED=${EXPO_PUBLIC_APPLE_AUTH_ENABLED}
+          EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=${EXPO_PUBLIC_GOOGLE_AUTH_ENABLED}
+          EXPO_PUBLIC_SOCIAL_LINKING_ENABLED=${EXPO_PUBLIC_SOCIAL_LINKING_ENABLED}
+          EOF
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
