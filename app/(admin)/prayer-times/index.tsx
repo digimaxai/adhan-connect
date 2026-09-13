@@ -533,7 +533,9 @@ export default function PrayerTimesAdminScreen({
         p_prayer_time_adjustments: normalizePrayerTimeAdjustments(adjustments),
       });
       if (saveError) throw saveError;
-      setNotice('Automatic prayer-time settings saved. Existing uploaded and manual schedules were not changed.');
+      setShowSettings(false);
+      await loadPrayerTimes();
+      setNotice('Automatic settings saved. The times below now reflect your updated calculation basis and adjustments.');
     } catch (saveError: any) {
       setError(saveError?.message || 'Unable to save automatic prayer-time settings.');
     } finally { setSavingSettings(false); }
@@ -1015,9 +1017,9 @@ export default function PrayerTimesAdminScreen({
       }
       backHref={backRoute}
       backLabel={backLabel}
-      activeTab={isMainAdminWeb ? undefined : 'prayerTimes'}
-      onGoPrayerTimes={isMainAdminWeb ? undefined : () => router.push(prayerTimesRoute as any)}
-      onGoStaffRota={isMainAdminWeb ? undefined : () => router.push(staffRotaRoute as any)}
+      activeTab={undefined}
+      onGoPrayerTimes={undefined}
+      onGoStaffRota={undefined}
       mosqueName={selectedMosque?.name ?? null}
       mosqueMeta={
         selectedMosque
@@ -1037,9 +1039,9 @@ export default function PrayerTimesAdminScreen({
         <AppCard style={styles.utilityCard}>
           <View style={styles.utilityHeader}>
             <AppText variant="caption" color={tokens.color.text.secondary}>
-              Prayer date
+              Single-date correction
             </AppText>
-            <AppText variant="title">Schedule date</AppText>
+            <AppText variant="title">Correct this day</AppText>
           </View>
           <DateSelector date={selectedDate} onChange={setSelectedDate} />
           {currentRow ? (
@@ -1078,9 +1080,9 @@ export default function PrayerTimesAdminScreen({
         <AppCard style={styles.summaryCard}>
           <View style={styles.utilityHeader}>
             <AppText variant="caption" color={tokens.color.text.secondary}>
-              {dateIso === formatLocalDate(new Date()) ? 'Shown to congregation today' : `Schedule for ${dateIso}`}
+              {dateIso === formatLocalDate(new Date()) ? 'What followers see today' : `What followers see on ${dateIso}`}
             </AppText>
-            <AppText variant="title">Current prayer times</AppText>
+            <AppText variant="title">Published times</AppText>
           </View>
           {prayers.map((p) => (
             <View key={p.key} style={styles.summaryRow}>
