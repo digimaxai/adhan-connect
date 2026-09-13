@@ -20,6 +20,22 @@
 
 set -e
 
+# Xcode Cloud runners are Apple Silicon (arm64). Make sure the native arm64
+# Homebrew prefix (/opt/homebrew) is searched before any Intel prefix
+# (/usr/local) that may also exist on the image, otherwise later tools
+# (Node, CocoaPods/Ruby) can end up resolving to x86_64 binaries and running
+# under Rosetta translation, which CocoaPods explicitly warns against and
+# which has been observed to cause flaky network behavior during pod install.
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+
+# Defensively clear any inherited proxy environment variables. A stray
+# HTTP(S)_PROXY pointing at a local/dev-only proxy (e.g. left over from a
+# debugging tool's workflow environment variable in App Store Connect) causes
+# git clones of pod dependencies (e.g. SocketRocket) to fail with
+# "Failed to connect to localhost port ...". Xcode Cloud's build VMs do not
+# need a proxy to reach github.com or the CocoaPods CDN.
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+
 # Xcode Cloud's macOS images don't reliably have Node.js on PATH for this
 # script's shell, despite having Homebrew preinstalled. Install it explicitly.
 echo "Installing Node.js via Homebrew..."
@@ -36,4 +52,4 @@ npx expo prebuild --platform ios
 
 cd ios
 echo "Installing CocoaPods dependencies..."
-pod install
+arch -arm64 pod install
