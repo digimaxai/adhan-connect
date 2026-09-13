@@ -62,3 +62,4 @@ expo-metro-*.log
 expo-metro-*.err.log
 expo-portal-*.log
 expo-portal-*.err.log
+android-signing-local/
