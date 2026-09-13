@@ -59,13 +59,39 @@ const safeDate = (value?: string | Date | null): Date | null => {
   return isNaN(parsed.getTime()) ? null : parsed;
 };
 
+function getLondonOffsetMinutes(dateIso: string): number {
+  // Get London UTC offset at noon on the given date (avoids DST edge cases)
+  const utcNoon = new Date(`${dateIso}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(utcNoon);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 12);
+  const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  return h * 60 + m - 720; // London hours/mins at UTC noon minus 720 = offset in minutes
+}
+
 const safeDateWithBase = (value: string | Date | null | undefined, dateIso: string) => {
   if (!value) return null;
   if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
   if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value.trim())) {
+    // Bare "HH:MM" strings (ELM/legacy timetable data) are always London local time,
+    // regardless of the server/device runtime timezone. Convert explicitly instead of
+    // letting the Date constructor assume the runtime's local timezone (see 5acab79).
     const timePart = value.length === 5 ? `${value}:00` : value;
-    const parsed = new Date(`${dateIso}T${timePart}`);
-    return isNaN(parsed.getTime()) ? null : parsed;
+    const [hStr, mStr, sStr = '0'] = timePart.split(':');
+    const h = Number(hStr), min = Number(mStr), s = Number(sStr);
+    if (Number.isNaN(h) || Number.isNaN(min)) return null;
+    const offsetMin = getLondonOffsetMinutes(dateIso);
+    const utcMs = Date.UTC(
+      Number(dateIso.slice(0, 4)),
+      Number(dateIso.slice(5, 7)) - 1,
+      Number(dateIso.slice(8, 10)),
+      h, min, s
+    ) - offsetMin * 60 * 1000;
+    return new Date(utcMs);
   }
   const parsed = new Date(value);
   return isNaN(parsed.getTime()) ? null : parsed;
