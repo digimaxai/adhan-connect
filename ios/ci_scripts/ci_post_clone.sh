@@ -20,6 +20,12 @@
 
 set -e
 
+# Xcode Cloud's macOS images don't reliably have Node.js on PATH for this
+# script's shell, despite having Homebrew preinstalled. Install it explicitly.
+echo "Installing Node.js via Homebrew..."
+brew install node@20
+brew link --overwrite --force node@20
+
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 
 echo "Installing JS dependencies..."
