@@ -36,15 +36,15 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build release APK
+      - name: Build debug APK (unsigned, for internal testing)
         working-directory: android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: adhan-connect-staging-android
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
