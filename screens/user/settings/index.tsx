@@ -218,8 +218,8 @@ export default function SettingsScreen() {
               icon="options-outline"
             />
             <SettingsRow
-              title="Mosque subscriptions"
-              subtitle="Manage followed mosques"
+              title="My Mosques"
+              subtitle="Switch primary mosque and manage followed mosques"
               href="/(user)/manage-mosques"
               icon="business-outline"
               last

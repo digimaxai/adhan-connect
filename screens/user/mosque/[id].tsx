@@ -16,9 +16,6 @@ import { promptForSignIn } from '../../../lib/guestAccess';
 import { FOLLOWED_MOSQUE_LIMIT } from '../../../lib/subscriptionLimits';
 import { mosqueServiceLabel } from '../../../lib/mosqueServices';
 import {
-  MosqueStatusBadge,
-  LiveCapabilityBadge,
-  mosqueHasLiveCapability,
   mosqueStatusDescription,
   resolveOnboardingStatus,
 } from '../../../components/MosqueStatusBadge';
@@ -588,10 +585,6 @@ export default function MosquePage() {
           <View style={{ flex: 1 }}>
             <Text style={styles.identityName}>{mosque?.name ?? 'Mosque'}</Text>
             <Text style={styles.identityCity} numberOfLines={1}>{city || 'City, Country'}</Text>
-            <View style={styles.identityBadgeRow}>
-              <MosqueStatusBadge status={mosque?.onboarding_status} />
-              <LiveCapabilityBadge capable={mosqueHasLiveCapability(mosque)} />
-            </View>
           </View>
           <Pressable
             accessibilityRole="button"

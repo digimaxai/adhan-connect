@@ -68,6 +68,7 @@ type MosqueRow = {
   services?: string[] | null;
   prayers_not_offered?: string[] | null;
   prayers_not_offered_reasons?: Record<string, string> | null;
+  onboarding_status?: 'directory_only' | 'in_progress' | 'claimed' | null;
   created_at?: string | null;
 };
 
@@ -230,7 +231,7 @@ function MosqueProfileShell() {
   const [editOpen, setEditOpen] = useState(false);
   const [editMode, setEditMode] = useState<EditMosqueMode>('profile');
   const [editForm, setEditForm] = useState({
-    name: '', city: '', country: '', status: 'pending',
+    name: '', city: '', country: '', status: 'pending', onboardingStatus: 'directory_only' as 'directory_only' | 'in_progress' | 'claimed',
     timeZone: 'UTC',
     lat: '', lng: '',
     allowMultiMosqueLocalAdmins: false,
@@ -367,6 +368,7 @@ function MosqueProfileShell() {
       country: mosque.country ?? '',
       timeZone: mosque.time_zone?.trim() || 'UTC',
       status: mosque.status ?? 'pending',
+      onboardingStatus: (['directory_only', 'in_progress', 'claimed'].includes(mosque.onboarding_status ?? '') ? mosque.onboarding_status : 'directory_only') as 'directory_only' | 'in_progress' | 'claimed',
       lat: mosque.lat != null ? String(mosque.lat) : '',
       lng: mosque.lng != null ? String(mosque.lng) : '',
       allowMultiMosqueLocalAdmins: !!mosque.allow_multi_mosque_local_admins,
@@ -822,7 +824,7 @@ function MosqueProfileShell() {
     }
 
     const payload: Record<string, any> = {
-      name: nextName, status: editForm.status,
+      name: nextName, status: editForm.status, onboarding_status: editForm.onboardingStatus,
       city: editForm.city.trim() || null, country: editForm.country.trim() || null,
       time_zone: timeZone,
       lat: latVal, lng: lngVal,
@@ -1627,6 +1629,17 @@ function MosqueProfileShell() {
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </Select>
+              </div>
+              <div>
+                <label style={styles.label} htmlFor="edit-onboarding-status">Claim status</label>
+                <Select id="edit-onboarding-status" value={editForm.onboardingStatus} onChange={(e) => setEditForm((p) => ({ ...p, onboardingStatus: e.target.value as 'directory_only' | 'in_progress' | 'claimed' }))}>
+                  <option value="directory_only">Directory listing — unclaimed</option>
+                  <option value="in_progress">Setting up — admin assigned, not yet operational</option>
+                  <option value="claimed">Claimed — actively managed by mosque staff</option>
+                </Select>
+                <div style={styles.helperText}>
+                  Set to &quot;Claimed&quot; once a local admin has taken responsibility for this mosque&#39;s prayer times and schedule. This removes the &quot;not yet claimed&quot; notice shown to listeners.
+                </div>
               </div>
               <div>
                   <label style={styles.label}>Prayer times source</label>

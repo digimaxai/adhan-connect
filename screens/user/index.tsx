@@ -36,7 +36,6 @@ import { usePrayerTimesRealtime } from '../shared/hooks/usePrayerTimesRealtime';
 import { getDailyPrayerTimes, type NormalizedPrayerTimes } from '../../lib/api/prayerTimesUnified';
 import { computeNextPrayerSummaryAcrossDays } from '../../lib/prayerTimesDisplay';
 import { isFreshLiveStream } from '../../lib/liveStreamFreshness';
-import { MosqueStatusBadge, LiveCapabilityBadge, mosqueHasLiveCapability } from '../../components/MosqueStatusBadge';
 import { tokens } from '../../theme/tokens';
 import { NearYouNowCard } from '../../components/NearYouNowCard';
 import { HomeJumuahStrip } from '../../components/HomeJumuahStrip';
@@ -257,16 +256,14 @@ const MuezzinHero = React.memo(function MuezzinHero({ loading, broadcast, error,
 // ─── MosqueIdentityBar ────────────────────────────────────────────────────────
 type MosqueIdentityBarProps = {
   mosque: Mosque | null;
-  hasOtherMosques: boolean;
   onOpenMosque: () => void;
   onDiscover: () => void;
-  onManageMosques: () => void;
   hasSubscriptions: boolean;
   otherMosqueLive: boolean;
 };
 
 const MosqueIdentityBar = React.memo(function MosqueIdentityBar({
-  mosque, hasOtherMosques, onOpenMosque, onDiscover, onManageMosques, hasSubscriptions, otherMosqueLive,
+  mosque, onOpenMosque, onDiscover, hasSubscriptions, otherMosqueLive,
 }: MosqueIdentityBarProps) {
   if (!mosque && !hasSubscriptions) {
     return (
@@ -295,27 +292,12 @@ const MosqueIdentityBar = React.memo(function MosqueIdentityBar({
         {otherMosqueLive ? <View style={styles.identityLiveDot} /> : null}
       </View>
       <View style={{ flex: 1 }}>
-        <AppText style={styles.identityName}>{mosque.name}</AppText>
+        <AppText style={styles.identityName} numberOfLines={2}>{mosque.name}</AppText>
         {loc ? (
           <AppText variant="caption" style={styles.identityCity} numberOfLines={1}>{loc}</AppText>
         ) : null}
-        <View style={styles.identityBadgeRow}>
-          <MosqueStatusBadge status={mosque.onboarding_status} compact />
-          <LiveCapabilityBadge capable={mosqueHasLiveCapability(mosque)} compact />
-        </View>
       </View>
-      {hasOtherMosques ? (
-        <Pressable
-          onPress={onManageMosques}
-          hitSlop={8}
-          style={({ pressed }) => [styles.identityMosquesPill, pressed && { opacity: 0.8 }]}
-        >
-          <Ionicons name="business-outline" size={12} color="#0369A1" />
-          <AppText style={styles.identitySwitchText}>My mosques</AppText>
-        </Pressable>
-      ) : (
-        <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
-      )}
+      <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
     </Pressable>
   );
 });
@@ -1110,7 +1092,6 @@ export default function HomeScreen() {
     () => router.push('/(user)/request-mosque'),
     [router]
   );
-  const manageMosques = useCallback(() => router.push('/(user)/manage-mosques'), [router]);
   const openPrimaryMosque = useCallback(() => {
     if (!primaryMosque) return;
     router.push({
@@ -1478,10 +1459,8 @@ export default function HomeScreen() {
       {/* ── Mosque identity bar ── */}
       <MosqueIdentityBar
         mosque={primaryMosque}
-        hasOtherMosques={followedMosques.length > 1}
         onOpenMosque={openPrimaryMosque}
         onDiscover={openDiscover}
-        onManageMosques={manageMosques}
         hasSubscriptions={subs.length > 0}
         otherMosqueLive={otherMosqueLive}
       />
@@ -1869,13 +1848,6 @@ const styles = StyleSheet.create({
   identityEmptyText: { flex: 1, color: '#1D4ED8', fontWeight: '700', fontSize: 13 },
   identityName: { color: tokens.color.text.primary, fontWeight: '800', fontSize: 14 },
   identityCity: { color: tokens.color.text.secondary, marginTop: 1 },
-  identityBadgeRow: { flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap' },
-  identityMosquesPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5,
-    backgroundColor: '#EFF6FF', borderRadius: tokens.radius.pill,
-  },
-  identitySwitchText: { color: '#0369A1', fontWeight: '800', fontSize: 12 },
   identityLiveDot: {
     position: 'absolute', top: -1, right: -1,
     width: 10, height: 10, borderRadius: 5,

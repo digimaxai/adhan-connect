@@ -595,6 +595,28 @@ export default function PrayerTimesAdminScreen({
       return;
     }
 
+    const mosqueName = selectedMosque.name ?? 'this mosque';
+    const confirmMessage = `Save prayer times for ${mosqueName} on ${selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}?\n\nThis will update the times shown to all followers immediately.`;
+
+    if (isWeb) {
+      // eslint-disable-next-line no-alert
+      if (!window.confirm(confirmMessage)) return;
+      await doSave();
+    } else {
+      Alert.alert(
+        'Save prayer times?',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Save', style: 'default', onPress: doSave },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
+
+  const doSave = async () => {
+    if (!selectedMosque) return;
     const normalizedForm = normalizePrayerTimeForm(form);
     setForm(normalizedForm);
     setSaving(true);
@@ -607,9 +629,9 @@ export default function PrayerTimesAdminScreen({
         updatedBy: userId || null,
         overridesExist: true,
       });
-      setNotice('Prayer times saved successfully.');
+      setNotice(`Prayer times for ${selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} saved and published to followers.`);
       if (!isWeb) {
-        Alert.alert('Saved', 'Prayer times updated.');
+        Alert.alert('Saved', 'Prayer times updated and live for followers.');
       }
       await loadPrayerTimes();
     } catch (e: any) {
