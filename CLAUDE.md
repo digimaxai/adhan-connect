@@ -1,6 +1,19 @@
 # Adhan Connect - Claude/Codex Handoff
 
-Latest: Codex addressed build-19 feedback on 2026-09-07: homepage readability, prayer availability, Nearby placement, explicit countdown, event attendance/reactions and local-admin event/Jumu’ah summaries. See `docs/claude-code-handoff-2026-09-07.md`. Two event-engagement migrations are applied to staging; iOS build 20 (`23872dc3-fa2a-4d32-8f48-64a8d8bff21d`) completed and is ready to test. Web preview remains `0qmhx0zeeo`; the attempted web deployment was rejected by automatic approval review as outside the latest test-build authorization.
+Latest (2026-09-14, Claude Code): hosted staging web/API redeployed as `89bc41p84p`
+(alias `preview` → `https://adhan-connect--preview.expo.app`). The previous hosted API
+predated the 2026-09-13 iqamah-schedule resolution, so `/api/prayer-times-daily` and
+`/api/admin/prayer-times-workspace` returned `iqama: null` for every date without a
+saved `prayer_times` row — verified live before and after. Native builds (Xcode Cloud
+iOS, GitHub Actions Android) do not contain these routes; they call the hosted API, so
+any server-route change needs `EXPO_NO_DOTENV=1 eas env:exec preview "npx expo export
+--platform web --clear"` + `eas deploy --alias preview` in addition to a native build.
+Also note: a saved `prayer_times` row (manual correction or import) is canonical for
+that date, so iqamah schedules and calculation adjustments never surface there until
+the row is removed — the Local Admin "View & correct a date" screen now explains this
+and offers "Remove saved times — use automatic" (client delete via existing RLS).
+
+Previous: Codex addressed build-19 feedback on 2026-09-07: homepage readability, prayer availability, Nearby placement, explicit countdown, event attendance/reactions and local-admin event/Jumu’ah summaries. See `docs/claude-code-handoff-2026-09-07.md`. Two event-engagement migrations are applied to staging; iOS build 20 (`23872dc3-fa2a-4d32-8f48-64a8d8bff21d`) completed and is ready to test. Web preview remains `0qmhx0zeeo`; the attempted web deployment was rejected by automatic approval review as outside the latest test-build authorization.
 
 Last audited by Codex: 2026-09-04. Claude Code added the Local Admin content-attachments feature on 2026-09-05 (see `docs/claude-code-handoff-2026-09-05.md`); Codex's own 2026-09-05 work (notification reliability, Guidance hub, nearby redesign) is covered separately in `docs/codex-worklog.md`. Claude Code added mosque About & Contact info, prayers_not_offered display, and Guidance Centre seed on 2026-09-06 (see `docs/claude-code-handoff-2026-09-06.md`) — staging migration applied; Codex deployed latest preview `0qmhx0zeeo`. Staging iOS build 19 (`c7fec1e9-be0f-46ab-b617-efb16c6d0148`) finished successfully and includes availability-aware service labels, the off-site Jumu’ah service, and the homepage Friday strip. Existing binaries have OTA disabled, so install the fresh build.
 
