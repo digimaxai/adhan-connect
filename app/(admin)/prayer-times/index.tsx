@@ -1147,13 +1147,8 @@ export default function PrayerTimesAdminScreen({
                 <AppText variant="caption" color={tokens.color.text.secondary}>
                   Single-date correction
                 </AppText>
-                <AppText variant="title">Correct this day</AppText>
+                <AppText variant="title">Choose a date to review</AppText>
               </View>
-              <AppButton
-                title="Manage iqamah schedules"
-                variant="ghost"
-                onPress={() => router.push('/(admin)/iqamah-schedules' as any)}
-              />
             </View>
             <DateSelector date={selectedDate} onChange={setSelectedDate} />
             {currentRow ? (
@@ -1197,15 +1192,31 @@ export default function PrayerTimesAdminScreen({
             </AppText>
             <AppText variant="title">Published times</AppText>
           </View>
-          {prayers.map((p) => (
-            <View key={p.key} style={styles.summaryRow}>
-              <AppText variant="body" style={styles.summaryPrayer}>{p.label}</AppText>
-              <AppText variant="body" style={styles.summaryAdhan}>{form[p.key].adhan ?? '—'}</AppText>
-              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryIqama}>
-                {form[p.key].iqama ? `Iqama ${form[p.key].iqama}` : 'Iqama —'}
-              </AppText>
+          <View style={styles.summaryTable}>
+            <View style={styles.summaryHeaderRow}>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryPrayerCol}>Prayer</AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryValueCol}>Adhan</AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryValueCol}>Iqama</AppText>
             </View>
-          ))}
+            {prayers.map((p) => (
+              <View key={p.key} style={styles.summaryRow}>
+                <AppText variant="body" style={[styles.summaryPrayer, styles.summaryPrayerCol]} numberOfLines={1}>
+                  {p.label}
+                </AppText>
+                <AppText variant="body" style={[styles.summaryAdhan, styles.summaryValueCol]} numberOfLines={1}>
+                  {form[p.key].adhan ?? '—'}
+                </AppText>
+                <AppText
+                  variant="body"
+                  color={form[p.key].iqama ? tokens.color.text.primary : tokens.color.text.secondary}
+                  style={styles.summaryValueCol}
+                  numberOfLines={1}
+                >
+                  {form[p.key].iqama ?? '—'}
+                </AppText>
+              </View>
+            ))}
+          </View>
           {currentRow ? (
             <View style={styles.sourceBadge}>
               <AppText variant="caption" style={styles.sourceBadgeText}>
@@ -2079,15 +2090,15 @@ export default function PrayerTimesAdminScreen({
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeader}>
             <AppText variant="caption" color={tokens.color.text.secondary}>
-              Single-date correction
+              Edit this date
             </AppText>
             <AppText variant="title" style={styles.sectionTitle}>
-              Correct this day
+              Adhan and iqama times for {dateIso}
             </AppText>
           </View>
           {canManageImports ? (
             <AppButton
-              title={showManualOverrideTools ? 'Hide day editor' : 'Open day editor'}
+              title={showManualOverrideTools ? 'Hide' : 'Edit'}
               variant="ghost"
               onPress={() => setShowManualOverrideTools((prev) => !prev)}
             />
@@ -2278,8 +2289,8 @@ function PrayerTimesMenu({
   }[] = [
     {
       key: 'today',
-      title: "Today's correction",
-      description: 'See what followers see today and fix one date if needed.',
+      title: 'View & correct a date',
+      description: 'See what followers see and fix a specific day if needed.',
       icon: 'time-outline',
       iconBg: '#EFF6FF',
       iconColor: '#2563EB',
@@ -2288,7 +2299,7 @@ function PrayerTimesMenu({
     {
       key: 'iqamah',
       title: 'Manage iqamah schedules',
-      description: 'Set date-range congregation times per prayer.',
+      description: 'Set congregation times for a date range per prayer.',
       icon: 'calendar-outline',
       iconBg: '#ECFDF5',
       iconColor: '#059669',
@@ -2296,7 +2307,7 @@ function PrayerTimesMenu({
     },
     {
       key: 'settings',
-      title: 'Calculation settings',
+      title: 'Calculation method',
       description: calculationSummary,
       icon: 'settings-outline',
       iconBg: '#F5F3FF',
@@ -3272,11 +3283,28 @@ const styles = StyleSheet.create({
   adjustmentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   adjustmentLabel: { flex: 1, fontWeight: tokens.typography.weight.bold },
   adjustmentValue: { width: 70, textAlign: 'center', fontWeight: tokens.typography.weight.extrabold },
-  summaryCard: { gap: 6, borderRadius: 16 },
-  summaryRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10, paddingVertical: 5, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F1F5F9' },
-  summaryPrayer: { width: 64, fontWeight: tokens.typography.weight.bold },
-  summaryAdhan: { width: 48, fontWeight: tokens.typography.weight.extrabold },
-  summaryIqama: { flex: 1 },
+  summaryCard: { gap: 10, borderRadius: 16 },
+  summaryTable: { gap: 0 },
+  summaryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: tokens.color.border.subtle,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F1F5F9',
+  },
+  summaryPrayerCol: { flex: 1.1, minWidth: 0 },
+  summaryValueCol: { flex: 1, minWidth: 0, textAlign: 'right' },
+  summaryPrayer: { fontWeight: tokens.typography.weight.bold },
+  summaryAdhan: { fontWeight: tokens.typography.weight.extrabold, textAlign: 'right' },
   sourceBadgeMuted: { backgroundColor: '#F1F5F9' },
   sourceBadgeMutedText: { color: '#64748B', fontWeight: tokens.typography.weight.bold },
   compactManualCard: { gap: 8, borderRadius: 18 },

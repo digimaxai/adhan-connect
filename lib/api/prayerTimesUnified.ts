@@ -427,7 +427,7 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
         fallback[name] = { adhan: convertLegacyTimesToDate(legacyDate, slot), iqama: null };
       });
 
-      return fallback;
+      return await fillPartialPrayerTimesFromSource(mosqueId, dateIso, fallback);
     }
     if (legacyErr && legacyErr.code !== 'PGRST116') {
       console.warn('[getDailyPrayerTimes] legacy mosque_prayer_times error', legacyErr.message ?? legacyErr);
@@ -459,7 +459,7 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
         rotaNormalized[key] = { adhan: safeDateWithBase(row.adhan_time ?? null, dateIso), iqama: null };
       });
       const hasAny = PRAYER_NAMES.some((p) => rotaNormalized[p].adhan);
-      if (hasAny) return rotaNormalized;
+      if (hasAny) return await fillPartialPrayerTimesFromSource(mosqueId, dateIso, rotaNormalized);
     } else if (rotaErr && rotaErr.code !== 'PGRST116') {
       console.warn('[getDailyPrayerTimes] staff_rota fallback error', rotaErr.message ?? rotaErr);
     }
@@ -489,7 +489,10 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
         iqama: null,
       };
     });
-    return calculated;
+    // Most dates never get a saved prayer_times row, so this is the path the
+    // vast majority of listener reads hit — without this, a mosque's iqamah
+    // schedule (and ELM jamat) would never apply on any auto-calculated date.
+    return await fillPartialPrayerTimesFromSource(mosqueId, dateIso, calculated);
   } catch (err: any) {
     console.warn('[getDailyPrayerTimes] auto-calculate fallback threw', err?.message ?? err);
   }

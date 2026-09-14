@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { AdminScreenShell } from '@/components/admin/AdminScreenShell';
 import { AdminBanner } from '@/components/admin/AdminBanner';
@@ -309,52 +309,94 @@ export default function IqamahSchedulesScreen() {
       <Modal visible={showForm} animationType="slide" transparent onRequestClose={() => setShowForm(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <AppText variant="title">{editingId ? 'Edit iqamah schedule' : 'New iqamah schedule'}</AppText>
+            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+              <AppText variant="title">{editingId ? 'Edit iqamah schedule' : 'New iqamah schedule'}</AppText>
 
-            <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Prayer</AppText>
-            <View style={styles.choiceRow}>
-              {PRAYERS.map((p) => (
-                <AppButton key={p.key} title={p.label} variant={formPrayer === p.key ? 'primary' : 'ghost'} onPress={() => setFormPrayer(p.key)} />
-              ))}
-            </View>
-
-            <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Iqamah time (24-hour, HH:MM)</AppText>
-            <TextInput style={styles.textInput} value={formTime} onChangeText={setFormTime} placeholder="21:00" keyboardType="numbers-and-punctuation" />
-
-            <View style={styles.dateRangeSection}>
-              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.dateRangeSectionLabel}>
-                EFFECTIVE DATES (REQUIRED)
-              </AppText>
-
-              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>
-                Starts on
-              </AppText>
-              <Pressable style={styles.dateButton} onPress={() => setDatePicker('start')}>
-                <AppText variant="body" style={styles.dateButtonValue}>{formatLocalDate(formStartDate)}</AppText>
-                <AppText variant="caption" color={tokens.color.text.accent}>Change</AppText>
-              </Pressable>
-
-              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>
-                Ends
-              </AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Prayer</AppText>
               <View style={styles.choiceRow}>
-                <AppButton title="Ongoing — no end date" variant={!formHasEndDate ? 'primary' : 'ghost'} onPress={() => setFormHasEndDate(false)} />
-                <AppButton title="Ends on a date" variant={formHasEndDate ? 'primary' : 'ghost'} onPress={() => setFormHasEndDate(true)} />
+                {PRAYERS.map((p) => (
+                  <AppButton key={p.key} title={p.label} variant={formPrayer === p.key ? 'primary' : 'ghost'} onPress={() => setFormPrayer(p.key)} />
+                ))}
               </View>
-              {formHasEndDate ? (
-                <Pressable style={styles.dateButton} onPress={() => setDatePicker('end')}>
-                  <AppText variant="body" style={styles.dateButtonValue}>{formatLocalDate(formEndDate)}</AppText>
-                  <AppText variant="caption" color={tokens.color.text.accent}>Change</AppText>
-                </Pressable>
-              ) : (
-                <AppText variant="caption" color={tokens.color.text.secondary}>
-                  This range stays active until you add a later range or give it an end date.
-                </AppText>
-              )}
-            </View>
 
-            <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Label (optional)</AppText>
-            <TextInput style={styles.textInput} value={formLabel} onChangeText={setFormLabel} placeholder="e.g. Winter schedule" />
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Iqamah time (24-hour, HH:MM)</AppText>
+              <TextInput style={styles.textInput} value={formTime} onChangeText={setFormTime} placeholder="21:00" keyboardType="numbers-and-punctuation" />
+
+              <View style={styles.dateRangeSection}>
+                <AppText variant="caption" color={tokens.color.text.secondary} style={styles.dateRangeSectionLabel}>
+                  EFFECTIVE DATES (REQUIRED)
+                </AppText>
+
+                <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>
+                  Starts on
+                </AppText>
+                <Pressable style={styles.dateButton} onPress={() => setDatePicker(datePicker === 'start' ? null : 'start')}>
+                  <AppText variant="body" style={styles.dateButtonValue}>{formatLocalDate(formStartDate)}</AppText>
+                  <AppText variant="caption" color={tokens.color.text.accent}>
+                    {datePicker === 'start' ? 'Close' : 'Set start date'}
+                  </AppText>
+                </Pressable>
+                {datePicker === 'start' ? (
+                  <View style={styles.inlinePickerWrap}>
+                    <DateTimePicker
+                      value={formStartDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      onChange={(_event, selected) => {
+                        if (Platform.OS !== 'ios') setDatePicker(null);
+                        if (!selected) return;
+                        setFormStartDate(selected);
+                      }}
+                    />
+                    {Platform.OS === 'ios' ? (
+                      <AppButton title="Done" onPress={() => setDatePicker(null)} style={{ marginTop: 8 }} />
+                    ) : null}
+                  </View>
+                ) : null}
+
+                <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>
+                  Ends
+                </AppText>
+                <View style={styles.choiceRow}>
+                  <AppButton title="Ongoing — no end date" variant={!formHasEndDate ? 'primary' : 'ghost'} onPress={() => { setFormHasEndDate(false); setDatePicker(null); }} />
+                  <AppButton title="Ends on a date" variant={formHasEndDate ? 'primary' : 'ghost'} onPress={() => setFormHasEndDate(true)} />
+                </View>
+                {formHasEndDate ? (
+                  <>
+                    <Pressable style={styles.dateButton} onPress={() => setDatePicker(datePicker === 'end' ? null : 'end')}>
+                      <AppText variant="body" style={styles.dateButtonValue}>{formatLocalDate(formEndDate)}</AppText>
+                      <AppText variant="caption" color={tokens.color.text.accent}>
+                        {datePicker === 'end' ? 'Close' : 'Set end date'}
+                      </AppText>
+                    </Pressable>
+                    {datePicker === 'end' ? (
+                      <View style={styles.inlinePickerWrap}>
+                        <DateTimePicker
+                          value={formEndDate}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                          onChange={(_event, selected) => {
+                            if (Platform.OS !== 'ios') setDatePicker(null);
+                            if (!selected) return;
+                            setFormEndDate(selected);
+                          }}
+                        />
+                        {Platform.OS === 'ios' ? (
+                          <AppButton title="Done" onPress={() => setDatePicker(null)} style={{ marginTop: 8 }} />
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <AppText variant="caption" color={tokens.color.text.secondary}>
+                    This range stays active until you add a later range or give it an end date.
+                  </AppText>
+                )}
+              </View>
+
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Label (optional)</AppText>
+              <TextInput style={styles.textInput} value={formLabel} onChangeText={setFormLabel} placeholder="e.g. Winter schedule" />
+            </ScrollView>
 
             <View style={styles.modalActions}>
               <AppButton title="Cancel" variant="ghost" onPress={() => setShowForm(false)} disabled={saving} />
@@ -363,23 +405,6 @@ export default function IqamahSchedulesScreen() {
           </View>
         </View>
       </Modal>
-
-      {datePicker ? (
-        <DateTimePicker
-          value={datePicker === 'start' ? formStartDate : formEndDate}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'inline' : 'default'}
-          onChange={(_event, selected) => {
-            if (Platform.OS !== 'ios') setDatePicker(null);
-            if (!selected) return;
-            if (datePicker === 'start') setFormStartDate(selected);
-            else setFormEndDate(selected);
-          }}
-        />
-      ) : null}
-      {datePicker && Platform.OS === 'ios' ? (
-        <AppButton title="Done" onPress={() => setDatePicker(null)} />
-      ) : null}
     </AdminScreenShell>
   );
 }
@@ -418,7 +443,10 @@ const styles = StyleSheet.create({
   statusBadgePast: { backgroundColor: '#F1F5F9' },
   statusBadgeText: { fontWeight: tokens.typography.weight.bold },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: tokens.color.bg.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, gap: 8, maxHeight: '90%' },
+  modalCard: { backgroundColor: tokens.color.bg.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingHorizontal: 20, paddingTop: 20, maxHeight: '92%' },
+  modalScroll: { flexGrow: 0 },
+  modalScrollContent: { gap: 8, paddingBottom: 12 },
+  inlinePickerWrap: { marginTop: 4, marginBottom: 4 },
   fieldLabel: { marginTop: 12 },
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   textInput: {
@@ -450,5 +478,13 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.bg.surface,
   },
   dateButtonValue: { fontWeight: tokens.typography.weight.semibold },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: tokens.color.border.subtle,
+  },
 });
