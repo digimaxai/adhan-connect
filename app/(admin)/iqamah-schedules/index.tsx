@@ -88,6 +88,9 @@ export default function IqamahSchedulesScreen() {
     schedules.forEach((row) => {
       map.get(row.prayer)?.push(row);
     });
+    // Show each prayer's ranges as a chronological timeline so it is obvious
+    // a future range can be added while a current one is still active.
+    map.forEach((rows) => rows.sort((a, b) => a.start_date.localeCompare(b.start_date)));
     return map;
   }, [schedules]);
 
@@ -219,7 +222,14 @@ export default function IqamahSchedulesScreen() {
       {error ? <AdminBanner tone="danger" title="Unable to continue" message={error} /> : null}
 
       {selectedMosque ? (
-        <AppButton title="Add iqamah schedule" onPress={openCreateForm} style={{ marginBottom: 12 }} />
+        <>
+          <AppButton title="Add iqamah schedule" onPress={openCreateForm} style={{ marginBottom: 6 }} />
+          <AppText variant="caption" color={tokens.color.text.secondary} style={{ marginBottom: 12 }}>
+            You can add the next date range for a prayer at any time — even while a current range is
+            still active — as long as the new range starts after the current one and the dates don&apos;t
+            overlap. Overlapping ranges for the same prayer are rejected automatically.
+          </AppText>
+        </>
       ) : null}
 
       {loading ? (
@@ -228,27 +238,61 @@ export default function IqamahSchedulesScreen() {
         PRAYERS.map(({ key, label }) => {
           const rows = grouped.get(key) ?? [];
           if (!rows.length) return null;
+          const todayIso = formatLocalDate(new Date());
           return (
             <AppCard key={key} style={styles.groupCard}>
               <AppText variant="title">{label}</AppText>
-              {rows.map((row) => (
-                <View key={row.id} style={styles.scheduleRow}>
-                  <View style={{ flex: 1 }}>
-                    <AppText variant="body" style={styles.scheduleTime}>{row.iqama_time}</AppText>
-                    <AppText variant="caption" color={tokens.color.text.secondary}>
-                      {row.start_date} {row.end_date ? `to ${row.end_date}` : '— ongoing'}
-                      {row.label ? ` · ${row.label}` : ''}
-                    </AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary}>
+                Timeline, earliest first
+              </AppText>
+              {rows.map((row) => {
+                const status: 'current' | 'upcoming' | 'past' =
+                  row.start_date > todayIso
+                    ? 'upcoming'
+                    : row.end_date && row.end_date < todayIso
+                      ? 'past'
+                      : 'current';
+                return (
+                  <View key={row.id} style={styles.scheduleRow}>
+                    <View
+                      style={[
+                        styles.statusDot,
+                        status === 'current' && styles.statusDotCurrent,
+                        status === 'upcoming' && styles.statusDotUpcoming,
+                        status === 'past' && styles.statusDotPast,
+                      ]}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.scheduleTopRow}>
+                        <AppText variant="body" style={styles.scheduleTime}>{row.iqama_time}</AppText>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            status === 'current' && styles.statusBadgeCurrent,
+                            status === 'upcoming' && styles.statusBadgeUpcoming,
+                            status === 'past' && styles.statusBadgePast,
+                          ]}
+                        >
+                          <AppText variant="caption" style={styles.statusBadgeText}>
+                            {status === 'current' ? 'Current' : status === 'upcoming' ? 'Upcoming' : 'Past'}
+                          </AppText>
+                        </View>
+                      </View>
+                      <AppText variant="caption" color={tokens.color.text.secondary}>
+                        {row.start_date} {row.end_date ? `to ${row.end_date}` : '— ongoing'}
+                        {row.label ? ` · ${row.label}` : ''}
+                      </AppText>
+                    </View>
+                    <AppButton title="Edit" variant="ghost" onPress={() => openEditForm(row)} />
+                    <AppButton
+                      title={deletingId === row.id ? 'Deleting…' : 'Delete'}
+                      variant="ghost"
+                      onPress={() => handleDelete(row)}
+                      disabled={deletingId === row.id}
+                    />
                   </View>
-                  <AppButton title="Edit" variant="ghost" onPress={() => openEditForm(row)} />
-                  <AppButton
-                    title={deletingId === row.id ? 'Deleting…' : 'Delete'}
-                    variant="ghost"
-                    onPress={() => handleDelete(row)}
-                    disabled={deletingId === row.id}
-                  />
-                </View>
-              ))}
+                );
+              })}
             </AppCard>
           );
         })
@@ -277,20 +321,37 @@ export default function IqamahSchedulesScreen() {
             <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Iqamah time (24-hour, HH:MM)</AppText>
             <TextInput style={styles.textInput} value={formTime} onChangeText={setFormTime} placeholder="21:00" keyboardType="numbers-and-punctuation" />
 
-            <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Start date</AppText>
-            <Pressable style={styles.dateButton} onPress={() => setDatePicker('start')}>
-              <AppText variant="body">{formatLocalDate(formStartDate)}</AppText>
-            </Pressable>
+            <View style={styles.dateRangeSection}>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.dateRangeSectionLabel}>
+                EFFECTIVE DATES (REQUIRED)
+              </AppText>
 
-            <View style={styles.choiceRow}>
-              <AppButton title="Ongoing (no end date)" variant={!formHasEndDate ? 'primary' : 'ghost'} onPress={() => setFormHasEndDate(false)} />
-              <AppButton title="Ends on a date" variant={formHasEndDate ? 'primary' : 'ghost'} onPress={() => setFormHasEndDate(true)} />
-            </View>
-            {formHasEndDate ? (
-              <Pressable style={styles.dateButton} onPress={() => setDatePicker('end')}>
-                <AppText variant="body">{formatLocalDate(formEndDate)}</AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>
+                Starts on
+              </AppText>
+              <Pressable style={styles.dateButton} onPress={() => setDatePicker('start')}>
+                <AppText variant="body" style={styles.dateButtonValue}>{formatLocalDate(formStartDate)}</AppText>
+                <AppText variant="caption" color={tokens.color.text.accent}>Change</AppText>
               </Pressable>
-            ) : null}
+
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>
+                Ends
+              </AppText>
+              <View style={styles.choiceRow}>
+                <AppButton title="Ongoing — no end date" variant={!formHasEndDate ? 'primary' : 'ghost'} onPress={() => setFormHasEndDate(false)} />
+                <AppButton title="Ends on a date" variant={formHasEndDate ? 'primary' : 'ghost'} onPress={() => setFormHasEndDate(true)} />
+              </View>
+              {formHasEndDate ? (
+                <Pressable style={styles.dateButton} onPress={() => setDatePicker('end')}>
+                  <AppText variant="body" style={styles.dateButtonValue}>{formatLocalDate(formEndDate)}</AppText>
+                  <AppText variant="caption" color={tokens.color.text.accent}>Change</AppText>
+                </Pressable>
+              ) : (
+                <AppText variant="caption" color={tokens.color.text.secondary}>
+                  This range stays active until you add a later range or give it an end date.
+                </AppText>
+              )}
+            </View>
 
             <AppText variant="caption" color={tokens.color.text.secondary} style={styles.fieldLabel}>Label (optional)</AppText>
             <TextInput style={styles.textInput} value={formLabel} onChangeText={setFormLabel} placeholder="e.g. Winter schedule" />
@@ -346,6 +407,16 @@ const styles = StyleSheet.create({
     borderTopColor: tokens.color.border.subtle,
   },
   scheduleTime: { fontWeight: '600' },
+  scheduleTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
+  statusDotCurrent: { backgroundColor: '#059669' },
+  statusDotUpcoming: { backgroundColor: '#2563EB' },
+  statusDotPast: { backgroundColor: '#94A3B8' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: tokens.radius.pill },
+  statusBadgeCurrent: { backgroundColor: '#ECFDF5' },
+  statusBadgeUpcoming: { backgroundColor: '#EFF6FF' },
+  statusBadgePast: { backgroundColor: '#F1F5F9' },
+  statusBadgeText: { fontWeight: tokens.typography.weight.bold },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: tokens.color.bg.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, gap: 8, maxHeight: '90%' },
   fieldLabel: { marginTop: 12 },
@@ -357,12 +428,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  dateRangeSection: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.bg.subtle,
+    gap: 2,
+  },
+  dateRangeSectionLabel: { fontWeight: tokens.typography.weight.bold, letterSpacing: 0.5 },
   dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: tokens.color.border.subtle,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    backgroundColor: tokens.color.bg.surface,
   },
+  dateButtonValue: { fontWeight: tokens.typography.weight.semibold },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 },
 });

@@ -10,8 +10,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AdminScreenShell } from '@/components/admin/AdminScreenShell';
 import { AdminBanner } from '@/components/admin/AdminBanner';
 import { DateSelector } from '@/components/admin/DateSelector';
@@ -246,6 +247,11 @@ export default function PrayerTimesAdminScreen({
       ? onboardingMode
       : (Array.isArray(params.onboarding) ? params.onboarding[0] : params.onboarding) === '1';
 
+  // Which top-level menu section is showing. The screen lands on a simple
+  // menu (matching the Local Admin dashboard's ToolSection pattern) and
+  // opens one section at a time instead of rendering every tool inline.
+  type PrayerTimesSection = 'menu' | 'today' | 'settings' | 'import';
+  const [activeSection, setActiveSection] = useState<PrayerTimesSection>('menu');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -599,6 +605,17 @@ export default function PrayerTimesAdminScreen({
   useEffect(() => {
     void loadImportHistory();
   }, [loadImportHistory]);
+
+  // Refetch whenever this screen regains focus (e.g. returning from
+  // iqamah-schedules after adding/editing a date-range iqamah time) so the
+  // single-date correction editor and "what followers see" summary reflect
+  // changes made elsewhere without needing a manual pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      void loadPrayerTimes();
+      void loadImportHistory();
+    }, [loadPrayerTimes, loadImportHistory])
+  );
 
   const openTimePicker = (prayer: keyof PrayerTimeForm, field: 'adhan' | 'iqama') => {
     if (Platform.OS === 'web') return;
@@ -1060,55 +1077,119 @@ export default function PrayerTimesAdminScreen({
         />
       }
     >
-      {showManualOverrideTools || !canManageImports ? (
-        <AppCard style={styles.utilityCard}>
-          <View style={styles.utilityHeaderRow}>
-            <View style={{ flex: 1 }}>
-              <AppText variant="caption" color={tokens.color.text.secondary}>
-                Single-date correction
-              </AppText>
-              <AppText variant="title">Correct this day</AppText>
-            </View>
-            <AppButton
-              title="Manage iqamah schedules"
-              variant="ghost"
-              onPress={() => router.push('/(admin)/iqamah-schedules' as any)}
-            />
-          </View>
-          <DateSelector date={selectedDate} onChange={setSelectedDate} />
-          {currentRow ? (
-            <View style={styles.sourceBadge}>
-              <AppText variant="caption" style={styles.sourceBadgeText}>
-                {currentRow.source_type === 'manual' ? 'Manual correction' : 'Published timetable'}
-                {scheduleSourceMeta ? ` · ${scheduleSourceMeta}` : ''}
-              </AppText>
-            </View>
-          ) : (
-            <View style={[styles.sourceBadge, styles.sourceBadgeMuted]}>
-              <AppText variant="caption" style={styles.sourceBadgeMutedText}>No published schedule · auto-calculated times apply</AppText>
-            </View>
-          )}
-        </AppCard>
-      ) : (
-        <AppCard subtle style={styles.compactManualCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
-            Manual override tools
-          </AppText>
-          <AppText variant="title" style={styles.mobileHintTitle}>
-            Hide the day-level editor until you need it
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary}>
-            Main Admin uploads can stay focused on file import. Open the manual workspace only when a single date needs a correction.
-          </AppText>
-          <AppButton
-            title="Open day override tools"
-            variant="ghost"
-            onPress={() => setShowManualOverrideTools(true)}
-          />
-        </AppCard>
-      )}
+      {activeSection !== 'menu' ? (
+        <Pressable
+          onPress={() => setActiveSection('menu')}
+          style={({ pressed }) => [styles.backToMenuRow, pressed && styles.pressed]}
+          accessibilityRole="button"
+        >
+          <Ionicons name="chevron-back" size={16} color={tokens.color.text.accent} />
+          <AppText variant="body" style={styles.backToMenuText}>Prayer Times menu</AppText>
+        </Pressable>
+      ) : null}
 
-      {selectedMosque && !loading && (form.fajr.adhan || form.dhuhr.adhan || form.asr.adhan || form.maghrib.adhan || form.isha.adhan) ? (
+      {!selectedMosque && !mosques.length ? (
+        <AdminBanner
+          tone="warning"
+          title={isMainAdmin ? 'No mosques found' : 'No mosque access'}
+          message={
+            isMainAdmin
+              ? 'No mosques are currently available for the prayer-times workspace.'
+              : 'You can only manage prayer times for mosques where your account has local admin access.'
+          }
+        />
+      ) : null}
+      {canManageImports && !selectedMosque && mosques.length ? (
+        <AdminBanner
+          tone="warning"
+          title="Choose a mosque first"
+          message="Main Admin timetable publishing is now mosque specific. Open a mosque workspace from the prayer-times hub or mosque directory before uploading a file."
+        />
+      ) : null}
+      {isOnboardingEntry && selectedMosque ? (
+        <AdminBanner
+          tone="info"
+          title="Schedule setup"
+          message={
+            canManageImports
+              ? `You are setting up ${selectedMosque.name}. Upload the timetable, confirm whether it is a month patch or full-year publish, then review the overwrite summary before publishing.`
+              : `You are setting up ${selectedMosque.name}. Manual day-level edits are available here, while Main Admin publishes month or full-year timetable files from the web portal.`
+          }
+        />
+      ) : null}
+      {notice ? (
+        <AdminBanner
+          tone={publishingImport ? 'info' : notice.startsWith('Published') ? 'success' : 'info'}
+          title={publishingImport ? 'Publishing timetable' : 'Prayer schedule'}
+          message={notice}
+        />
+      ) : null}
+      {error ? <AdminBanner tone="danger" title="Unable to continue" message={error} /> : null}
+
+      {activeSection === 'menu' ? (
+        <PrayerTimesMenu
+          canManageImports={canManageImports}
+          onSelect={setActiveSection}
+          onManageIqamahSchedules={() => router.push('/(admin)/iqamah-schedules' as any)}
+          calculationSummary={
+            prayerSource === 'elm'
+              ? 'East London Mosque (London Unified)'
+              : `Aladhan · Method ${calculationMethod} · ${prayerSchool === 1 ? 'Hanafi Asr' : 'Standard Asr'}`
+          }
+        />
+      ) : null}
+
+      {activeSection === 'today' ? (
+        showManualOverrideTools || !canManageImports ? (
+          <AppCard style={styles.utilityCard}>
+            <View style={styles.utilityHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <AppText variant="caption" color={tokens.color.text.secondary}>
+                  Single-date correction
+                </AppText>
+                <AppText variant="title">Correct this day</AppText>
+              </View>
+              <AppButton
+                title="Manage iqamah schedules"
+                variant="ghost"
+                onPress={() => router.push('/(admin)/iqamah-schedules' as any)}
+              />
+            </View>
+            <DateSelector date={selectedDate} onChange={setSelectedDate} />
+            {currentRow ? (
+              <View style={styles.sourceBadge}>
+                <AppText variant="caption" style={styles.sourceBadgeText}>
+                  {currentRow.source_type === 'manual' ? 'Manual correction' : 'Published timetable'}
+                  {scheduleSourceMeta ? ` · ${scheduleSourceMeta}` : ''}
+                </AppText>
+              </View>
+            ) : (
+              <View style={[styles.sourceBadge, styles.sourceBadgeMuted]}>
+                <AppText variant="caption" style={styles.sourceBadgeMutedText}>No published schedule · auto-calculated times apply</AppText>
+              </View>
+            )}
+          </AppCard>
+        ) : (
+          <AppCard subtle style={styles.compactManualCard}>
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              Manual override tools
+            </AppText>
+            <AppText variant="title" style={styles.mobileHintTitle}>
+              Hide the day-level editor until you need it
+            </AppText>
+            <AppText variant="body" color={tokens.color.text.secondary}>
+              Main Admin uploads can stay focused on file import. Open the manual workspace only when a single date needs a correction.
+            </AppText>
+            <AppButton
+              title="Open day override tools"
+              variant="ghost"
+              onPress={() => setShowManualOverrideTools(true)}
+            />
+          </AppCard>
+        )
+      ) : null}
+
+      {activeSection === 'today' && selectedMosque && !loading && (form.fajr.adhan || form.dhuhr.adhan || form.asr.adhan || form.maghrib.adhan || form.isha.adhan) ? (
         <AppCard style={styles.summaryCard}>
           <View style={styles.utilityHeader}>
             <AppText variant="caption" color={tokens.color.text.secondary}>
@@ -1139,38 +1220,7 @@ export default function PrayerTimesAdminScreen({
         </AppCard>
       ) : null}
 
-      {!selectedMosque && !mosques.length ? (
-        <AdminBanner
-          tone="warning"
-          title={isMainAdmin ? 'No mosques found' : 'No mosque access'}
-          message={
-            isMainAdmin
-              ? 'No mosques are currently available for the prayer-times workspace.'
-              : 'You can only manage prayer times for mosques where your account has local admin access.'
-          }
-        />
-      ) : null}
-      {canManageImports && !selectedMosque && mosques.length ? (
-        <AdminBanner
-          tone="warning"
-          title="Choose a mosque first"
-          message="Main Admin timetable publishing is now mosque specific. Open a mosque workspace from the prayer-times hub or mosque directory before uploading a file."
-        />
-      ) : null}
-
-      {isOnboardingEntry && selectedMosque ? (
-        <AdminBanner
-          tone="info"
-          title="Schedule setup"
-          message={
-            canManageImports
-              ? `You are setting up ${selectedMosque.name}. Upload the timetable, confirm whether it is a month patch or full-year publish, then review the overwrite summary before publishing.`
-              : `You are setting up ${selectedMosque.name}. Manual day-level edits are available here, while Main Admin publishes month or full-year timetable files from the web portal.`
-          }
-        />
-      ) : null}
-
-      {selectedMosque ? (
+      {activeSection === 'settings' && selectedMosque ? (
         <AppCard style={styles.settingsCard}>
           <Pressable
             onPress={() => setShowSettings((prev) => !prev)}
@@ -1245,16 +1295,7 @@ export default function PrayerTimesAdminScreen({
         </AppCard>
       ) : null}
 
-      {notice ? (
-        <AdminBanner
-          tone={publishingImport ? 'info' : notice.startsWith('Published') ? 'success' : 'info'}
-          title={publishingImport ? 'Publishing timetable' : 'Prayer schedule'}
-          message={notice}
-        />
-      ) : null}
-      {error ? <AdminBanner tone="danger" title="Unable to continue" message={error} /> : null}
-
-      {canManageImports ? (
+      {activeSection === 'import' && canManageImports ? (
         <AppCard style={styles.importCard}>
           <View style={styles.importHeader}>
             <View style={styles.importCopy}>
@@ -2031,22 +2072,9 @@ export default function PrayerTimesAdminScreen({
             )}
           </AppCard>
         </AppCard>
-      ) : isWeb ? (
-        <AppCard subtle style={styles.mobileHintCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
-            Timetable publishing
-          </AppText>
-          <AppText variant="title" style={styles.mobileHintTitle}>
-            Main Admin owns timetable uploads
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary}>
-            Use this screen for local day-level corrections only. Bulk CSV imports, review, publish,
-            and rollback are now restricted to Main Admin so each mosque timetable is normalized
-            through one controlled pipeline.
-          </AppText>
-        </AppCard>
       ) : null}
 
+      {activeSection === 'today' ? (
       <AppCard subtle style={styles.manualSectionShell}>
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeader}>
@@ -2122,8 +2150,8 @@ export default function PrayerTimesAdminScreen({
                       </AppText>
                     )}
                   </View>
-                  <View style={styles.row}>
-                    <AppText variant="caption" color={tokens.color.text.secondary} style={styles.label}>
+                  <View style={styles.overrideRow}>
+                    <AppText variant="caption" color={tokens.color.text.secondary} style={styles.overrideCaption}>
                       {iqamaOverridden[p.key]
                         ? 'Overriding just this date — this iqamah stays fixed until you revert.'
                         : 'Resolved from the iqamah schedule or ELM jamaat. Override only if this date needs an exception.'}
@@ -2167,6 +2195,7 @@ export default function PrayerTimesAdminScreen({
           </AppText>
         )}
       </AppCard>
+      ) : null}
 
       {pickerState && pickerValue && Platform.OS === 'android' ? (
         <DateTimePicker
@@ -2222,6 +2251,101 @@ export default function PrayerTimesAdminScreen({
         </Modal>
       ) : null}
     </AdminScreenShell>
+  );
+}
+
+type PrayerTimesMenuSection = 'today' | 'settings' | 'import';
+
+function PrayerTimesMenu({
+  canManageImports,
+  onSelect,
+  onManageIqamahSchedules,
+  calculationSummary,
+}: {
+  canManageImports: boolean;
+  onSelect: (section: PrayerTimesMenuSection) => void;
+  onManageIqamahSchedules: () => void;
+  calculationSummary: string;
+}) {
+  const items: {
+    key: string;
+    title: string;
+    description: string;
+    icon: React.ComponentProps<typeof Ionicons>['name'];
+    iconBg: string;
+    iconColor: string;
+    onPress: () => void;
+  }[] = [
+    {
+      key: 'today',
+      title: "Today's correction",
+      description: 'See what followers see today and fix one date if needed.',
+      icon: 'time-outline',
+      iconBg: '#EFF6FF',
+      iconColor: '#2563EB',
+      onPress: () => onSelect('today'),
+    },
+    {
+      key: 'iqamah',
+      title: 'Manage iqamah schedules',
+      description: 'Set date-range congregation times per prayer.',
+      icon: 'calendar-outline',
+      iconBg: '#ECFDF5',
+      iconColor: '#059669',
+      onPress: onManageIqamahSchedules,
+    },
+    {
+      key: 'settings',
+      title: 'Calculation settings',
+      description: calculationSummary,
+      icon: 'settings-outline',
+      iconBg: '#F5F3FF',
+      iconColor: '#7C3AED',
+      onPress: () => onSelect('settings'),
+    },
+  ];
+
+  if (canManageImports) {
+    items.push({
+      key: 'import',
+      title: 'Import timetable',
+      description: 'Upload, review, and publish a CSV timetable.',
+      icon: 'cloud-upload-outline',
+      iconBg: '#FFF7ED',
+      iconColor: '#C2410C',
+      onPress: () => onSelect('import'),
+    });
+  }
+
+  return (
+    <View style={styles.menuSectionCard}>
+      {items.map((item, index) => (
+        <React.Fragment key={item.key}>
+          <Pressable
+            onPress={item.onPress}
+            style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+            accessibilityRole="button"
+          >
+            <View style={[styles.menuIconWrap, { backgroundColor: item.iconBg }]}>
+              <Ionicons name={item.icon} size={20} color={item.iconColor} />
+            </View>
+            <View style={styles.menuRowText}>
+              <AppText variant="body" style={styles.menuRowTitle}>{item.title}</AppText>
+              <AppText
+                variant="caption"
+                color={tokens.color.text.secondary}
+                style={styles.menuRowDesc}
+                numberOfLines={1}
+              >
+                {item.description}
+              </AppText>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={tokens.color.text.muted} />
+          </Pressable>
+          {index < items.length - 1 && <View style={styles.menuDivider} />}
+        </React.Fragment>
+      ))}
+    </View>
   );
 }
 
@@ -3600,6 +3724,54 @@ const styles = StyleSheet.create({
   cardHeader: { gap: 2 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   label: { fontWeight: tokens.typography.weight.bold },
+  backToMenuRow: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+  },
+  backToMenuText: { color: tokens.color.text.accent, fontWeight: tokens.typography.weight.semibold },
+  menuSectionCard: {
+    borderRadius: tokens.radius.xl,
+    backgroundColor: tokens.color.bg.surface,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    overflow: 'hidden',
+    ...tokens.shadow.card,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    backgroundColor: tokens.color.bg.surface,
+  },
+  menuRowPressed: { backgroundColor: '#F8FAFC' },
+  menuIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: tokens.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  menuRowText: { flex: 1, gap: 2 },
+  menuRowTitle: { fontSize: 15, fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary },
+  menuRowDesc: { fontSize: tokens.typography.size.xs, lineHeight: 16 },
+  menuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: tokens.color.border.subtle, marginLeft: 70 },
+  // The override caption + button row wraps to two lines on narrow phones
+  // instead of clipping the caption, which was previously cut off (e.g.
+  // showing "Use a...") because neither the row nor the text could shrink.
+  overrideRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  overrideCaption: { flex: 1, flexShrink: 1, flexBasis: 160, lineHeight: 16 },
   timeBtn: {
     minWidth: 88,
     minHeight: 42,
