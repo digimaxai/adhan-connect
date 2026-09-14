@@ -24,6 +24,7 @@ import { useRoleFlags } from '@/lib/roles';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import {
   PrayerTimesRow,
+  deletePrayerTimesForDate,
   listPrayerTimesByDates,
   upsertPrayerTimes,
 } from '@/lib/api/admin/prayerTimes';
@@ -545,6 +546,40 @@ export default function PrayerTimesAdminScreen({
       setRefreshing(false);
     }
   }, [loadPrayerTimes]);
+
+  const [clearingCorrection, setClearingCorrection] = useState(false);
+
+  const performClearCorrection = useCallback(async () => {
+    if (!selectedMosque) return;
+    setClearingCorrection(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await deletePrayerTimesForDate(selectedMosque.mosqueId, dateIso);
+      await loadPrayerTimes();
+      setNotice(
+        `Removed the saved correction for ${dateIso}. This date now follows the iqamah schedule, calculation method and adjustments automatically.`
+      );
+    } catch (e: any) {
+      console.warn('clear prayer-times correction', e?.message ?? e);
+      setError(e?.message ? `Could not remove the correction: ${e.message}` : 'Could not remove the correction.');
+    } finally {
+      setClearingCorrection(false);
+    }
+  }, [dateIso, loadPrayerTimes, selectedMosque]);
+
+  const handleClearCorrection = useCallback(() => {
+    const message = `Remove the saved correction for ${dateIso}?\n\nAll five prayers on this date will go back to automatic times: beginning times from your calculation method and adjustments, iqamah from your iqamah schedules (or ELM jamaat). Other dates are not affected.`;
+    if (isWeb) {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(message)) void performClearCorrection();
+      return;
+    }
+    Alert.alert('Remove correction?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void performClearCorrection() },
+    ]);
+  }, [dateIso, isWeb, performClearCorrection]);
 
   const handleSavePrayerSettings = async () => {
     if (!selectedMosque) return;
@@ -1154,13 +1189,14 @@ export default function PrayerTimesAdminScreen({
             {currentRow ? (
               <View style={styles.sourceBadge}>
                 <AppText variant="caption" style={styles.sourceBadgeText}>
-                  {currentRow.source_type === 'manual' ? 'Manual correction' : 'Published timetable'}
+                  {currentRow.source_type === 'manual' ? 'Saved manual correction' : 'Published timetable'}
                   {scheduleSourceMeta ? ` · ${scheduleSourceMeta}` : ''}
+                  {' · schedule & adjustments paused for this date'}
                 </AppText>
               </View>
             ) : (
               <View style={[styles.sourceBadge, styles.sourceBadgeMuted]}>
-                <AppText variant="caption" style={styles.sourceBadgeMutedText}>No published schedule · auto-calculated times apply</AppText>
+                <AppText variant="caption" style={styles.sourceBadgeMutedText}>Automatic · follows iqamah schedule, calculation method and adjustments</AppText>
               </View>
             )}
           </AppCard>
@@ -2104,6 +2140,26 @@ export default function PrayerTimesAdminScreen({
             />
           ) : null}
         </View>
+        {currentRow && !loading ? (
+          <View style={styles.correctionNotice}>
+            <AppText variant="body" style={styles.correctionNoticeTitle}>
+              {currentRow.source_type === 'manual'
+                ? 'This date has a saved manual correction'
+                : 'This date comes from a published timetable'}
+            </AppText>
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              {scheduleSourceMeta ? `${scheduleSourceMeta}. ` : ''}
+              Saved times take priority, so changes to your iqamah schedules, calculation method or
+              adjustments will not show on this date until the saved times are removed or edited.
+            </AppText>
+            <AppButton
+              title={clearingCorrection ? 'Removing…' : 'Remove saved times — use automatic'}
+              variant="ghost"
+              onPress={handleClearCorrection}
+              disabled={clearingCorrection || saving || disableForNoMosque}
+            />
+          </View>
+        ) : null}
         {showManualOverrideTools || !canManageImports ? (
           <>
             {loading ? (
@@ -3283,6 +3339,16 @@ const styles = StyleSheet.create({
   adjustmentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   adjustmentLabel: { flex: 1, fontWeight: tokens.typography.weight.bold },
   adjustmentValue: { width: 70, textAlign: 'center', fontWeight: tokens.typography.weight.extrabold },
+  correctionNotice: {
+    gap: 6,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFF7ED',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#FDBA74',
+    alignItems: 'flex-start',
+  },
+  correctionNoticeTitle: { fontWeight: tokens.typography.weight.bold, color: '#9A3412' },
   summaryCard: { gap: 10, borderRadius: 16 },
   summaryTable: { gap: 0 },
   summaryHeaderRow: {

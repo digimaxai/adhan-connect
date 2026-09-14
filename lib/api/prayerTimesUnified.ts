@@ -472,9 +472,10 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   const serverResult = await loadDailyPrayerTimesViaServer(mosqueId, dateIso);
   if (serverResult?.row) {
     const serverNormalized = normalizePrayerTimesRowWithBase(serverResult.row, dateIso);
-    return serverResult.source === 'prayer_times' || !serverResult.source
-      ? fillPartialPrayerTimesFromSource(mosqueId, dateIso, serverNormalized)
-      : serverNormalized;
+    // Always run the fill pass: it only touches null fields, so it is a no-op
+    // when the server already resolved everything, but it protects clients
+    // from a deployed API that predates iqamah-schedule resolution.
+    return fillPartialPrayerTimesFromSource(mosqueId, dateIso, serverNormalized);
   }
 
   // Last resort: auto-calculate from the mosque's configured source (ELM or Aladhan).
