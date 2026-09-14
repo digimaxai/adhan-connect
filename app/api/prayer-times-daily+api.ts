@@ -115,7 +115,7 @@ async function fetchAladhanTimingMap(
 }
 
 async function fetchELMTimingsFromDB(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: any,
   dateIso: string
 ): Promise<import('../../lib/api/londonPrayerTimes').ELMTimings | null> {
   const { data, error } = await supabaseAdmin
@@ -130,7 +130,7 @@ async function fetchELMTimingsFromDB(
 async function fetchSourceTimingMaps(
   mosque: MosqueRow | null,
   dateIso: string,
-  supabaseAdmin?: ReturnType<typeof createClient>
+  supabaseAdmin?: any
 ): Promise<SourceTimingMaps | null> {
   const source = mosque?.prayer_source ?? 'aladhan';
   const school = mosque?.prayer_school ?? 0;

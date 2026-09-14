@@ -217,11 +217,13 @@ async function fetchSourceTimingMaps(geoRow: MosquePrayerGeoRow | null, dateIso:
 
   // Try DB cache first (anon read access); fall back to direct ELM API call
   const elmTimings =
-    (await supabase
-      .from('elm_timetable')
-      .select('fajr,fajr_jamat,sunrise,dhuhr,dhuhr_jamat,asr,asr_2,asr_jamat,magrib,magrib_jamat,isha,isha_jamat')
-      .eq('date', dateIso)
-      .maybeSingle()
+    (await Promise.resolve(
+      supabase
+        .from('elm_timetable')
+        .select('fajr,fajr_jamat,sunrise,dhuhr,dhuhr_jamat,asr,asr_2,asr_jamat,magrib,magrib_jamat,isha,isha_jamat')
+        .eq('date', dateIso)
+        .maybeSingle()
+    )
       .then(({ data }) => (data ? { date: dateIso, ...data } : null))
       .catch(() => null)) || (await fetchELMTimes(dateIso));
   const aladhanFallback = async () => fetchAladhanTimingMap(geoRow, dateIso, school);

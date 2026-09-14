@@ -245,7 +245,7 @@ async function loadFallbackPrayerRow(
           .select('fajr,fajr_jamat,sunrise,dhuhr,dhuhr_jamat,asr,asr_2,asr_jamat,magrib,magrib_jamat,isha,isha_jamat')
           .eq('date', dateIso)
           .maybeSingle()
-          .then(({ data }) => (data ? { date: dateIso, ...data } as ELMTimings : null))
+          .then(({ data }: { data: any }) => (data ? { date: dateIso, ...data } as ELMTimings : null))
         ) ?? (await fetchELMTimes(dateIso));
         if (elm) {
           row.fajr_adhan_time = adjustedIso(dateIso, elm.fajr, adjustments.fajr);
