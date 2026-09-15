@@ -6,8 +6,9 @@ import {
   supabaseAuthStorage,
 } from './supabaseAuthStorage';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+// Trim: CI workflow variables can carry a pasted trailing newline, which makes the apikey header invalid.
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!.trim();
+const supabaseAnon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!.trim();
 
 function resolveAuthStorageKey(url: string) {
   try {
