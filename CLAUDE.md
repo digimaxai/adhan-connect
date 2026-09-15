@@ -668,6 +668,12 @@ The default `README.md` is still mostly Expo starter text and should be replaced
   `LPT_API_KEY` were rotated; after any rotation, update GitHub Actions
   secrets, EAS env (`eas env:update`), Xcode Cloud env, and redeploy the
   hosted preview API so `/api/*` routes pick up the new service role.
+  Staging Supabase now uses `sb_secret_…`/`sb_publishable_…` keys (the
+  legacy JWT secret cannot be rotated once signing keys are migrated); Edge
+  Functions read `SB_SECRET_KEY` first. `eas deploy` needs
+  `--environment preview` or server routes fail with "supabaseUrl is
+  required". Updating a shared EAS variable can detach it from the other
+  environment — verify `development` after touching `preview`.
 - Native LiveKit is the established in-app microphone media path. Treat any
   change to its capture, room-token, publisher, listener, or cleanup behavior as
   production-critical and require the physical two-device canary.

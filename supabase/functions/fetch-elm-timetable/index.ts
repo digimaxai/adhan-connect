@@ -40,7 +40,7 @@ Deno.serve(async (_req) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceRole = Deno.env.get('SB_SECRET_KEY')?.trim() || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceRole) {
     return new Response(JSON.stringify({ error: 'Supabase credentials missing' }), { status: 500 });
   }

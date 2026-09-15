@@ -100,7 +100,8 @@ Deno.serve(async (request) => {
 
   try {
     const supabaseUrl = env('SUPABASE_URL');
-    const serviceRoleKey = env('SUPABASE_SERVICE_ROLE_KEY');
+    // Supabase auto-injects the legacy JWT service role; prefer our own sb_secret key once set.
+    const serviceRoleKey = Deno.env.get('SB_SECRET_KEY')?.trim() || env('SUPABASE_SERVICE_ROLE_KEY');
     const appVariant = env('APP_VARIANT');
     if (appVariant !== 'staging' && appVariant !== 'production') {
       return json({ error: 'APP_VARIANT must be staging or production.' }, 500);
