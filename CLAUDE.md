@@ -659,9 +659,15 @@ The default `README.md` is still mostly Expo starter text and should be replaced
 - Canonical public event, campaign, mosque and jumuah paths resolve through
   `app/(user)` wrappers. Admin editor and muezzin alias routes use unique names;
   do not recreate the deleted top-level duplicate wrappers.
-- The local `.env.local.staging` file is tracked by Git. `.easignore` excludes
-  local environment files from EAS uploads, but the file must still be untracked
-  and affected credentials rotated before release.
+- 2026-09-15 secret-leak remediation: GitGuardian flagged `.env.local.staging`
+  (tracked since `d90bb2f`) and an older tracked `.env` (May–June 2026). Both,
+  plus runtime logs holding LiveKit room tokens, were purged from all history
+  with `git filter-repo` and every branch force-pushed. `.gitignore` now covers
+  `.env.local.*`, `expo-*.log` and `.codex/live-watch/*.log`. Staging
+  `SUPABASE_SERVICE_ROLE`, `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` and
+  `LPT_API_KEY` were rotated; after any rotation, update GitHub Actions
+  secrets, EAS env (`eas env:update`), Xcode Cloud env, and redeploy the
+  hosted preview API so `/api/*` routes pick up the new service role.
 - Native LiveKit is the established in-app microphone media path. Treat any
   change to its capture, room-token, publisher, listener, or cleanup behavior as
   production-critical and require the physical two-device canary.
