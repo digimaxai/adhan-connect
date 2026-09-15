@@ -47,6 +47,13 @@ cd "$CI_PRIMARY_REPOSITORY_PATH"
 echo "Installing JS dependencies..."
 npm ci
 
+# Xcode's "Bundle React Native code and images" phase does not reliably see
+# workflow environment variables, so it only picks up EXPO_PUBLIC_* values from
+# a real .env file (same as the Android CI fix). .env.local is git-ignored.
+echo "Writing .env.local from EXPO_PUBLIC_* workflow variables..."
+env | /usr/bin/grep -E '^EXPO_PUBLIC_[A-Z0-9_]+=' > .env.local || true
+echo "  $(wc -l < .env.local | tr -d ' ') EXPO_PUBLIC_* values written"
+
 echo "Regenerating native iOS project (APP_VARIANT=${APP_VARIANT:-unset})..."
 npx expo prebuild --platform ios
 
