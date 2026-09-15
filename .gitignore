@@ -57,10 +57,10 @@ app-example
 .claude/settings.local.json
 
 # Diagnostic artifacts (ANR reports, emulator screenshots, Metro logs)
+# Runtime logs can contain LiveKit room tokens and auth callbacks — never commit them.
 anr-*.txt
 emulator-*.png
-expo-metro-*.log
-expo-metro-*.err.log
-expo-portal-*.log
-expo-portal-*.err.log
+expo-*.log
+expo-*.err.log
+.codex/live-watch/*.log
 android-signing-local/
