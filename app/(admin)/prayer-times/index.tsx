@@ -2265,7 +2265,7 @@ export default function PrayerTimesAdminScreen({
       ) : null}
 
       {pickerState && pickerValue && Platform.OS === 'android' ? (
-        <DateTimePicker
+        <DateTimePicker themeVariant="light"
           value={pickerValue}
           mode="time"
           onChange={handleTimePicked}
@@ -2282,7 +2282,7 @@ export default function PrayerTimesAdminScreen({
         >
           <Pressable style={styles.backdrop} onPress={() => closePicker(false)} />
           <View style={styles.pickerWrap}>
-            <DateTimePicker
+            <DateTimePicker themeVariant="light"
               value={pickerValue}
               mode="time"
               onChange={handleTimePicked}

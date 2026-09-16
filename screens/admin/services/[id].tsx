@@ -84,6 +84,11 @@ export default function ClassEditor() {
   const [notice, setNotice] = useState("");
   const [mosqueAddress, setMosqueAddress] = useState("");
   const [editingOption, setEditingOption] = useState<ServiceIntake | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const flashSaved = () => {
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2500);
+  };
 
   useEffect(() => {
     if (!selectedMosque) return;
@@ -169,12 +174,16 @@ export default function ClassEditor() {
 
   const saveDraft = async () => {
     const saved = await persist(svc?.status === "published" ? "published" : "draft");
-    if (saved) setNotice(saved.status === "published" ? "Changes are live." : "Saved as draft.");
+    if (saved) {
+      setNotice(saved.status === "published" ? "Changes are live." : "Saved as draft.");
+      flashSaved();
+    }
   };
   const publish = async () => {
     const saved = await persist("published");
     if (saved) {
       setNotice("Published — followers can now see this class.");
+      flashSaved();
       setStep(2);
     }
   };
@@ -281,10 +290,11 @@ export default function ClassEditor() {
           </View>
 
           <View style={styles.previewWrap}>
-            <Text style={styles.previewLabel}>HOW IT WILL LOOK</Text>
-            <ClassCard item={svc} optionCount={options.length} />
+            <Text style={styles.previewLabel}>HOW IT WILL LOOK · TAP TO EDIT THE NAME</Text>
+            <ClassCard item={svc} optionCount={options.length} onPress={() => setStep(0)} trailing={<Ionicons name="create-outline" size={18} color={GREEN} style={{ alignSelf: "center" }} />} />
           </View>
 
+          <Text style={styles.stepHint}>Tap any step to jump to it</Text>
           <View style={styles.stepper}>
             {STEPS.map((label, i) => (
               <Pressable key={label} onPress={() => setStep(i)} style={styles.stepItem}>
@@ -458,7 +468,7 @@ export default function ClassEditor() {
           {step < 2 ? (
             <>
               <Pressable onPress={saveDraft} disabled={busy} style={styles.secondaryBtn}>
-                <Text style={styles.secondaryBtnText}>{svc.status === "published" ? "Save" : "Save draft"}</Text>
+                <Text style={styles.secondaryBtnText}>{savedFlash ? "Saved ✓" : svc.status === "published" ? "Save" : "Save draft"}</Text>
               </Pressable>
               <Pressable onPress={() => setStep(step + 1)} style={styles.primaryBtn}>
                 <Text style={styles.primaryBtnText}>Next</Text>
@@ -471,13 +481,13 @@ export default function ClassEditor() {
                 <Text style={styles.secondaryBtnText}>Hide</Text>
               </Pressable>
               <Pressable onPress={saveDraft} disabled={busy} style={styles.primaryBtn}>
-                {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Save changes</Text>}
+                {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>{savedFlash ? "Saved ✓" : "Save changes"}</Text>}
               </Pressable>
             </>
           ) : (
             <>
               <Pressable onPress={saveDraft} disabled={busy} style={styles.secondaryBtn}>
-                <Text style={styles.secondaryBtnText}>Save draft</Text>
+                <Text style={styles.secondaryBtnText}>{savedFlash ? "Saved ✓" : "Save draft"}</Text>
               </Pressable>
               <Pressable onPress={publish} disabled={busy} style={[styles.primaryBtn, problems.length > 0 && { opacity: 0.6 }]}>
                 {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Publish</Text>}
@@ -586,14 +596,14 @@ function TimeField({ label, value, onChange }: { label: string; value: string | 
       </Pressable>
       {open && Platform.OS === "ios" && (
         <View style={styles.inlinePicker}>
-          <DateTimePicker value={hhmmToDate(value)} mode="time" display="spinner" minuteInterval={5} onChange={(_, d) => d && onChange(toHHMM(d))} />
+          <DateTimePicker themeVariant="light" value={hhmmToDate(value)} mode="time" display="spinner" minuteInterval={5} onChange={(_, d) => d && onChange(toHHMM(d))} />
           <Pressable onPress={() => setOpen(false)} style={styles.pickerDone}>
             <Text style={styles.pickerDoneText}>Done</Text>
           </Pressable>
         </View>
       )}
       {open && Platform.OS === "android" && (
-        <DateTimePicker
+        <DateTimePicker themeVariant="light"
           value={hhmmToDate(value)}
           mode="time"
           onChange={(_, d) => {
@@ -630,14 +640,14 @@ function DateField({ label, value, onChange }: { label: string; value: string | 
       </Pressable>
       {open && Platform.OS === "ios" && (
         <View style={styles.inlinePicker}>
-          <DateTimePicker value={current} mode="date" display="spinner" onChange={(_, d) => d && onChange(toIsoDate(d))} />
+          <DateTimePicker themeVariant="light" value={current} mode="date" display="spinner" onChange={(_, d) => d && onChange(toIsoDate(d))} />
           <Pressable onPress={() => setOpen(false)} style={styles.pickerDone}>
             <Text style={styles.pickerDoneText}>Done</Text>
           </Pressable>
         </View>
       )}
       {open && Platform.OS === "android" && (
-        <DateTimePicker
+        <DateTimePicker themeVariant="light"
           value={current}
           mode="date"
           onChange={(_, d) => {
@@ -662,6 +672,7 @@ const styles = StyleSheet.create({
   previewBtnText: { color: GREEN, fontWeight: "800", fontSize: 13 },
   previewWrap: { gap: 6 },
   previewLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 0.7, color: tokens.color.text.muted },
+  stepHint: { fontSize: 11, color: tokens.color.text.muted, marginBottom: -10, textAlign: "center" },
   stepper: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#FFFFFF", borderRadius: 14, padding: 10, borderWidth: 1, borderColor: tokens.color.border.subtle },
   stepItem: { flex: 1, alignItems: "center", gap: 6 },
   stepDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center" },

@@ -292,7 +292,7 @@ export default function AdminEventForm() {
 
           {Platform.OS === 'ios' && showDatePicker && (
             <View style={styles.inlinePicker}>
-              <DateTimePicker
+              <DateTimePicker themeVariant="light"
                 value={dateTime ?? new Date()}
                 mode={pickerMode}
                 display="spinner"
@@ -304,10 +304,10 @@ export default function AdminEventForm() {
             </View>
           )}
           {Platform.OS === 'android' && showDatePicker && (
-            <DateTimePicker value={dateTime ?? new Date()} mode="date" onChange={onPickerChange} />
+            <DateTimePicker themeVariant="light" value={dateTime ?? new Date()} mode="date" onChange={onPickerChange} />
           )}
           {Platform.OS === 'android' && showTimePicker && (
-            <DateTimePicker value={dateTime ?? new Date()} mode="time" onChange={onPickerChange} />
+            <DateTimePicker themeVariant="light" value={dateTime ?? new Date()} mode="time" onChange={onPickerChange} />
           )}
 
           {/* Location & Capacity */}

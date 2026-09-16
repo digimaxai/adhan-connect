@@ -210,7 +210,7 @@ export default function PrayerTimesAdminScreen() {
         <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
       </Pressable>
       {pickerState && pickerValue ? (
-        <DateTimePicker value={pickerValue} mode="time" onChange={handleTimePicked} />
+        <DateTimePicker themeVariant="light" value={pickerValue} mode="time" onChange={handleTimePicked} />
       ) : null}
     </ScrollView>
   );

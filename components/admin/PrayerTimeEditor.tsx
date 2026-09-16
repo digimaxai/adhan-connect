@@ -191,7 +191,7 @@ export function PrayerTimeEditor({
 
       {/* Time Picker Modal */}
       {pickerState && tempValue ? (
-        <DateTimePicker
+        <DateTimePicker themeVariant="light"
           value={tempValue}
           mode="time"
           onChange={handleTimePicked}

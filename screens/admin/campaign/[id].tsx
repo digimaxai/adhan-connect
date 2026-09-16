@@ -265,7 +265,7 @@ export default function AdminCampaignForm() {
 
           {Platform.OS === 'ios' && showEndPicker && (
             <View style={styles.inlinePicker}>
-              <DateTimePicker
+              <DateTimePicker themeVariant="light"
                 value={endDate ?? new Date()}
                 mode="date"
                 display="spinner"
@@ -277,7 +277,7 @@ export default function AdminCampaignForm() {
             </View>
           )}
           {Platform.OS === 'android' && showEndPicker && (
-            <DateTimePicker
+            <DateTimePicker themeVariant="light"
               value={endDate ?? new Date()}
               mode="date"
               onChange={(_, d) => { setShowEndPicker(false); if (d) setEndDate(d); }}

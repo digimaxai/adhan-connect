@@ -149,7 +149,7 @@ export default function AdminDashboard() {
   }
 
   const dailyTools: ToolDef[] = [
-    { title: 'Services & classes', description: 'Manage courses, intakes, activities and service enquiries.', href: '/(admin)/services', icon: 'school-outline', iconBg: '#E7F3EE', iconColor: '#155F4E', requiresMosque: true },
+    { title: 'Classes & courses', description: 'Add and manage the classes, courses and programmes your mosque runs.', href: '/(admin)/services', icon: 'school-outline', iconBg: '#E7F3EE', iconColor: '#155F4E', requiresMosque: true },
     {
       title: 'Prayer Times',
       description: isMainAdmin
@@ -162,8 +162,8 @@ export default function AdminDashboard() {
       requiresMosque: true,
     },
     {
-      title: 'Prayer Availability & Services',
-      description: 'Mark prayers not offered, add a reason, and list your services.',
+      title: 'Prayer Availability',
+      description: 'Mark prayers not offered here and add a reason for followers.',
       href: '/(admin)/mosque-services',
       icon: 'list-outline',
       iconBg: '#FFF7ED',

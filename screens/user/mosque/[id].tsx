@@ -586,33 +586,35 @@ export default function MosquePage() {
             <Text style={styles.identityInitials}>{mosque?.name?.slice(0, 2).toUpperCase() ?? 'MS'}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.identityName}>{mosque?.name ?? 'Mosque'}</Text>
+            <Text style={styles.identityName} numberOfLines={2}>{mosque?.name ?? 'Mosque'}</Text>
             <Text style={styles.identityCity} numberOfLines={1}>{city || 'City, Country'}</Text>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              userId
-                ? `${following ? 'Unfollow' : 'Follow'} ${mosque?.name ?? 'mosque'}`
-                : `Sign in to follow ${mosque?.name ?? 'this mosque'}`
-            }
-            onPress={toggleFollow}
-            disabled={actionLoading}
-            style={({ pressed }) => [
-              styles.followPill,
-              following && styles.followPillActive,
-              (pressed || actionLoading) && { opacity: 0.8 },
-            ]}
-          >
-            <Ionicons
-              name={!userId ? 'log-in-outline' : following ? 'checkmark' : 'add'}
-              size={14}
-              color={following ? '#0369A1' : '#64748B'}
-            />
-            <Text style={[styles.followPillText, following && styles.followPillTextActive]}>
-              {userId ? (following ? 'Following' : 'Follow') : 'Sign in to follow'}
-            </Text>
-          </Pressable>
+          {!following && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                userId
+                  ? `${following ? 'Unfollow' : 'Follow'} ${mosque?.name ?? 'mosque'}`
+                  : `Sign in to follow ${mosque?.name ?? 'this mosque'}`
+              }
+              onPress={toggleFollow}
+              disabled={actionLoading}
+              style={({ pressed }) => [
+                styles.followPill,
+                following && styles.followPillActive,
+                (pressed || actionLoading) && { opacity: 0.8 },
+              ]}
+            >
+              <Ionicons
+                name={!userId ? 'log-in-outline' : following ? 'checkmark' : 'add'}
+                size={14}
+                color={following ? '#0369A1' : '#64748B'}
+              />
+              <Text style={[styles.followPillText, following && styles.followPillTextActive]}>
+                {userId ? (following ? 'Following' : 'Follow') : 'Sign in to follow'}
+              </Text>
+            </Pressable>
+          )}
         </View>
         {userId && !following && subCount >= FOLLOWED_MOSQUE_LIMIT && (
           <Text style={styles.limitNote}>{`You are following ${FOLLOWED_MOSQUE_LIMIT} mosques (maximum).`}</Text>
@@ -1063,7 +1065,7 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingVertical: 10 },
   title: { flex: 1, textAlign: 'center', fontSize: 20, lineHeight: 25, fontWeight: '800', color: '#0F172A', paddingHorizontal: 12 },
 
-  identityCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12 },
+  identityCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14 },
   identityAvatar: {
     width: 48,
     height: 48,
@@ -1074,7 +1076,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   identityInitials: { fontWeight: '800', color: '#0369A1', fontSize: 16 },
-  identityName: { fontWeight: '800', color: '#0F172A', fontSize: 16 },
+  identityName: { fontWeight: '800', color: '#0F172A', fontSize: 16, lineHeight: 21 },
   identityCity: { color: '#475569', marginTop: 2, fontSize: 13 },
   identityBadgeRow: { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
 

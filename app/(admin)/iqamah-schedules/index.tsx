@@ -338,7 +338,7 @@ export default function IqamahSchedulesScreen() {
                 </Pressable>
                 {datePicker === 'start' ? (
                   <View style={styles.inlinePickerWrap}>
-                    <DateTimePicker
+                    <DateTimePicker themeVariant="light"
                       value={formStartDate}
                       mode="date"
                       display={Platform.OS === 'ios' ? 'inline' : 'default'}
@@ -371,7 +371,7 @@ export default function IqamahSchedulesScreen() {
                     </Pressable>
                     {datePicker === 'end' ? (
                       <View style={styles.inlinePickerWrap}>
-                        <DateTimePicker
+                        <DateTimePicker themeVariant="light"
                           value={formEndDate}
                           mode="date"
                           display={Platform.OS === 'ios' ? 'inline' : 'default'}

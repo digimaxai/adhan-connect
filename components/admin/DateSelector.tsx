@@ -92,7 +92,7 @@ export function DateSelector({ date, onChange }: Props) {
         </Pressable>
       </View>
       {showPicker && Platform.OS === 'android' ? (
-        <DateTimePicker
+        <DateTimePicker themeVariant="light"
           value={normalizeDate(tempDate ?? safeDate)}
           onChange={handlePickerChange}
           mode="date"
@@ -103,7 +103,7 @@ export function DateSelector({ date, onChange }: Props) {
         <Modal transparent animationType="fade" visible onRequestClose={handleCancel}>
           <Pressable style={styles.backdrop} onPress={handleCancel} />
           <View style={styles.pickerWrap}>
-            <DateTimePicker
+            <DateTimePicker themeVariant="light"
               value={normalizeDate(tempDate ?? safeDate)}
               onChange={handlePickerChange}
               mode="date"
