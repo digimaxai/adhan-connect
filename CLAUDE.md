@@ -1,6 +1,11 @@
 # Adhan Connect - Claude/Codex Handoff
 
-Latest (2026-09-14, Claude Code): hosted staging web/API redeployed as `89bc41p84p`
+Latest (2026-09-15, Claude Code): see `docs/claude-code-handoff-2026-09-15.md` —
+secret-leak remediation (history rewritten, all SHAs changed: reset, never pull),
+Supabase staging moved to `sb_secret`/`sb_publishable` keys, hosted API now
+`zkij5trusg`, iOS sign-in fixed (`86ce97d`). Covers 11–15 Sept work in full.
+
+Previous (2026-09-14, Claude Code): hosted staging web/API redeployed as `89bc41p84p`
 (alias `preview` → `https://adhan-connect--preview.expo.app`). The previous hosted API
 predated the 2026-09-13 iqamah-schedule resolution, so `/api/prayer-times-daily` and
 `/api/admin/prayer-times-workspace` returned `iqama: null` for every date without a
