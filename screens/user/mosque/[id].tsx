@@ -1,6 +1,7 @@
 import { MosqueServiceCards } from '../../../components/MosqueServiceCards';
 // app/mosque/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
+import { BackButton } from '@/components/ui/back-button';
 import { Image } from 'expo-image';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -62,6 +63,8 @@ type EventRow = {
 type CampaignRow = {
   id: string;
   title?: string | null;
+  description?: string | null;
+  donation_url?: string | null;
   raised_cents?: number | null;
   goal_cents?: number | null;
   end_at?: string | null;
@@ -346,7 +349,7 @@ export default function MosquePage() {
         try {
           const { data: cs, error: csErr } = await supabase
             .from('campaigns')
-            .select('id,title,raised_cents,goal_cents,end_at')
+            .select('id,title,raised_cents,goal_cents,end_at,description,donation_url')
             .eq('mosque_id', actualId)
             .eq('status', 'active')
             .or(`end_at.is.null,end_at.gte.${todayIso}`)
@@ -569,10 +572,8 @@ export default function MosquePage() {
 
         {/* ── Top bar ── */}
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} hitSlop={10}>
-            <Ionicons name="chevron-back" size={22} color="#0F172A" />
-          </Pressable>
-          <Text style={styles.title}>{mosque?.name ?? 'Mosque'}</Text>
+          <BackButton fallbackHref="/(user)/listener-home" />
+          <Text style={styles.title} numberOfLines={1}>{mosque?.name ?? 'Mosque'}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Pressable onPress={shareMosque} hitSlop={10}>
               <Ionicons name="share-outline" size={18} color="#0F172A" />
@@ -684,59 +685,40 @@ export default function MosquePage() {
           </View>
         )}
 
-        {/* Prayer Times */}
-        <View style={[styles.card, styles.shadow]}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Prayer Times</Text>
-          </View>
-          <View style={styles.divider} />
-          {hasIqamaTimes && (
-            <View style={styles.prayerTableHeader}>
-              <Text style={[styles.prayerColLabel, { flex: 1 }]}>Prayer</Text>
-              <Text style={styles.prayerColLabel}>Adhan</Text>
-              <Text style={styles.prayerColLabel}>Iqamah</Text>
-            </View>
-          )}
-          <View style={styles.timesTable}>
-            {displayTimes.map((row) => {
-              const isNext = row.key === nextPrayerName;
-              const notOffered = mosque?.prayers_not_offered?.includes(row.key.toLowerCase());
-              const prayerKey = row.key.toLowerCase();
-              const reason = mosque?.prayers_not_offered_reasons?.[prayerKey]?.trim();
-              return (
-                <View key={row.key} style={styles.prayerRowGroup}>
-                  <View style={[styles.timeRow, isNext && !notOffered && styles.timeRowNext]}>
-                    <Text style={[styles.timeName, isNext && !notOffered && styles.timeNameNext]}>{row.name}</Text>
-                    <Text style={[styles.timeValue, isNext && !notOffered && styles.timeValueNext]}>{row.adhan}</Text>
-                    {hasIqamaTimes && (
-                      <Text style={[styles.timeIqama, isNext && !notOffered && styles.timeValueNext]}>
-                        {row.iqama ?? '-'}
-                      </Text>
-                    )}
-                  </View>
-                  {notOffered ? (
-                    <>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityState={{ expanded: expandedPrayer === prayerKey }}
-                        accessibilityLabel={`${row.name} is not offered here. Show reason.`}
-                        onPress={() => setExpandedPrayer((current) => current === prayerKey ? null : prayerKey)}
-                        style={styles.notOfferedTag}
-                      >
-                        <Ionicons name="information-circle-outline" size={14} color="#92400E" />
-                        <Text style={styles.notOfferedLabel}>Not offered here</Text>
-                        <Ionicons name={expandedPrayer === prayerKey ? 'chevron-up' : 'chevron-down'} size={12} color="#92400E" />
-                      </Pressable>
-                      {expandedPrayer === prayerKey ? (
-                        <Text style={styles.notOfferedReason}>{reason || 'A reason has not been provided. Please contact the mosque for details.'}</Text>
-                      ) : null}
-                    </>
-                  ) : null}
+        {/* Prayer Times — compact; full 7-day timetable on its own page */}
+        {(() => {
+          const next = displayTimes.find((r) => r.key === nextPrayerName) ?? null;
+          const remaining = displayTimes.filter((r) => !mosque?.prayers_not_offered?.includes(r.key.toLowerCase()));
+          return (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push({ pathname: '/(user)/mosque-prayer-times/[id]', params: { id: resolvedId ?? id, name: mosque?.name ?? '' } } as any)}
+              style={({ pressed }) => [styles.card, styles.shadow, pressed && { opacity: 0.92 }]}
+            >
+              <View style={styles.cardHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Prayer Times</Text>
+                  <Text style={styles.cardSubtitle}>{next ? `Next: ${next.name} at ${next.adhan}${next.iqama ? ` · Iqamah ${next.iqama}` : ''}` : 'Today’s times and the week ahead'}</Text>
                 </View>
-              );
-            })}
-          </View>
-        </View>
+                <View style={styles.viewTimesBtn}>
+                  <Text style={styles.viewTimesText}>View</Text>
+                  <Ionicons name="chevron-forward" size={14} color="#0369A1" />
+                </View>
+              </View>
+              <View style={styles.compactStrip}>
+                {remaining.map((r) => {
+                  const isNext = r.key === nextPrayerName;
+                  return (
+                    <View key={r.key} style={[styles.compactCell, isNext && styles.compactCellNext]}>
+                      <Text style={[styles.compactName, isNext && styles.compactNext]}>{r.name.slice(0, 3)}</Text>
+                      <Text style={[styles.compactTime, isNext && styles.compactNext]}>{r.adhan}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </Pressable>
+          );
+        })()}
 
         {mosque && <MosqueServiceCards mosqueId={mosque.id} />}
 
@@ -832,16 +814,33 @@ export default function MosquePage() {
                   <View style={styles.campaignHeaderRow}>
                     {c.cover_image_url ? (
                       <Image source={{ uri: c.cover_image_url }} style={styles.rowThumb} contentFit="cover" />
-                    ) : null}
-                    <Text style={styles.campaignTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>{c.title ?? 'Campaign'}</Text>
+                    ) : (
+                      <View style={[styles.rowThumb, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFE4E6' }]}>
+                        <Ionicons name="heart" size={18} color="#E11D48" />
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.campaignTitle} numberOfLines={2}>{c.title ?? 'Appeal'}</Text>
+                      {!!c.description && <Text style={styles.campaignMeta} numberOfLines={2}>{c.description}</Text>}
+                    </View>
                   </View>
-                  <Text style={styles.campaignMeta}>Support this appeal through the mosque’s donation page.</Text>
-                  <Pressable
-                    onPress={() => router.push({ pathname: '/(user)/campaign/[id]', params: { id: c.id } } as any)}
-                    style={({ pressed }) => [styles.donateBtn, { opacity: pressed ? 0.9 : 1 }]}
-                  >
-                    <Text style={styles.donateBtnText}>View appeal</Text>
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {c.donation_url ? (
+                      <Pressable
+                        onPress={() => Linking.openURL(c.donation_url as string).catch(() => undefined)}
+                        style={({ pressed }) => [styles.donateBtn, { flex: 1, opacity: pressed ? 0.9 : 1 }]}
+                      >
+                        <Ionicons name="open-outline" size={14} color="#FFFFFF" />
+                        <Text style={styles.donateBtnText}>Donate on mosque’s site</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      onPress={() => router.push({ pathname: '/(user)/campaign/[id]', params: { id: c.id } } as any)}
+                      style={({ pressed }) => [styles.viewAllBtn, { marginTop: 0, alignSelf: 'stretch', justifyContent: 'center', opacity: pressed ? 0.9 : 1 }]}
+                    >
+                      <Text style={styles.viewAllText}>Details</Text>
+                    </Pressable>
+                  </View>
                 </View>
               );
             })}
@@ -1146,6 +1145,14 @@ const styles = StyleSheet.create({
 
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB', marginVertical: 8 },
   timesTable: { gap: 10 },
+  viewTimesBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#E0F2FE', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  viewTimesText: { color: '#0369A1', fontWeight: '800', fontSize: 12 },
+  compactStrip: { flexDirection: 'row', gap: 6, marginTop: 4 },
+  compactCell: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10, backgroundColor: '#F8FAFC' },
+  compactCellNext: { backgroundColor: '#EFF6FF' },
+  compactName: { fontSize: 10, fontWeight: '800', color: '#94A3B8', letterSpacing: 0.4, textTransform: 'uppercase' },
+  compactTime: { fontSize: 13, fontWeight: '800', color: '#0F172A', marginTop: 2, fontVariant: ['tabular-nums'] },
+  compactNext: { color: '#0369A1' },
   prayerTableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1221,11 +1228,10 @@ const styles = StyleSheet.create({
   campaignTitle: { flex: 1, fontWeight: '700', color: '#0F172A', fontSize: 14 },
   campaignMeta: { color: '#475569', fontSize: 12 },
   donateBtn: {
-    backgroundColor: '#0EA5E9',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#E11D48',
     borderRadius: 10,
     paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   donateBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
   progressTrack: { height: 6, backgroundColor: '#E5E7EB', borderRadius: 8, overflow: 'hidden' },

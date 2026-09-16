@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -182,7 +183,7 @@ export default function AdminCampaignForm() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.navBar}>
           <BackButton fallbackHref="/(admin)/events" />
-          <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New Campaign' : 'Edit Campaign'}</AppText>
+          <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New appeal' : 'Edit appeal'}</AppText>
           <View style={styles.navRight} />
         </View>
 
@@ -196,13 +197,13 @@ export default function AdminCampaignForm() {
 
           {/* Campaign name */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>CAMPAIGN NAME</AppText>
+            <AppText variant="caption" style={styles.sectionLabel}>APPEAL NAME</AppText>
             <View style={styles.fieldCard}>
               <TextInput
                 style={styles.input}
                 value={title}
                 onChangeText={setTitle}
-                placeholder="e.g. Masjid Roof Repair Fund"
+                placeholder="e.g. New community centre appeal"
                 placeholderTextColor={tokens.color.text.muted}
                 maxLength={120}
                 returnKeyType="next"
@@ -212,13 +213,13 @@ export default function AdminCampaignForm() {
 
           {/* Description */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>DESCRIPTION</AppText>
+            <AppText variant="caption" style={styles.sectionLabel}>WHY IT MATTERS</AppText>
             <View style={styles.fieldCard}>
               <TextInput
                 style={[styles.input, styles.multiline]}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Explain what the funds will be used for..."
+                placeholder="Tell followers what the money is for and why it matters now."
                 placeholderTextColor={tokens.color.text.muted}
                 multiline
                 numberOfLines={6}
@@ -232,11 +233,18 @@ export default function AdminCampaignForm() {
           </View>
 
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>MOSQUE DONATION LINK</AppText>
+            <AppText variant="caption" style={styles.sectionLabel}>DONATION PAGE LINK</AppText>
             <TextInput accessibilityLabel="Mosque donation link" style={styles.input} value={donationUrl} onChangeText={setDonationUrl} placeholder="https://…" autoCapitalize="none" keyboardType="url" maxLength={2048} />
-            <AppText variant="caption">Donations open on this external page. Amounts, receipts and Gift Aid are handled by your provider.</AppText>
-            {httpsUrl(donationUrl) && <AppText variant="caption">Destination: {new URL(httpsUrl(donationUrl)!).hostname}</AppText>}
-            {!isNew && <Pressable onPress={() => router.push({ pathname: '/(admin)/campaign-preview/[id]', params: { id } } as any)}><AppText style={{ color: '#155F4E', paddingVertical: 12 }}>Preview saved appeal →</AppText></Pressable>}
+            <AppText variant="caption">Followers donate on this page (Stripe, JustGiving, PayPal, your website…). Amounts, receipts and Gift Aid stay with your provider — no money passes through the app.</AppText>
+            {httpsUrl(donationUrl) ? (
+              <Pressable onPress={() => Linking.openURL(httpsUrl(donationUrl)!).catch(() => undefined)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 }}>
+                <Ionicons name="open-outline" size={14} color="#155F4E" />
+                <AppText style={{ color: '#155F4E', fontWeight: '800' }}>Test link · opens {new URL(httpsUrl(donationUrl)!).hostname}</AppText>
+              </Pressable>
+            ) : donationUrl.trim() ? (
+              <AppText variant="caption" color={tokens.color.status.danger}>Enter a full https:// link.</AppText>
+            ) : null}
+            {!isNew && <Pressable onPress={() => router.push({ pathname: '/(admin)/campaign-preview/[id]', params: { id } } as any)}><AppText style={{ color: '#155F4E', paddingVertical: 12 }}>Preview how followers see it →</AppText></Pressable>}
           </View>
 
           {/* End date */}
@@ -334,7 +342,7 @@ export default function AdminCampaignForm() {
           >
             {saving
               ? <ActivityIndicator color="#fff" />
-              : <AppText style={styles.saveBtnText}>{isNew ? 'Launch Campaign' : 'Save Changes'}</AppText>
+              : <AppText style={styles.saveBtnText}>{isNew ? 'Publish appeal' : 'Save changes'}</AppText>
             }
           </Pressable>
 
