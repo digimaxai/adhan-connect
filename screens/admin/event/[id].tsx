@@ -1,4 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { BackButton } from '@/components/ui/back-button';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -206,9 +207,7 @@ export default function AdminEventForm() {
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.navBar}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-          </Pressable>
+          <BackButton fallbackHref="/(admin)/events" />
           <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New Event' : 'Edit Event'}</AppText>
           <View style={styles.navRight} />
         </View>

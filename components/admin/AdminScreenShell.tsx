@@ -1,9 +1,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, View, ViewStyle, ScrollViewProps } from 'react-native';
-import { useRouter } from 'expo-router';
 import { AppCard } from '@/components/ui/app-card';
 import { AppText } from '@/components/ui/app-text';
-import { AppButton } from '@/components/ui/app-button';
+import { BackButton } from '@/components/ui/back-button';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { tokens } from '@/theme/tokens';
 
@@ -12,7 +11,6 @@ type AdminScreenShellProps = ScrollViewProps & {
   subtitle: string;
   eyebrow?: string;
   backHref?: string;
-  backLabel?: string;
   activeTab?: 'prayerTimes' | 'rota';
   onGoPrayerTimes?: () => void;
   onGoStaffRota?: () => void;
@@ -27,7 +25,6 @@ export function AdminScreenShell({
   subtitle,
   eyebrow = 'Local Admin',
   backHref,
-  backLabel = 'Back',
   activeTab,
   onGoPrayerTimes,
   onGoStaffRota,
@@ -37,12 +34,12 @@ export function AdminScreenShell({
   children,
   ...scrollProps
 }: AdminScreenShellProps) {
-  const router = useRouter();
   const showTabs = activeTab && onGoPrayerTimes && onGoStaffRota;
 
   return (
     <ScreenContainer {...scrollProps} contentStyle={[styles.content, contentStyle]}>
       <View style={styles.hero}>
+        <BackButton fallbackHref={backHref ?? '/(admin)'} />
         <View style={styles.heroCopy}>
           <AppText variant="label" style={styles.eyebrow}>
             {eyebrow}
@@ -54,14 +51,6 @@ export function AdminScreenShell({
             {subtitle}
           </AppText>
         </View>
-        {backHref ? (
-          <AppButton
-            title={backLabel}
-            variant="ghost"
-            onPress={() => router.canGoBack() ? router.back() : router.replace(backHref as any)}
-            style={styles.backButton}
-          />
-        ) : null}
       </View>
 
       {showTabs ? (
@@ -135,13 +124,6 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     lineHeight: 20,
     fontSize: 13,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    borderRadius: tokens.radius.pill,
-    minHeight: 34,
-    paddingHorizontal: tokens.spacing.sm,
-    backgroundColor: '#E0F2FE',
   },
   tabRow: {
     flexDirection: 'row',

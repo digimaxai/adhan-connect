@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { BackButton } from '@/components/ui/back-button';
 import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
@@ -392,13 +393,7 @@ export default function AccountScreen() {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="Back"
-          onPress={() => router.back()}
-          style={styles.headerButton}
-        >
-          <Ionicons name="chevron-back" size={24} color="#0F172A" />
-        </Pressable>
+        <BackButton fallbackHref="/(user)/settings" />
         <Text style={styles.headerTitle}>Account & data</Text>
         <View style={styles.headerButton} />
       </View>

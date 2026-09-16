@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { BackButton } from '@/components/ui/back-button';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -72,7 +72,6 @@ function toDbTime(value: string) {
 }
 
 export default function AdminJumuahScreen() {
-  const router = useRouter();
   const { selectedMosque, loading: mosqueLoading } = useAdminMosque();
   const [slots, setSlots] = useState<SlotForm[]>([]);
   const [loading, setLoading] = useState(false);
@@ -252,10 +251,7 @@ export default function AdminJumuahScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <View style={styles.navBar}>
-        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(admin)' as any)} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
-          <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-          <AppText>Back</AppText>
-        </Pressable>
+        <BackButton fallbackHref="/(admin)" />
         <View style={{ flex: 1 }}>
           <AppText variant="sectionTitle" style={styles.navTitle}>Jumuah</AppText>
           {selectedMosque ? (

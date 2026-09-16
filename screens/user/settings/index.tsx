@@ -193,6 +193,22 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      {showWorkspaceTools ? (
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8, marginHorizontal: 18 }}>Workspace</Text>
+          <SectionCard>
+            <SettingsRow
+              title={switchingWorkspace ? 'Opening workspaces…' : 'Switch workspace'}
+              subtitle={`You have access to ${availableWorkspaceLabels.join(', ')}`}
+              onPress={() => void openWorkspaceChooser()}
+              disabled={switchingWorkspace}
+              icon="swap-horizontal-outline"
+              last
+            />
+          </SectionCard>
+        </View>
+      ) : null}
+
       <SectionCard>
         <SettingsRow
           title="Account & data"
@@ -273,21 +289,6 @@ export default function SettingsScreen() {
         </SectionCard>
       </View>
 
-      {showWorkspaceTools ? (
-        <View style={{ marginTop: 20 }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8, marginHorizontal: 18 }}>Workspaces</Text>
-          <SectionCard>
-            <SettingsRow
-              title={switchingWorkspace ? 'Opening workspaces…' : 'Switch workspace'}
-              subtitle={`Listener is included · Choose ${availableWorkspaceLabels.join(', ')}`}
-              onPress={() => void openWorkspaceChooser()}
-              disabled={switchingWorkspace}
-              icon="swap-horizontal-outline"
-              last
-            />
-          </SectionCard>
-        </View>
-      ) : null}
 
       <View
         style={{

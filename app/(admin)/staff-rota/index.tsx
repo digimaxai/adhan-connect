@@ -231,7 +231,6 @@ export default function StaffRotaScreen() {
       title="Staff Rota"
       subtitle="Assign the right muezzin to each prayer."
       backHref="/(admin)"
-      backLabel="Back"
       activeTab="rota"
       onGoPrayerTimes={() => router.push('/(admin)/prayer-times')}
       onGoStaffRota={() => router.push('/(admin)/staff-rota')}

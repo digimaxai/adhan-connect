@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
+import { BackButton } from '@/components/ui/back-button';
 import { ActivityIndicator, Alert, Platform } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -43,7 +44,7 @@ export function EnquiryDetail({ admin = false }: { admin?: boolean }) {
     if (scope.current === original) { setDraft(''); replyId.current = randomUUID(); }
   }); };
   return <ScreenContainer contentStyle={{ gap: 14 }}>
-    <AppButton title="Back" variant="ghost" style={{ alignSelf: 'flex-start', backgroundColor: '#E0F2FE' }} onPress={() => router.back()} />
+    <BackButton />
     <AppText variant="sectionTitle">Enquiry details</AppText>
     {submitted === '1' && !admin && <AppText>Your enquiry has been received. This is a request, not a confirmed booking. Check My enquiries for replies.</AppText>}
     <EnquiryError message={error} />

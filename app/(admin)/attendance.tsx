@@ -64,7 +64,6 @@ export default function AttendanceScreen() {
       title="Attendance & Engagement"
       subtitle="Friday Jumu'ah and event planning"
       backHref="/(admin)"
-      backLabel="Back"
       mosqueName={selectedMosque?.name}
       mosqueMeta={
         selectedMosque

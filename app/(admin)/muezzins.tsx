@@ -305,7 +305,6 @@ export default function LocalAdminMuezzinsScreen() {
       title="Muezzins"
       subtitle="Invite mosque muezzins, control active assignments, and resolve cover requests without leaving the mosque workspace."
       backHref="/(admin)"
-      backLabel="Back"
       mosqueName={selectedMosque?.name ?? null}
       mosqueMeta={
         selectedMosque

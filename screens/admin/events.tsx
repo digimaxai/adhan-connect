@@ -1,4 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { BackButton } from '@/components/ui/back-button';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -376,14 +377,7 @@ export default function ContentHubScreen() {
       {/* ── Fixed header ── */}
       <View style={styles.fixedHeader}>
         <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.canGoBack() ? router.back() : router.replace('/(admin)' as any)}
-            style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
-            hitSlop={8}
-          >
-            <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-            <AppText>Back</AppText>
-          </Pressable>
+          <BackButton fallbackHref="/(admin)" />
           <View style={styles.headerTitles}>
             {selectedMosque ? (
               <AppText variant="caption" style={styles.headerMosque} numberOfLines={1}>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { BackButton } from '@/components/ui/back-button';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { randomUUID } from 'expo-crypto';
 import { ActivityIndicator, View } from 'react-native';
@@ -52,7 +53,7 @@ export default function ContactMosque() {
     finally { inFlight.current = false; setBusy(false); }
   };
   return <ScreenContainer contentStyle={{ gap: 16 }}>
-    <AppButton title="Back" variant="ghost" style={{ alignSelf: 'flex-start', backgroundColor: '#E0F2FE' }} onPress={() => router.back()} />
+    <BackButton />
     <AppText variant="sectionTitle">Contact {mosqueName}</AppText>
     {!session || session.user.is_anonymous ? <AppCard><AppText>Sign in to send and manage enquiries.</AppText><AppButton title="Sign in" onPress={() => router.push('/(auth)/sign-in')} /></AppCard> : loading ? <ActivityIndicator /> : <>
       <AppText>Choose what you need help with. Your mosque will respond when its team is available.</AppText>

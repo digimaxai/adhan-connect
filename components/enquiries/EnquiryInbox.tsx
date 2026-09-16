@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
+import { BackButton } from '@/components/ui/back-button';
 import { ActivityIndicator, Pressable } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../../lib/auth';
@@ -33,7 +34,7 @@ export function EnquiryInbox({ admin = false }: { admin?: boolean }) {
     try { await configureEnquiries(mosqueId, categories); setSettings(false); } catch { setError('Could not save contact options.'); } finally { setSaving(false); }
   };
   return <ScreenContainer contentStyle={{ gap: 14 }}>
-    <AppButton title="Back" variant="ghost" style={{ alignSelf: 'flex-start', backgroundColor: '#E0F2FE' }} onPress={() => router.back()} />
+    <BackButton />
     <AppText variant="sectionTitle">{admin ? 'Enquiries' : 'My enquiries'}</AppText>
     {admin && <AppText>{mosque.selectedMosque?.name ?? 'Select a mosque in your dashboard.'}</AppText>}
     <EnquiryError message={error ?? (admin ? mosque.error : null)} />

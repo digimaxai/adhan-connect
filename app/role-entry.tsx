@@ -119,13 +119,10 @@ export default function RoleEntryScreen() {
       ...WORKSPACE_CARD_DETAILS[mode],
     }));
 
-    return cards.sort((left, right) => {
-      if (!preferredEntry) return 0;
-      if (left.mode === preferredEntry) return -1;
-      if (right.mode === preferredEntry) return 1;
-      return 0;
-    });
-  }, [availableModes, preferredEntry, roles.isMainAdmin]);
+    // Fixed order so the screen never rearranges between visits.
+    const order: StaffEntryMode[] = ['listener', 'admin', 'muezzin'];
+    return cards.sort((left, right) => order.indexOf(left.mode) - order.indexOf(right.mode));
+  }, [availableModes, roles.isMainAdmin]);
 
   const handleSelect = async (mode: StaffEntryMode) => {
     if (!userId || !availableModes.includes(mode) || busy) return;
@@ -174,7 +171,7 @@ export default function RoleEntryScreen() {
         </AppText>
         {preferredEntry && availableModes.includes(preferredEntry) ? (
           <AppText variant="caption" color={tokens.color.text.secondary} style={styles.recommendationCopy}>
-            {`Recommended: ${workspaceLabel(preferredEntry)} based on your last session.`}
+            {`You last used ${workspaceLabel(preferredEntry)}.`}
           </AppText>
         ) : null}
         {error ? (
@@ -213,7 +210,7 @@ export default function RoleEntryScreen() {
                 {recommended ? (
                   <View style={styles.recommendedBadge}>
                     <AppText variant="caption" style={styles.recommendedBadgeText}>
-                      Recommended
+                      Last used
                     </AppText>
                   </View>
                 ) : null}
@@ -226,7 +223,7 @@ export default function RoleEntryScreen() {
                 title={busy === card.mode ? 'Opening...' : card.title}
                 onPress={() => handleSelect(card.mode)}
                 disabled={!!busy}
-                variant={recommended ? 'primary' : card.defaultVariant ?? 'primary'}
+                variant="primary"
               />
             </AppCard>
           </View>

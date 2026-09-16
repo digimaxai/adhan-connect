@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { BackButton } from '@/components/ui/back-button';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -175,9 +176,7 @@ export default function AdminAnnouncementForm() {
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.navBar}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-          </Pressable>
+          <BackButton fallbackHref="/(admin)/events" />
           <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New Notice' : 'Edit Notice'}</AppText>
           <View style={styles.navRight} />
         </View>

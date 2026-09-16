@@ -240,8 +240,6 @@ export default function PrayerTimesAdminScreen({
         ? `/admin/mosques/${effectiveMosqueId}`
         : '/admin/prayer-times'
       : '/(admin)');
-  const backLabel =
-    backLabelOverride ?? 'Back';
   const eyebrowLabel = eyebrowOverride ?? (isMainAdminWeb ? 'Main Admin' : 'Local Admin');
   const isOnboardingEntry =
     typeof onboardingMode === 'boolean'
@@ -1093,7 +1091,6 @@ export default function PrayerTimesAdminScreen({
           : 'Edit the daily adhan and iqama schedule.'
       }
       backHref={backRoute}
-      backLabel={backLabel}
       activeTab={undefined}
       onGoPrayerTimes={undefined}
       onGoStaffRota={undefined}

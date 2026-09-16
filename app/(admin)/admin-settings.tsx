@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BackButton } from '@/components/ui/back-button';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -213,13 +214,7 @@ export default function AdminSettingsScreen() {
     >
       {/* ── Nav header ── */}
       <View style={styles.navHeader}>
-        <Pressable
-          onPress={() => router.canGoBack() ? router.back() : router.replace('/(admin)' as any)}
-          style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
-        >
-          <Ionicons name="chevron-back" size={20} color={tokens.color.text.primary} />
-          <AppText style={styles.backLabel}>Back</AppText>
-        </Pressable>
+        <BackButton fallbackHref="/(admin)" />
         <AppText style={styles.pageTitle}>Settings</AppText>
         <View style={styles.backPlaceholder} pointerEvents="none" />
       </View>

@@ -1,4 +1,5 @@
 import { randomUUID } from 'expo-crypto';
+import { BackButton } from '@/components/ui/back-button';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
@@ -134,7 +135,7 @@ export default function MosqueAdminRequestScreen() {
   if (!userId) {
     return (
       <ScreenContainer contentStyle={{ gap: 16 }}>
-        <AppButton title="Back" variant="ghost" onPress={() => router.back()} />
+        <BackButton fallbackHref="/(user)/discover" />
         <AppCard style={{ gap: 12 }}>
           <AppText variant="sectionTitle">Sign in to continue</AppText>
           <AppText variant="body" style={{ color: tokens.color.text.secondary }}>
@@ -152,7 +153,6 @@ export default function MosqueAdminRequestScreen() {
   if (submitted) {
     return (
       <ScreenContainer contentStyle={{ gap: 16 }}>
-        <AppButton title="Back" variant="ghost" onPress={() => router.back()} />
         <AppCard style={{ gap: 12 }}>
           <AppText variant="sectionTitle">We'll be in touch</AppText>
           <AppText variant="body" style={{ color: tokens.color.text.secondary }}>
@@ -226,7 +226,7 @@ export default function MosqueAdminRequestScreen() {
 
   return (
     <ScreenContainer contentStyle={{ gap: 16 }}>
-        <AppButton title="Back" variant="ghost" onPress={() => router.back()} />
+        <BackButton fallbackHref="/(user)/discover" />
       <View style={{ gap: 6 }}>
         <AppText variant="sectionTitle">Register your mosque</AppText>
         <AppText variant="body" style={{ color: tokens.color.text.secondary }}>
