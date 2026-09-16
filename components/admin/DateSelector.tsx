@@ -103,7 +103,7 @@ export function DateSelector({ date, onChange }: Props) {
         <Modal transparent animationType="fade" visible onRequestClose={handleCancel}>
           <Pressable style={styles.backdrop} onPress={handleCancel} />
           <View style={styles.pickerWrap}>
-            <DateTimePicker themeVariant="light"
+            <DateTimePicker
               value={normalizeDate(tempDate ?? safeDate)}
               onChange={handlePickerChange}
               mode="date"
