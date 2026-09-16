@@ -112,7 +112,7 @@ Other rotations:
 
 | System | Variables | Notes |
 |---|---|---|
-| EAS env `preview` **and** `development` | `SUPABASE_SERVICE_ROLE`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | `eas env:update` needs `--variable-name … --variable-environment … --scope project`. **Gotcha:** updating a record shared by two environments detaches it from the other one; `development` had to be recreated with `eas env:create` for both Supabase vars. Always re-list both envs after an update. |
+| EAS env `preview` **and** `development` | `SUPABASE_SERVICE_ROLE`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | `eas env:update` needs `--variable-name … --variable-environment … --scope project`. **Gotcha:** updating a record shared by two environments detaches it from the other one; `development` had to be recreated with `eas env:create` for both Supabase vars. **Correction (2026-09-16):** the same thing happened to the two LiveKit vars in the other direction — updating `preview` then `development` left `preview` with no LiveKit vars at all, which Claude Code did not re-verify. LIVE token endpoints returned 503 until Codex restored both as sensitive variables on 2026-09-16 and redeployed the hosted API as `6o7jr2scu2`. All four vars now exist in both envs (verified 2026-09-16). Always re-list both envs after any update. |
 | Supabase Edge Function secrets (staging) | `SB_SECRET_KEY` | `LPT_API_KEY` unchanged until the new key arrives |
 | GitHub Actions repo secrets | `STAGING_EXPO_PUBLIC_SUPABASE_ANON_KEY`, `STAGING_EXPO_PUBLIC_SUPABASE_URL`, `STAGING_EXPO_PUBLIC_API_BASE_URL` | These did not exist before (the workflow referenced them but nobody had created them). `STAGING_EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB/NATIVE` are still unset; not needed for password sign-in. |
 | Xcode Cloud workflow "Default" env vars | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Set by hand in App Store Connect. See §1.3 for the trap. |
@@ -337,8 +337,11 @@ Current alias target: `zkij5trusg` (2026-09-15). Previous: `89bc41p84p`.
 
 ## 5. Suggested next steps
 
-1. Physical two-device LIVE canary on the new LiveKit key (publisher +
-   listener), since the key changed for the shared LiveKit project.
+1. ~~Physical two-device LIVE canary on the new LiveKit key.~~ Done by
+   Codex/Hajira 2026-09-16 at Al Falah Islamic Education Centre on staging
+   ("it's all working now"); listener-audio/end/restart were not separately
+   reported. Production LiveKit config was not changed — check
+   `eas env:list --environment production` before any production LIVE use.
 2. Xcode Cloud: add a path filter or switch the start condition so
    docs-only pushes do not consume build minutes.
 3. Set `STAGING_EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB/NATIVE` GitHub
