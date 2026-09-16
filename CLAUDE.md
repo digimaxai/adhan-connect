@@ -7,7 +7,14 @@ for review paths, checks and scope. Courses are drafts; the expired appeal is
 paused. User will perform visual/device review. Native builds continue through
 Xcode Cloud (iOS) and GitHub Actions (Android).
 
-Latest (2026-09-16, Codex): staging LIVE configuration repair deployed to
+Latest (2026-09-17, Claude Code): Classes & courses redesigned after device review —
+single-class model with predefined categories, picked audience/days/times, derived
+status and a "Taking enrolments" switch; 3-step admin editor with live preview; new
+listener card/detail. Migration `20260917000000_mosque_classes_simplify.sql` applied
+to staging (drops the free-text state columns). See the superseded-note at the top of
+`docs/services-and-appeals-review-2026-09-16.md` for the current model and file map.
+
+Previous (2026-09-16, Codex): staging LIVE configuration repair deployed to
 EAS Hosting `preview` as `6o7jr2scu2`. Both `LIVEKIT_API_KEY` and
 `LIVEKIT_API_SECRET` were absent from EAS preview; restored as sensitive
 variables from the rotated credentials after a successful read-only LiveKit

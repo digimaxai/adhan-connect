@@ -1,5 +1,35 @@
 # Services, classes and external appeals — staging review
 
+> **Superseded on 2026-09-17 (Claude Code).** After device review the classes
+> feature was redesigned for simplicity; the sections below describe the
+> original 2026-09-16 shape. Current model:
+>
+> - One **class** = picked category (11 predefined: Qur'an & Tajweed, Hifz,
+>   Arabic, Children's Islamic studies, Alim/Alimah, Adult & evening, New
+>   Muslims, Youth, Sisters' circle, Family & wellbeing, Community support),
+>   picked audience (+ optional age note), day chips, from/to time pickers,
+>   optional start/end dates, fee text, location (defaults to the mosque
+>   address), one contact method (call / WhatsApp / email / website / just
+>   turn up), poster.
+> - Status is **derived** from dates (upcoming / running / finished); the
+>   admin only toggles **Taking enrolments** (inline switch on the list too).
+> - Optional **options** (`mosque_service_intakes`, e.g. Stage 1 / Stage 2,
+>   girls / boys) inherit the class's times and fee unless overridden.
+> - Admin: `screens/admin/services/index.tsx` (list with sections and
+>   enrolment switches) and `[id].tsx` (3-step editor with live preview card,
+>   Preview button opens the listener page with `preview=1`).
+> - Listener: `components/ClassCard.tsx` (shared card), `MosqueServiceCards`
+>   (mosque page + homepage strip of classes currently enrolling),
+>   `screens/user/service/[id].tsx` (hero, four fact tiles, options, sticky
+>   contact action, directions).
+> - Migration `20260917000000_mosque_classes_simplify.sql` adds the picked
+>   columns, backfills from the free text, and drops `category`, `kind`,
+>   `audience`, `schedule`, `review_on` on listings and `prerequisites`,
+>   `schedule`, `duration_text`, `enrolment`, `enrolment_closes_on`, `state`,
+>   `notes` on intakes (`audience` → `audience_note`). Applied to staging.
+> - `scripts/services/test-rules.js` covers derived status, enrolment chip,
+>   day/time formatting and contact validation.
+
 Implemented for the user's review on 16 September 2026. Production is unchanged.
 Native releases use Xcode Cloud (iOS) and GitHub Actions (Android), not EAS Build.
 EAS Hosting remains the web/API backend; preview deployment is `o3vmg41ymt`.
