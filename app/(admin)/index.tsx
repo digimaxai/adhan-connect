@@ -228,15 +228,6 @@ export default function AdminDashboard() {
       requiresMosque: true,
     },
     {
-      title: 'Reflection Planner',
-      description: 'Build a reusable library and schedule reflections in batches.',
-      href: '/(admin)/quotes',
-      icon: 'book-outline',
-      iconBg: '#FFFBF2',
-      iconColor: '#D97706',
-      requiresMosque: true,
-    },
-    {
       title: 'Admin Settings',
       description: 'Default mosque and account preferences.',
       href: '/(admin)/admin-settings',

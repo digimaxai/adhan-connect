@@ -35,7 +35,6 @@ export default function AdminStack() {
       <Stack.Screen name="admin-settings" />
       <Stack.Screen name="admin-account" />
       <Stack.Screen name="mosque-onboarding" />
-      <Stack.Screen name="quotes" />
       <Stack.Screen name="messages" />
       <Stack.Screen name="messages-thread" />
       <Stack.Screen name="enquiry-detail" />
