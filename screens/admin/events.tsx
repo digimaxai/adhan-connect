@@ -171,7 +171,6 @@ function CampaignsList({ campaigns, router }: { campaigns: CampaignItem[]; route
     <View style={styles.listCard}>
       {campaigns.map((c, i) => {
         const chip = statusChip(c.status);
-        const progress = pct(c.raised_cents, c.goal_cents);
         const isLast = i === campaigns.length - 1;
         return (
           <React.Fragment key={c.id}>
@@ -189,13 +188,7 @@ function CampaignsList({ campaigns, router }: { campaigns: CampaignItem[]; route
                     <AppText style={[styles.chipText, { color: chip.color }]}>{chip.label}</AppText>
                   </View>
                 </View>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${progress}%` as any }]} />
-                </View>
-                <AppText variant="caption" color={tokens.color.text.secondary}>
-                  {fmtCurrency(c.raised_cents)} raised of {fmtCurrency(c.goal_cents)}
-                  {c.end_at ? ` · ends ${fmtDateOnly(c.end_at)}` : ''}
-                </AppText>
+                <AppText variant="caption" >Donations collected on the mosque’s external page</AppText>
               </View>
               <Ionicons name="chevron-forward" size={16} color={tokens.color.text.muted} />
             </Pressable>

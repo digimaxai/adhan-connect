@@ -72,7 +72,7 @@ export function ContentAttachmentsEditor({
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
+      allowsEditing: contentType !== 'service',
       aspect: [16, 9],
       quality: 0.7,
     });

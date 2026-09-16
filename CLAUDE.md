@@ -1,5 +1,27 @@
 # Adhan Connect - Claude/Codex Handoff
 
+Latest feature (2026-09-16, Codex): services/classes, reusable course intakes,
+external donation links and Guidance Centre review drafts. Staging migration
+`20260916000100` applied. See `docs/services-and-appeals-review-2026-09-16.md`
+for review paths, checks and scope. Courses are drafts; the expired appeal is
+paused. User will perform visual/device review. Native builds continue through
+Xcode Cloud (iOS) and GitHub Actions (Android).
+
+Latest (2026-09-16, Codex): staging LIVE configuration repair deployed to
+EAS Hosting `preview` as `6o7jr2scu2`. Both `LIVEKIT_API_KEY` and
+`LIVEKIT_API_SECRET` were absent from EAS preview; restored as sensitive
+variables from the rotated credentials after a successful read-only LiveKit
+authentication check. Before deployment, both token endpoints returned 503
+for missing LiveKit configuration; afterwards both correctly returned 401
+for missing authentication. The preview LIVE contract smoke passed with no
+data mutations. The user subsequently tested staging LIVE at Al Falah Islamic
+Education Centre and confirmed "it's all working now" (2026-09-16).
+Individual listener-audio/end/restart steps were not separately reported;
+this confirmation applies to staging, not production.
+Native builds use **Xcode Cloud for iOS** and **GitHub
+Actions for Android**; EAS Hosting still serves the shared web/API backend.
+This repair did not run EAS Build or change production configuration.
+
 Latest (2026-09-15, Claude Code): see `docs/claude-code-handoff-2026-09-15.md` —
 secret-leak remediation (history rewritten, all SHAs changed: reset, never pull),
 Supabase staging moved to `sb_secret`/`sb_publishable` keys, hosted API now

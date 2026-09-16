@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +18,7 @@ import {
   listContentAttachments,
   type ContentAttachment,
 } from '../../../lib/api/admin/contentAttachments';
+import { httpsUrl } from '../../../lib/serviceListings';
 import { supabase } from '../../../lib/supabase';
 
 type CampaignRow = {
@@ -28,6 +29,8 @@ type CampaignRow = {
   goal_cents?: number | null;
   end_at?: string | null;
   mosque_name?: string | null;
+  donation_url?: string | null;
+  status?: string | null;
 };
 
 function formatLocalDate(date: Date) {
@@ -37,17 +40,12 @@ function formatLocalDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-const formatCurrency = (cents?: number | null) =>
-  `£${((cents ?? 0) / 100).toLocaleString('en-GB', {
-    maximumFractionDigits: 0,
-  })}`;
-
-export default function CampaignDetail() {
+export default function CampaignDetail({ adminPreview = false }: { adminPreview?: boolean } = {}) {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [campaign, setCampaign] = useState<CampaignRow | null>(null);
   const [attachments, setAttachments] = useState<ContentAttachment[]>([]);
-  const [amount, setAmount] = useState<number>(10);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,62 +53,45 @@ export default function CampaignDetail() {
       if (!id) return;
       setLoading(true);
       try {
-        const [{ data }, { attachments: rows }] = await Promise.all([
-          supabase
-            .from('campaigns')
-            .select(
-              'id,title,description,raised_cents,goal_cents,end_at,mosques(name)'
-            )
-            .eq('id', id)
-            .eq('status', 'active')
-            .or(`end_at.is.null,end_at.gte.${formatLocalDate(new Date())}`)
-            .maybeSingle(),
+        let query = supabase.from('campaigns').select('id,title,description,donation_url,status,end_at,mosques(name)').eq('id', id);
+        if (!adminPreview) query = query.eq('status', 'active').or(`end_at.is.null,end_at.gte.${formatLocalDate(new Date())}`);
+        const [{ data, error: loadError }, { attachments: rows }] = await Promise.all([
+          query.maybeSingle(),
           listContentAttachments('campaign', id),
         ]);
+        if (loadError) throw loadError;
         setCampaign(
           data
             ? {
                 id: data.id,
                 title: data.title,
                 description: data.description,
-                raised_cents: data.raised_cents,
-                goal_cents: data.goal_cents,
+                donation_url: data.donation_url,
+                status: data.status,
                 end_at: data.end_at,
                 mosque_name: (data as any).mosques?.name ?? null,
               }
             : null
         );
         setAttachments(rows);
+      } catch {
+        setError('Unable to load this appeal. Please try again.');
       } finally {
         setLoading(false);
       }
     };
     void load();
-  }, [id]);
-
-  const pct = (() => {
-    if (!campaign) return 0;
-    const goal =
-      campaign.goal_cents && campaign.goal_cents > 0
-        ? campaign.goal_cents
-        : 1;
-    return Math.min(
-      100,
-      Math.round(((campaign.raised_cents ?? 0) / goal) * 100)
-    );
-  })();
+  }, [id, adminPreview]);
 
   const coverImage = attachments.find((item) => item.kind === 'image') ?? null;
   const documents = attachments.filter((item) => item.kind === 'document');
 
-  const donate = () => {
-    Alert.alert(
-      'Donation flow',
-      `Donation checkout for ${formatCurrency(amount * 100)} will open here.`
-    );
+  const donationUrl = httpsUrl(campaign?.donation_url || '');
+  const donate = async () => {
+    if (!donationUrl) return;
+    try { setError(''); await Linking.openURL(donationUrl); }
+    catch { setError('Unable to open the donation page. Please try again.'); }
   };
-
-  const preset = [5, 10, 20, 50];
 
   return (
     <SafeAreaView style={styles.screen} edges={['left', 'right']}>
@@ -136,14 +117,7 @@ export default function CampaignDetail() {
                 {campaign.mosque_name ? (
                   <Text style={styles.subtle}>{campaign.mosque_name}</Text>
                 ) : null}
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${pct}%` }]} />
-                </View>
-                <Text style={styles.meta}>
-                  {`${formatCurrency(
-                    campaign.raised_cents
-                  )} raised of ${formatCurrency(campaign.goal_cents)} goal`}
-                </Text>
+                {adminPreview && <Text style={styles.meta}>ADMIN PREVIEW · {campaign.status?.toUpperCase()}</Text>}
                 {campaign.end_at ? (
                   <Text style={styles.meta}>
                     Ends{' '}
@@ -161,45 +135,24 @@ export default function CampaignDetail() {
               <ContentDocumentsList documents={documents} />
 
               <View style={[styles.card, styles.shadow]}>
-                <Text style={styles.cardTitle}>Choose amount</Text>
-                <View style={styles.pillRow}>
-                  {preset.map((value) => (
-                    <Pressable
-                      key={value}
-                      onPress={() => setAmount(value)}
-                      style={({ pressed }) => [
-                        styles.amountPill,
-                        amount === value && styles.amountPillActive,
-                        { opacity: pressed ? 0.85 : 1 },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.amountText,
-                          amount === value && styles.amountTextActive,
-                        ]}
-                      >
-                        {formatCurrency(value * 100)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <Text style={styles.meta}>
-                  Selected: {formatCurrency(amount * 100)}
-                </Text>
+                <Text style={styles.cardTitle}>Donate directly to the mosque</Text>
+                <Text style={styles.meta}>Your donation is completed with the mosque’s payment provider. The mosque handles amounts, receipts and any Gift Aid declaration.</Text>
+                {donationUrl ? <Text style={styles.meta}>{new URL(donationUrl).hostname}</Text> : <Text style={styles.meta}>The mosque has not added a donation link yet.</Text>}
+                {!!error && <Text accessibilityRole="alert" style={styles.meta}>{error}</Text>}
               </View>
             </View>
           </ScrollView>
           <View style={styles.sticky}>
             <Pressable
-              onPress={donate}
+              onPress={() => void donate()}
+              disabled={!donationUrl}
               style={({ pressed }) => [
                 styles.primaryBtn,
                 { opacity: pressed ? 0.9 : 1 },
               ]}
             >
               <Text style={styles.primaryText}>
-                {`Donate ${formatCurrency(amount * 100)}`}
+                {donationUrl ? 'Donate on mosque’s website ↗' : 'Donation link unavailable'}
               </Text>
             </Pressable>
           </View>
@@ -214,7 +167,7 @@ export default function CampaignDetail() {
           <View style={[styles.card, styles.shadow]}>
             <Text style={styles.campaignTitle}>Campaign unavailable</Text>
             <Text style={styles.desc}>
-              This campaign may be paused, ended, or no longer public.
+              {error || 'This campaign may be paused, ended, or no longer public.'}
             </Text>
           </View>
         </ScrollView>

@@ -1,3 +1,4 @@
+import { MosqueServiceCards } from '../../../components/MosqueServiceCards';
 // app/mosque/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -67,6 +68,7 @@ type CampaignRow = {
   cover_image_url?: string | null;
 };
 type AnnouncementRow = {
+  related_service_id?: string | null;
   id: string;
   title?: string | null;
   summary?: string | null;
@@ -300,7 +302,7 @@ export default function MosquePage() {
             : Promise.resolve({ data: null }),
           supabase
             .from('announcements')
-            .select('id,title,summary,created_at,is_urgent,is_pinned')
+            .select('id,title,summary,created_at,is_urgent,is_pinned,related_service_id')
             .eq('mosque_id', actualId)
             .eq('status', 'published')
             .order('is_pinned', { ascending: false })
@@ -734,6 +736,8 @@ export default function MosquePage() {
           </View>
         </View>
 
+        {mosque && <MosqueServiceCards mosqueId={mosque.id} />}
+
         {/* Jumu'ah follows the daily prayer timetable. */}
         {showJumuahSection && (
           <View onLayout={rememberSection('jumuah')} style={[styles.card, styles.shadow]}>
@@ -821,10 +825,6 @@ export default function MosquePage() {
             </View>
             <View style={styles.divider} />
             {(showAllCampaigns ? visibleCampaignsForSection : visibleCampaignsForSection.slice(0, 3)).map((c) => {
-              const raised = (c.raised_cents ?? 0) / 100;
-              const goalRaw = c.goal_cents ?? 0;
-              const goal = goalRaw > 0 ? goalRaw / 100 : 1;
-              const pct = Math.min(100, Math.round((raised / goal) * 100));
               return (
                 <View key={c.id} style={styles.campaignRow}>
                   <View style={styles.campaignHeaderRow}>
@@ -833,17 +833,12 @@ export default function MosquePage() {
                     ) : null}
                     <Text style={styles.campaignTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>{c.title ?? 'Campaign'}</Text>
                   </View>
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${pct}%` }]} />
-                  </View>
-                  <Text style={styles.campaignMeta}>
-                    {`${formatCurrency(c.raised_cents)} raised of ${formatCurrency(c.goal_cents)} goal`}
-                  </Text>
+                  <Text style={styles.campaignMeta}>Support this appeal through the mosque’s donation page.</Text>
                   <Pressable
                     onPress={() => router.push({ pathname: '/(user)/campaign/[id]', params: { id: c.id } } as any)}
                     style={({ pressed }) => [styles.donateBtn, { opacity: pressed ? 0.9 : 1 }]}
                   >
-                    <Text style={styles.donateBtnText}>Donate</Text>
+                    <Text style={styles.donateBtnText}>View appeal</Text>
                   </Pressable>
                 </View>
               );
@@ -883,6 +878,7 @@ export default function MosquePage() {
                   {notice.summary
                     ? <Text style={styles.noticeSummary} numberOfLines={2}>{notice.summary}</Text>
                     : null}
+                  {notice.related_service_id && <Pressable accessibilityRole="link" onPress={() => router.push({pathname:'/(user)/service/[id]',params:{id:notice.related_service_id}} as any)}><Text style={{color:'#155F4E',fontWeight:'700',paddingVertical:8}}>View service →</Text></Pressable>}
                 </View>
               </View>
             ))}

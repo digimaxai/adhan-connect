@@ -1,3 +1,4 @@
+import { MosqueServiceCards } from '../../components/MosqueServiceCards';
 // screens/user/index.tsx
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -53,6 +54,7 @@ type Mosque = {
 type UserLocation = { latitude: number; longitude: number };
 type Subscription = { mosque_id: string };
 type RawAnnouncement = {
+  related_service_id?: string | null;
   id: string; mosque_id: string; title: string; summary?: string | null;
   created_at: string; is_urgent: boolean; is_pinned: boolean;
 };
@@ -328,10 +330,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
     visibleCampaigns.length > 0;
   if (!hasContent) return null;
 
-  const getRaisedPct = (campaign: RawCampaign) =>
-    campaign.goal_cents && campaign.goal_cents > 0
-      ? Math.min(100, Math.round(((campaign.raised_cents ?? 0) / campaign.goal_cents) * 100))
-      : null;
+
 
 
   const navigateTo = (focus: string) => {
@@ -358,7 +357,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
         {urgentNotices.map((urgent) => (
           <Pressable
             key={urgent.id}
-            onPress={() => navigateTo('urgent')}
+            onPress={() => urgent.related_service_id ? router.push({pathname:'/(user)/service/[id]',params:{id:urgent.related_service_id}} as any) : navigateTo('urgent')}
             style={({ pressed }) => [styles.contentRow, styles.contentRowUrgent, pressed && styles.contentRowPressed]}
           >
             <View style={[styles.contentIcon, styles.contentIconUrgent]}>
@@ -410,7 +409,6 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
         })}
 
         {visibleCampaigns.map((campaign) => {
-          const raisedPct = getRaisedPct(campaign);
           return (
             <Pressable
               key={campaign.id}
@@ -429,19 +427,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
                 >
                   {campaign.title}
                 </AppText>
-                {raisedPct !== null ? (
-                  <View style={{ gap: 3 }}>
-                    <View style={styles.campaignTrack}>
-                      <View style={[styles.campaignFill, { width: `${raisedPct}%` as any }]} />
-                    </View>
-                    <AppText variant="caption" style={styles.contentSub}>
-                      {formatCurrencyGBP(campaign.raised_cents) ?? '£0'} raised
-                      {campaign.goal_cents ? ` · ${raisedPct}% of ${formatCurrencyGBP(campaign.goal_cents)}` : ''}
-                    </AppText>
-                  </View>
-                ) : (
-                  <AppText variant="caption" style={styles.contentSub}>Active campaign</AppText>
-                )}
+                <AppText variant="caption" style={styles.contentSub}>Donate through the mosque’s collection page</AppText>
               </View>
               <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
             </Pressable>
@@ -450,7 +436,7 @@ const PrimaryMosqueContent = React.memo(function PrimaryMosqueContent({
 
         {notice ? (
           <Pressable
-            onPress={() => navigateTo('announcements')}
+            onPress={() => notice.related_service_id ? router.push({pathname:'/(user)/service/[id]',params:{id:notice.related_service_id}} as any) : navigateTo('announcements')}
             style={({ pressed }) => [styles.contentRow, pressed && styles.contentRowPressed]}
           >
             <View style={[styles.contentIcon, notice.is_pinned ? styles.contentIconPinned : styles.contentIconAnnouncement]}>
@@ -1212,7 +1198,7 @@ export default function HomeScreen() {
       const [announcementRes, eventRes, campaignRes, jumuahRes] = await Promise.all([
         supabase
           .from('announcements')
-          .select('id,mosque_id,title,summary,created_at,is_urgent,is_pinned')
+          .select('id,mosque_id,title,summary,created_at,is_urgent,is_pinned,related_service_id')
           .eq('mosque_id', primaryMosque.id)
           .eq('status', 'published')
           .order('is_urgent', { ascending: false })
@@ -1267,7 +1253,7 @@ export default function HomeScreen() {
     (async () => {
       const { data, error } = await supabase
         .from('announcements')
-        .select('id,mosque_id,title,summary,created_at,is_urgent,is_pinned')
+        .select('id,mosque_id,title,summary,created_at,is_urgent,is_pinned,related_service_id')
         .in('mosque_id', secondarySubIds)
         .eq('is_urgent', true)
         .eq('status', 'published')
@@ -1602,6 +1588,8 @@ export default function HomeScreen() {
         clockMs={clockMs}
         loading={prayerLoading}
       />
+
+      {primaryMosque && <MosqueServiceCards mosqueId={primaryMosque.id} compact />}
 
       {/* ── Cross-mosque urgent alerts (from all followed mosques except primary) ── */}
       <CrossMosqueAlertBanner alerts={crossMosqueAlerts} router={router} />

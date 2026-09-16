@@ -1,7 +1,7 @@
 import { supabase } from '../../supabase';
 
 export type ContentAttachmentKind = 'image' | 'document';
-export type ContentAttachmentType = 'event' | 'campaign' | 'announcement';
+export type ContentAttachmentType = 'event' | 'campaign' | 'announcement' | 'service';
 
 export type ContentAttachment = {
   id: string;

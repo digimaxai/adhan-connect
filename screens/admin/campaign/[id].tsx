@@ -18,6 +18,7 @@ import { AppText } from '@/components/ui/app-text';
 import { ContentAttachmentsEditor } from '@/components/admin/ContentAttachmentsEditor';
 import { tokens } from '@/theme/tokens';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
+import { httpsUrl } from '@/lib/serviceListings';
 import { supabase } from '@/lib/supabase';
 
 type Status = 'active' | 'paused' | 'ended';
@@ -40,11 +41,6 @@ function fmtDate(d: Date | null) {
   return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function fmtCents(cents: number | null) {
-  if (cents == null) return '';
-  return String(Math.round(cents / 100));
-}
-
 export default function AdminCampaignForm() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -53,8 +49,7 @@ export default function AdminCampaignForm() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [goalInput, setGoalInput] = useState('');
-  const [raisedCents, setRaisedCents] = useState<number | null>(null);
+  const [donationUrl, setDonationUrl] = useState('');
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [status, setStatus] = useState<Status>('active');
 
@@ -75,7 +70,7 @@ export default function AdminCampaignForm() {
     try {
       const { data, error: e } = await supabase
         .from('campaigns')
-        .select('id,mosque_id,title,description,goal_cents,raised_cents,end_at,status')
+        .select('id,mosque_id,title,description,donation_url,end_at,status')
         .eq('id', id)
         .eq('mosque_id', selectedMosque.mosqueId)
         .maybeSingle();
@@ -85,8 +80,7 @@ export default function AdminCampaignForm() {
       } else {
         setTitle(data.title ?? '');
         setDescription(data.description ?? '');
-        setGoalInput(fmtCents(data.goal_cents));
-        setRaisedCents(data.raised_cents ?? null);
+        setDonationUrl(data.donation_url ?? '');
         setEndDate(data.end_at ? new Date(data.end_at) : null);
         setStatus((data.status as Status) ?? 'active');
       }
@@ -102,20 +96,16 @@ export default function AdminCampaignForm() {
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
     if (!selectedMosque) { setError('No mosque selected.'); return; }
-    const goalCents = goalInput.trim()
-      ? Math.round(parseFloat(goalInput.replace(/[^0-9.]/g, '')) * 100)
-      : null;
-    if (goalInput.trim() && (!goalCents || isNaN(goalCents) || goalCents <= 0)) {
-      setError('Enter a valid goal amount (e.g. 5000).');
-      return;
-    }
+    const link = donationUrl.trim() ? httpsUrl(donationUrl) : null;
+    if (donationUrl.trim() && !link) { setError('Enter a valid HTTPS donation link.'); return; }
+    if (status === 'active' && !link) { setError('Add the mosque’s donation link before making this appeal active.'); return; }
     setSaving(true);
     setError(null);
     try {
       const payload: Record<string, any> = {
         title: title.trim(),
         description: description.trim() || null,
-        goal_cents: goalCents,
+        donation_url: link,
         end_at: endDate ? endDate.toISOString() : null,
         status,
       };
@@ -177,12 +167,6 @@ export default function AdminCampaignForm() {
       ]
     );
   };
-
-  const progressPct = (() => {
-    const goal = goalInput.trim() ? parseFloat(goalInput.replace(/[^0-9.]/g, '')) * 100 : null;
-    if (!goal || goal <= 0 || raisedCents == null) return null;
-    return Math.min(100, Math.round((raisedCents / goal) * 100));
-  })();
 
   if (loading) {
     return (
@@ -248,52 +232,13 @@ export default function AdminCampaignForm() {
             </AppText>
           </View>
 
-          {/* Goal */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>FUNDRAISING GOAL</AppText>
-            <View style={styles.fieldCard}>
-              <View style={styles.row}>
-                <View style={styles.currencyBadge}>
-                  <AppText style={styles.currencySymbol}>£</AppText>
-                </View>
-                <TextInput
-                  style={[styles.input, { flex: 1, paddingLeft: 0 }]}
-                  value={goalInput}
-                  onChangeText={setGoalInput}
-                  placeholder="0"
-                  placeholderTextColor={tokens.color.text.muted}
-                  keyboardType="decimal-pad"
-                  maxLength={12}
-                  returnKeyType="next"
-                />
-              </View>
-            </View>
+            <AppText variant="caption" style={styles.sectionLabel}>MOSQUE DONATION LINK</AppText>
+            <TextInput accessibilityLabel="Mosque donation link" style={styles.input} value={donationUrl} onChangeText={setDonationUrl} placeholder="https://…" autoCapitalize="none" keyboardType="url" maxLength={2048} />
+            <AppText variant="caption">Donations open on this external page. Amounts, receipts and Gift Aid are handled by your provider.</AppText>
+            {httpsUrl(donationUrl) && <AppText variant="caption">Destination: {new URL(httpsUrl(donationUrl)!).hostname}</AppText>}
+            {!isNew && <Pressable onPress={() => router.push({ pathname: '/(admin)/campaign-preview/[id]', params: { id } } as any)}><AppText style={{ color: '#155F4E', paddingVertical: 12 }}>Preview saved appeal →</AppText></Pressable>}
           </View>
-
-          {/* Progress — edit mode only */}
-          {!isNew && raisedCents != null && (
-            <View style={styles.section}>
-              <AppText variant="caption" style={styles.sectionLabel}>CURRENT PROGRESS</AppText>
-              <View style={styles.progressCard}>
-                <View style={styles.progressRow}>
-                  <AppText variant="body" style={styles.progressRaised}>
-                    £{(raisedCents / 100).toLocaleString('en-GB')} raised
-                  </AppText>
-                  {progressPct != null && (
-                    <AppText variant="caption" style={styles.progressPct}>{progressPct}%</AppText>
-                  )}
-                </View>
-                {progressPct != null && (
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${progressPct}%` as any }]} />
-                  </View>
-                )}
-                <AppText variant="caption" color={tokens.color.text.muted}>
-                  Raised amount is updated from donation records.
-                </AppText>
-              </View>
-            </View>
-          )}
 
           {/* End date */}
           <View style={styles.section}>

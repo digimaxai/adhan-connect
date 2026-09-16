@@ -149,6 +149,7 @@ export default function AdminDashboard() {
   }
 
   const dailyTools: ToolDef[] = [
+    { title: 'Services & classes', description: 'Manage courses, intakes, activities and service enquiries.', href: '/(admin)/services', icon: 'school-outline', iconBg: '#E7F3EE', iconColor: '#155F4E', requiresMosque: true },
     {
       title: 'Prayer Times',
       description: isMainAdmin

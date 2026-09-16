@@ -41,6 +41,9 @@ export default function AdminAnnouncementForm() {
   const isNew = !id || id === 'new';
 
   const [title, setTitle] = useState('');
+  const [relatedServiceId, setRelatedServiceId] = useState<string | null>(null);
+  const [services, setServices] = useState<{id:string;title:string;status:string}[]>([]);
+  useEffect(() => { if (!selectedMosque) return; let alive = true; supabase.from('mosque_service_listings').select('id,title,status').eq('mosque_id', selectedMosque.mosqueId).neq('status', 'archived').then(({data}) => { if (alive) setServices(data || []); }); return () => { alive = false; }; }, [selectedMosque]);
   const [body, setBody] = useState('');
   const [status, setStatus] = useState<Status>('published');
   const [isUrgent, setIsUrgent] = useState(false);
@@ -62,7 +65,7 @@ export default function AdminAnnouncementForm() {
     try {
       const { data, error: e } = await supabase
         .from('announcements')
-        .select('id,mosque_id,title,summary,status,is_urgent,is_pinned')
+        .select('id,mosque_id,title,summary,status,is_urgent,is_pinned,related_service_id')
         .eq('id', id)
         .eq('mosque_id', selectedMosque.mosqueId)
         .maybeSingle();
@@ -70,6 +73,7 @@ export default function AdminAnnouncementForm() {
       if (!data) {
         setError('Notice not found for the selected mosque.');
       } else {
+        setRelatedServiceId(data.related_service_id ?? null);
         setTitle(data.title ?? '');
         setBody(data.summary ?? '');
         setStatus((data.status as Status) ?? 'published');
@@ -88,10 +92,12 @@ export default function AdminAnnouncementForm() {
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
     if (!selectedMosque) { setError('No mosque selected.'); return; }
+    if (status === 'published' && relatedServiceId && !services.some(s => s.id === relatedServiceId && s.status === 'published')) { setError('Publish the linked service first, or save this notice as a draft.'); return; }
     setSaving(true);
     setError(null);
     try {
       const payload: Record<string, any> = {
+        related_service_id: relatedServiceId,
         title: title.trim(),
         summary: body.trim() || null,
         status,
@@ -263,6 +269,11 @@ export default function AdminAnnouncementForm() {
             </View>
           </View>
 
+          <View style={styles.section}>
+            <AppText variant="caption" style={styles.sectionLabel}>LINK TO A SERVICE (OPTIONAL)</AppText>
+            <AppText variant="caption">Publish the service before publishing its announcement.</AppText>
+            {[{id:'',title:'No linked service',status:''},...services].map(service => <Pressable key={service.id} onPress={() => setRelatedServiceId(service.id || null)} style={{ padding: 12, backgroundColor: relatedServiceId === (service.id || null) ? '#E0F2E9' : '#FFFFFF', borderRadius: 8 }}><AppText>{service.title}{service.status ? ` · ${service.status}` : ''}</AppText></Pressable>)}
+          </View>
           {/* Visibility */}
           <View style={styles.section}>
             <AppText variant="caption" style={styles.sectionLabel}>VISIBILITY</AppText>
