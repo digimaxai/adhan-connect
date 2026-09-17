@@ -227,17 +227,15 @@ export default function AdminDashboard() {
       {/* ── Mosque header ── */}
       <View style={styles.header}>
         <AppText variant="label" style={styles.eyebrow}>Local Admin</AppText>
-        <View style={styles.mosqueRow}>
-          <AppText variant="sectionTitle" style={styles.mosqueName} numberOfLines={1}>
-            {selectedMosque?.name ?? 'No mosque assigned'}
-          </AppText>
-          {selectedMosque && (
-            <View style={styles.readyBadge}>
-              <View style={styles.readyDot} />
-              <AppText variant="caption" style={styles.readyText}>Ready</AppText>
-            </View>
-          )}
-        </View>
+        <AppText variant="sectionTitle" style={styles.mosqueName} numberOfLines={2}>
+          {selectedMosque?.name ?? 'No mosque assigned'}
+        </AppText>
+        {selectedMosque && (
+          <View style={styles.readyBadge}>
+            <View style={styles.readyDot} />
+            <AppText variant="caption" style={styles.readyText}>Ready</AppText>
+          </View>
+        )}
         {locationLabel ? (
           <AppText variant="body" color={tokens.color.text.secondary}>{locationLabel}</AppText>
         ) : !selectedMosque ? (
@@ -484,9 +482,9 @@ const styles = StyleSheet.create({
   // Header
   header: { gap: 4, paddingTop: 4 },
   eyebrow: { color: '#0369A1', fontWeight: tokens.typography.weight.bold, fontSize: tokens.typography.size.sm },
-  mosqueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  mosqueName: { fontSize: 26, lineHeight: 32, fontWeight: tokens.typography.weight.extrabold, flex: 1 },
+  mosqueName: { fontSize: 24, lineHeight: 29, fontWeight: tokens.typography.weight.extrabold },
   readyBadge: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,

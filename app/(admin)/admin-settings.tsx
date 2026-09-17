@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PrayerAvailabilityReasons } from '@/components/admin/PrayerAvailabilityReasons';
 import { AppText } from '@/components/ui/app-text';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { tokens } from '@/theme/tokens';
@@ -33,7 +32,7 @@ export default function AdminSettingsScreen() {
     adminMosques: resolvedAdminMosques,
   } = useRoleFlags({ reuseResolvedSessionAccess: true });
   const roleMatchesSession = roleReady && resolvedUserId === (session?.user?.id ?? null);
-  const { mosques, selectedMosque, setSelectedMosque, loading: mosqueLoading } = useAdminMosque({
+  const { mosques, setSelectedMosque, loading: mosqueLoading } = useAdminMosque({
     enabled: roleMatchesSession && isAdmin,
     knownMosques: roleMatchesSession && isAdmin ? resolvedAdminMosques : undefined,
   });
@@ -200,6 +199,20 @@ export default function AdminSettingsScreen() {
 
   const initials = email ? email.split('@')[0].slice(0, 2).toUpperCase() : '??';
   const roleLabel = role ?? 'unknown';
+  const roleDisplayLabel = (value: string) => {
+    switch (value) {
+      case 'user':
+        return 'Listener';
+      case 'local_admin':
+        return 'Local Admin';
+      case 'main_admin':
+        return 'Main Admin';
+      case 'muezzin':
+        return 'Muezzin';
+      default:
+        return 'Unknown';
+    }
+  };
   const truncatedId = accountUserId
     ? `${accountUserId.slice(0, 8)}…${accountUserId.slice(-4)}`
     : 'unknown';
@@ -228,7 +241,7 @@ export default function AdminSettingsScreen() {
               <AppText style={[styles.roleBadgeText, styles.listenerBadgeText]}>Listener</AppText>
             </View>
             <View style={styles.roleBadge}>
-              <AppText style={styles.roleBadgeText}>{roleLabel}</AppText>
+              <AppText style={styles.roleBadgeText}>{roleDisplayLabel(roleLabel)}</AppText>
             </View>
             {isMuezzin && (
               <View style={[styles.roleBadge, styles.muezzinBadge]}>
@@ -250,7 +263,7 @@ export default function AdminSettingsScreen() {
           <View style={styles.hairline} />
           <View style={styles.detailRow}>
             <AppText style={styles.detailLabel}>Role</AppText>
-            <AppText style={styles.detailValue}>{roleLabel}</AppText>
+            <AppText style={styles.detailValue}>{roleDisplayLabel(roleLabel)}</AppText>
           </View>
           <View style={styles.hairline} />
           <View style={styles.detailRow}>
@@ -323,7 +336,6 @@ export default function AdminSettingsScreen() {
         </View>
       </View>
 
-      {selectedMosque ? <PrayerAvailabilityReasons key={selectedMosque.mosqueId} mosqueId={selectedMosque.mosqueId} mosqueName={selectedMosque.name} /> : null}
 
       {/* ── Prayer times source — London mosques only ── */}
       {londonMosque ? (

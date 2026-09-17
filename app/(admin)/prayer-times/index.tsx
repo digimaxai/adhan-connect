@@ -1091,13 +1091,7 @@ export default function PrayerTimesAdminScreen({
           : 'Edit the daily adhan and iqama schedule.'
       }
       backHref={backRoute}
-      mosqueName={selectedMosque?.name ?? null}
-      mosqueMeta={
-        selectedMosque
-          ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') ||
-            'Prayer schedule editor'
-          : null
-      }
+      showBack={false}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -1146,7 +1140,7 @@ export default function PrayerTimesAdminScreen({
           }
         />
       ) : null}
-      {notice ? (
+      {notice && activeSection !== 'menu' ? (
         <AdminBanner
           tone={publishingImport ? 'info' : notice.startsWith('Published') ? 'success' : 'info'}
           title={publishingImport ? 'Publishing timetable' : 'Prayer schedule'}
@@ -2164,70 +2158,80 @@ export default function PrayerTimesAdminScreen({
                 </AppText>
               </View>
             ) : (
-              prayers.map((p) => (
-                <AppCard key={p.key} style={[styles.card, disableForNoMosque && styles.cardDisabled]}>
-                  <View style={styles.cardHeader}>
-                    <AppText variant="title">{p.label}</AppText>
-                  </View>
-                  <View style={styles.row}>
-                    <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
-                      Adhan
+              <AppCard style={[styles.editTable, disableForNoMosque && styles.cardDisabled]}>
+                <View style={styles.editTableHeaderRow}>
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={styles.editPrayerCol}>Prayer</AppText>
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={styles.editTimeCol}>Adhan</AppText>
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={styles.editTimeCol}>Iqama</AppText>
+                  <View style={styles.editOverrideCol} />
+                </View>
+                {prayers.map((p, index) => (
+                  <View key={p.key} style={[styles.editTableRow, index === prayers.length - 1 && styles.editTableRowLast]}>
+                    <AppText variant="body" style={[styles.editPrayerLabel, styles.editPrayerCol]} numberOfLines={1}>
+                      {p.label}
                     </AppText>
-                    {isWeb ? (
-                      <WebTimeInput
-                        value={form[p.key].adhan}
-                        onChangeText={(value) => updateFormTime(p.key, 'adhan', value)}
-                        disabled={disableForNoMosque}
-                      />
-                    ) : (
-                      <TimeButton
-                        label={form[p.key].adhan}
-                        onPress={() => openTimePicker(p.key, 'adhan')}
-                        disabled={disableForNoMosque}
-                      />
-                    )}
-                  </View>
-                  <View style={styles.row}>
-                    <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
-                      Iqama
-                    </AppText>
-                    {iqamaOverridden[p.key] ? (
-                      isWeb ? (
+                    <View style={styles.editTimeCol}>
+                      {isWeb ? (
                         <WebTimeInput
-                          value={form[p.key].iqama}
-                          onChangeText={(value) => updateFormTime(p.key, 'iqama', value)}
+                          value={form[p.key].adhan}
+                          onChangeText={(value) => updateFormTime(p.key, 'adhan', value)}
                           disabled={disableForNoMosque}
                         />
                       ) : (
                         <TimeButton
-                          label={form[p.key].iqama}
-                          onPress={() => openTimePicker(p.key, 'iqama')}
+                          label={form[p.key].adhan}
+                          onPress={() => openTimePicker(p.key, 'adhan')}
                           disabled={disableForNoMosque}
                         />
-                      )
-                    ) : (
-                      <AppText variant="body" style={styles.autoIqamaValue}>
-                        {form[p.key].iqama ?? '—'} <AppText variant="caption" color={tokens.color.text.secondary}>(auto)</AppText>
-                      </AppText>
-                    )}
-                  </View>
-                  <View style={styles.overrideRow}>
-                    <AppText variant="caption" color={tokens.color.text.secondary} style={styles.overrideCaption}>
-                      {iqamaOverridden[p.key]
-                        ? 'Overriding just this date — this iqamah stays fixed until you revert.'
-                        : 'Resolved from the iqamah schedule or ELM jamaat. Override only if this date needs an exception.'}
-                    </AppText>
-                    <AppButton
-                      title={iqamaOverridden[p.key] ? 'Use auto time' : 'Override this date'}
-                      variant="ghost"
-                      onPress={() =>
-                        setIqamaOverridden((prev) => ({ ...prev, [p.key]: !prev[p.key] }))
-                      }
+                      )}
+                    </View>
+                    <View style={styles.editTimeCol}>
+                      {iqamaOverridden[p.key] ? (
+                        isWeb ? (
+                          <WebTimeInput
+                            value={form[p.key].iqama}
+                            onChangeText={(value) => updateFormTime(p.key, 'iqama', value)}
+                            disabled={disableForNoMosque}
+                          />
+                        ) : (
+                          <TimeButton
+                            label={form[p.key].iqama}
+                            onPress={() => openTimePicker(p.key, 'iqama')}
+                            disabled={disableForNoMosque}
+                          />
+                        )
+                      ) : (
+                        <View style={styles.autoIqamaWrap}>
+                          <AppText variant="body" style={styles.autoIqamaTime} numberOfLines={1}>
+                            {form[p.key].iqama ?? '—'}
+                          </AppText>
+                          <AppText variant="caption" color={tokens.color.text.secondary}>auto</AppText>
+                        </View>
+                      )}
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={iqamaOverridden[p.key] ? `Use automatic iqama for ${p.label}` : `Override iqama for ${p.label} on this date`}
+                      onPress={() => setIqamaOverridden((prev) => ({ ...prev, [p.key]: !prev[p.key] }))}
                       disabled={disableForNoMosque}
-                    />
+                      style={[styles.editOverrideBtn, styles.editOverrideCol, iqamaOverridden[p.key] && styles.editOverrideBtnActive]}
+                    >
+                      <Ionicons
+                        name={iqamaOverridden[p.key] ? 'refresh-outline' : 'pencil-outline'}
+                        size={16}
+                        color={iqamaOverridden[p.key] ? '#B45309' : tokens.color.text.muted}
+                      />
+                    </Pressable>
                   </View>
-                </AppCard>
-              ))
+                ))}
+                <View style={styles.editTableFootnote}>
+                  <Ionicons name="information-circle-outline" size={13} color={tokens.color.text.muted} />
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={{ flex: 1 }}>
+                    Adhan times are always editable. “Auto” iqama times follow your iqamah schedule — tap{' '}
+                    <Ionicons name="pencil-outline" size={11} color={tokens.color.text.secondary} /> to fix one just for this date.
+                  </AppText>
+                </View>
+              </AppCard>
             )}
 
             <AppText variant="caption" color={tokens.color.text.secondary}>
@@ -3319,7 +3323,6 @@ function WebTimeInput({
 
 const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
-  autoIqamaValue: { flex: 1 },
   pressed: { opacity: 0.9 },
   feedbackText: { marginTop: 8 },
   workspaceGrid: { gap: tokens.spacing.sm },
@@ -3818,6 +3821,20 @@ const styles = StyleSheet.create({
   actionFeedback: { marginTop: 8 },
   loader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center' },
   card: { gap: tokens.spacing.xs, padding: tokens.spacing.sm, borderRadius: 16 },
+  editTable: { padding: 14, borderRadius: 16, gap: 0 },
+  editTableHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  editTableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EEF2F6' },
+  editTableRowLast: { borderBottomWidth: 0 },
+  editPrayerCol: { flex: 1, minWidth: 0 },
+  editPrayerLabel: { fontWeight: tokens.typography.weight.bold, fontSize: 15 },
+  editTimeCol: { width: 96, alignItems: 'center' },
+  editOverrideCol: { width: 34, alignItems: 'center' },
+  autoIqamaWrap: { alignItems: 'center' },
+  autoIqamaTime: { fontWeight: tokens.typography.weight.extrabold, fontSize: 15, color: tokens.color.text.secondary },
+  editOverrideBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F5F9' },
+  editOverrideBtnActive: { backgroundColor: '#FEF3C7' },
+  editTableFootnote: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+
   cardDisabled: { opacity: 0.6 },
   cardHeader: { gap: 2 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -3859,17 +3876,6 @@ const styles = StyleSheet.create({
   menuRowTitle: { fontSize: 15, fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary },
   menuRowDesc: { fontSize: tokens.typography.size.xs, lineHeight: 16 },
   menuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: tokens.color.border.subtle, marginLeft: 70 },
-  // The override caption + button row wraps to two lines on narrow phones
-  // instead of clipping the caption, which was previously cut off (e.g.
-  // showing "Use a...") because neither the row nor the text could shrink.
-  overrideRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  overrideCaption: { flex: 1, flexShrink: 1, flexBasis: 160, lineHeight: 16 },
   timeBtn: {
     minWidth: 88,
     minHeight: 42,
