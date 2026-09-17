@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton } from '@/components/ui/back-button';
 import { tokens } from '@/theme/tokens';
 import { useAuth } from '../../lib/auth';
@@ -136,7 +137,7 @@ export function EnquiryInbox({ admin = false }: { admin?: boolean }) {
     router.push({ pathname: admin ? '/(admin)/enquiry-detail' : '/(user)/mosque-enquiry', params: { enquiryId: id } } as any);
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.body}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BLUE} />}
@@ -307,7 +308,7 @@ export function EnquiryInbox({ admin = false }: { admin?: boolean }) {
           </>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

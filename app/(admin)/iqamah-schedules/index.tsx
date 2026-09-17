@@ -199,8 +199,6 @@ export default function IqamahSchedulesScreen() {
       eyebrow="Local Admin"
       subtitle="Set date-range iqamah (congregation) times per prayer instead of editing every day. These apply automatically ahead of ELM/auto times, unless a specific date has its own override."
       backHref="/(admin)/prayer-times"
-      mosqueName={selectedMosque?.name ?? null}
-      mosqueMeta={selectedMosque ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') : null}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tokens.color.status.info} />}
     >
       {!selectedMosque && !mosques.length ? (

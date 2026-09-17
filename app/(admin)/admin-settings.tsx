@@ -482,6 +482,26 @@ export default function AdminSettingsScreen() {
         )}
       </View>
 
+      {/* ── Mosque profile ── */}
+      <View style={styles.section}>
+        <AppText style={styles.sectionLabel}>MOSQUE PROFILE</AppText>
+        <View style={styles.groupCard}>
+          <Pressable
+            onPress={() => router.push('/(admin)/mosque-facilities' as any)}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#FFF7ED' }]}>
+              <Ionicons name="list-outline" size={18} color="#C2410C" />
+            </View>
+            <View style={styles.actionCopy}>
+              <AppText style={styles.actionLabel}>Services & Facilities</AppText>
+              <AppText style={styles.actionDescription}>What your mosque offers, shown on its profile page</AppText>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={tokens.color.text.muted} />
+          </Pressable>
+        </View>
+      </View>
+
       {/* ── Account and legal ── */}
       <View style={styles.section}>
         <AppText style={styles.sectionLabel}>ACCOUNT & LEGAL</AppText>

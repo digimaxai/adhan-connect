@@ -152,6 +152,7 @@ export default function AdminTabs() {
       <Tabs.Screen name="iqamah-schedules/index" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="jumuah" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="messages-thread" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-facilities" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque-onboarding" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque-services" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="muezzins" options={{ href: null, headerShown: false }} />
