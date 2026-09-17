@@ -1091,9 +1091,6 @@ export default function PrayerTimesAdminScreen({
           : 'Edit the daily adhan and iqama schedule.'
       }
       backHref={backRoute}
-      activeTab={undefined}
-      onGoPrayerTimes={undefined}
-      onGoStaffRota={undefined}
       mosqueName={selectedMosque?.name ?? null}
       mosqueMeta={
         selectedMosque

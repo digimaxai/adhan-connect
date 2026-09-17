@@ -219,8 +219,8 @@ export default function AdminDashboard() {
       requiresMosque: true,
     },
     {
-      title: 'Events',
-      description: 'Review and manage upcoming mosque events.',
+      title: 'Content',
+      description: 'Events, campaigns and notices — everything you publish to followers.',
       href: '/(admin)/events',
       icon: 'calendar-outline',
       iconBg: '#FFF7ED',

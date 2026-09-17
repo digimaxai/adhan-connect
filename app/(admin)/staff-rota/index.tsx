@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, StyleSheet, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { AdminScreenShell } from '@/components/admin/AdminScreenShell';
 import { AdminBanner } from '@/components/admin/AdminBanner';
 import AdminDateSelector from '@/components/admin/DateSelector';
@@ -30,7 +29,6 @@ const prayers: { key: PrayerName; label: string }[] = [
 ];
 
 export default function StaffRotaScreen() {
-  const router = useRouter();
   const { loading: roleLoading, isAdmin } = useRoleFlags();
   const { mosques, selectedMosque, loading: mosqueLoading } = useAdminMosque();
 
@@ -230,10 +228,7 @@ export default function StaffRotaScreen() {
     <AdminScreenShell
       title="Staff Rota"
       subtitle="Assign the right muezzin to each prayer."
-      backHref="/(admin)"
-      activeTab="rota"
-      onGoPrayerTimes={() => router.push('/(admin)/prayer-times')}
-      onGoStaffRota={() => router.push('/(admin)/staff-rota')}
+      showBack={false}
       mosqueName={selectedMosque?.name ?? null}
       mosqueMeta={selectedMosque ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') || 'Daily rota editor' : null}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tokens.color.status.info} />}

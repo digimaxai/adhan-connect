@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackButton } from '@/components/ui/back-button';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -214,9 +213,7 @@ export default function AdminSettingsScreen() {
     >
       {/* ── Nav header ── */}
       <View style={styles.navHeader}>
-        <BackButton fallbackHref="/(admin)" />
         <AppText style={styles.pageTitle}>Settings</AppText>
-        <View style={styles.backPlaceholder} pointerEvents="none" />
       </View>
 
       {/* ── Profile card ── */}
@@ -549,9 +546,8 @@ const styles = StyleSheet.create({
   homeBtnText: { fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary },
 
   // Nav
-  navHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, minHeight: 40 },
+  navHeader: { flexDirection: 'row', alignItems: 'center', paddingTop: 4, minHeight: 40 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, minWidth: 80, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#E0F2FE' },
-  backPlaceholder: { minWidth: 80 },
   backLabel: { fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary, fontSize: 15 },
   pageTitle: { fontWeight: tokens.typography.weight.bold, fontSize: 17, color: tokens.color.text.primary },
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View, ViewStyle, ScrollViewProps } from 'react-native';
+import { StyleSheet, View, ViewStyle, ScrollViewProps } from 'react-native';
 import { AppCard } from '@/components/ui/app-card';
 import { AppText } from '@/components/ui/app-text';
 import { BackButton } from '@/components/ui/back-button';
@@ -11,9 +11,8 @@ type AdminScreenShellProps = ScrollViewProps & {
   subtitle: string;
   eyebrow?: string;
   backHref?: string;
-  activeTab?: 'prayerTimes' | 'rota';
-  onGoPrayerTimes?: () => void;
-  onGoStaffRota?: () => void;
+  /** false for a screen that is itself a bottom-tab root (no back chevron). */
+  showBack?: boolean;
   mosqueName?: string | null;
   mosqueMeta?: string | null;
   contentStyle?: ViewStyle;
@@ -25,21 +24,17 @@ export function AdminScreenShell({
   subtitle,
   eyebrow = 'Local Admin',
   backHref,
-  activeTab,
-  onGoPrayerTimes,
-  onGoStaffRota,
+  showBack = true,
   mosqueName,
   mosqueMeta,
   contentStyle,
   children,
   ...scrollProps
 }: AdminScreenShellProps) {
-  const showTabs = activeTab && onGoPrayerTimes && onGoStaffRota;
-
   return (
     <ScreenContainer {...scrollProps} contentStyle={[styles.content, contentStyle]}>
       <View style={styles.hero}>
-        <BackButton fallbackHref={backHref ?? '/(admin)'} />
+        {showBack ? <BackButton fallbackHref={backHref ?? '/(admin)'} /> : null}
         <View style={styles.heroCopy}>
           <AppText variant="label" style={styles.eyebrow}>
             {eyebrow}
@@ -52,13 +47,6 @@ export function AdminScreenShell({
           </AppText>
         </View>
       </View>
-
-      {showTabs ? (
-        <View style={styles.tabRow}>
-          <AdminTab label="Prayer Times" active={activeTab === 'prayerTimes'} onPress={onGoPrayerTimes} />
-          <AdminTab label="Staff Rota" active={activeTab === 'rota'} onPress={onGoStaffRota} />
-        </View>
-      ) : null}
 
       {mosqueName ? (
         <AppCard style={styles.contextCard}>
@@ -78,24 +66,6 @@ export function AdminScreenShell({
 
       {children}
     </ScreenContainer>
-  );
-}
-
-function AdminTab({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={active}
-      style={({ pressed }) => [
-        styles.tab,
-        active ? styles.tabActive : null,
-        pressed && !active ? styles.tabPressed : null,
-      ]}
-    >
-      <AppText variant="body" color={active ? '#075985' : tokens.color.text.primary} style={styles.tabLabel}>
-        {label}
-      </AppText>
-    </Pressable>
   );
 }
 
@@ -124,31 +94,6 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     lineHeight: 20,
     fontSize: 13,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  tab: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: tokens.radius.pill,
-    borderWidth: 1,
-    borderColor: tokens.color.border.muted,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabActive: {
-    backgroundColor: '#E6F6FF',
-    borderColor: '#0EA5E9',
-  },
-  tabPressed: {
-    opacity: 0.9,
-  },
-  tabLabel: {
-    fontWeight: tokens.typography.weight.extrabold,
-    fontSize: 15,
   },
   contextCard: {
     gap: 4,
