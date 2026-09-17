@@ -251,7 +251,7 @@ export default function AdminJumuahScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <View style={styles.navBar}>
-        <BackButton fallbackHref="/(admin)" />
+        <BackButton fallbackHref="/admin-home" />
         <View style={{ flex: 1 }}>
           <AppText variant="sectionTitle" style={styles.navTitle}>Jumuah</AppText>
           {selectedMosque ? (

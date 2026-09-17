@@ -377,7 +377,7 @@ export default function ContentHubScreen() {
       {/* ── Fixed header ── */}
       <View style={styles.fixedHeader}>
         <View style={styles.headerRow}>
-          <BackButton fallbackHref="/(admin)" />
+          <BackButton fallbackHref="/admin-home" />
           <View style={styles.headerTitles}>
             {selectedMosque ? (
               <AppText variant="caption" style={styles.headerMosque} numberOfLines={1}>

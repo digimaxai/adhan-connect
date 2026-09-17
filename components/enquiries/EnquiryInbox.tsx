@@ -34,7 +34,7 @@ export function EnquiryInbox({ admin = false }: { admin?: boolean }) {
     try { await configureEnquiries(mosqueId, categories); setSettings(false); } catch { setError('Could not save contact options.'); } finally { setSaving(false); }
   };
   return <ScreenContainer contentStyle={{ gap: 14 }}>
-    <BackButton />
+    {!admin && <BackButton />}
     <AppText variant="sectionTitle">{admin ? 'Enquiries' : 'My enquiries'}</AppText>
     {admin && <AppText>{mosque.selectedMosque?.name ?? 'Select a mosque in your dashboard.'}</AppText>}
     <EnquiryError message={error ?? (admin ? mosque.error : null)} />

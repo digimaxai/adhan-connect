@@ -239,7 +239,7 @@ export default function PrayerTimesAdminScreen({
       ? effectiveMosqueId
         ? `/admin/mosques/${effectiveMosqueId}`
         : '/admin/prayer-times'
-      : '/(admin)');
+      : '/admin-home');
   const eyebrowLabel = eyebrowOverride ?? (isMainAdminWeb ? 'Main Admin' : 'Local Admin');
   const isOnboardingEntry =
     typeof onboardingMode === 'boolean'
@@ -2328,6 +2328,7 @@ function PrayerTimesMenu({
   onManageIqamahSchedules: () => void;
   calculationSummary: string;
 }) {
+  const router = useRouter();
   const items: {
     key: string;
     title: string;
@@ -2363,6 +2364,15 @@ function PrayerTimesMenu({
       iconBg: '#F5F3FF',
       iconColor: '#7C3AED',
       onPress: () => onSelect('settings'),
+    },
+    {
+      key: 'availability',
+      title: 'Prayer availability',
+      description: 'Mark prayers not offered here and add a reason for followers.',
+      icon: 'list-outline',
+      iconBg: '#FFF1F2',
+      iconColor: '#BE123C',
+      onPress: () => router.push('/(admin)/mosque-services' as any),
     },
   ];
 

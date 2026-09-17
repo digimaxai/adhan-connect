@@ -446,7 +446,6 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsAdmin}>
         <Stack.Screen name="(admin)" />
-        <Stack.Screen name="admin-home" />
       </Stack.Protected>
       <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsMainAdmin}>
         <Stack.Screen name="admin" />

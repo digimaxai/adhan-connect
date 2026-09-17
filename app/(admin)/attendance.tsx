@@ -97,7 +97,7 @@ export default function AttendanceScreen() {
           </AppText>
           <AppButton
             variant="primary"
-            onPress={() => router.replace('/(admin)' as any)}
+            onPress={() => router.replace('/admin-home' as any)}
             title="Back to Dashboard"
           />
         </View>

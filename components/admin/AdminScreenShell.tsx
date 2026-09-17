@@ -34,7 +34,7 @@ export function AdminScreenShell({
   return (
     <ScreenContainer {...scrollProps} contentStyle={[styles.content, contentStyle]}>
       <View style={styles.hero}>
-        {showBack ? <BackButton fallbackHref={backHref ?? '/(admin)'} /> : null}
+        {showBack ? <BackButton fallbackHref={backHref ?? '/admin-home'} /> : null}
         <View style={styles.heroCopy}>
           <AppText variant="label" style={styles.eyebrow}>
             {eyebrow}

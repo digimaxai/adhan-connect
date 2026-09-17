@@ -65,9 +65,6 @@ export default function AdminServices() {
     <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
       <ScrollView contentContainerStyle={styles.body}>
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={22} color={tokens.color.text.primary} />
-          </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Classes & courses</Text>
             <Text style={styles.subtitle}>{selectedMosque?.name ?? "Select a mosque"}</Text>
@@ -160,7 +157,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: tokens.color.bg.app },
   body: { padding: 18, gap: 18, paddingBottom: 60, maxWidth: 780, width: "100%", alignSelf: "center" },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: tokens.color.border.subtle },
   title: { fontSize: 22, fontWeight: "800", color: tokens.color.text.primary },
   subtitle: { fontSize: 13, color: tokens.color.text.secondary, marginTop: 2 },
   mosqueRow: { gap: 8 },

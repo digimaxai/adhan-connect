@@ -47,7 +47,7 @@ export default function AdminTabs() {
 
   return (
     <Tabs
-      initialRouteName="index"
+      initialRouteName="admin-home"
       screenOptions={{
         headerShown: false,
         lazy: true,
@@ -77,9 +77,26 @@ export default function AdminTabs() {
         },
       }}
     >
-      {/* ── Visible tabs: the four most frequent local-admin jobs, plus Home ── */}
+      {/*
+        Five visible tabs, matching Listener's count exactly. Chosen by how
+        often a local admin repeatedly DOES something on that screen (not
+        just glances at it): Prayer Times and Classes are edit/correct
+        workflows used all the time; Enquiries is a reply-driven inbox that
+        benefits from always being one tap away. Settings stays last across
+        every role for the same "workspace switch always lives here" reason
+        established for Listener/Muezzin. Staff Rota, Content (events/
+        campaigns/notices) and Attendance & Engagement move to Home — Rota
+        and Content by explicit request, Attendance because it's a glance-
+        and-leave report rather than a repeated action, and reports read
+        better as a Home card than as a tab (see the engagement summary
+        card on Home).
+
+        Labels are single words (or "My Mosque"-length two-word labels,
+        already proven not to truncate on Listener) so none of the five
+        clip on a narrow phone.
+      */}
       <Tabs.Screen
-        name="index"
+        name="admin-home"
         options={{
           title: 'Home',
           tabBarAccessibilityLabel: 'Home',
@@ -89,25 +106,25 @@ export default function AdminTabs() {
       <Tabs.Screen
         name="prayer-times/index"
         options={{
-          title: 'Prayer Times',
+          title: 'Prayers',
           tabBarAccessibilityLabel: 'Prayer times',
           tabBarIcon: pillIcon('time-outline', 'time'),
         }}
       />
       <Tabs.Screen
-        name="staff-rota/index"
+        name="services/index"
         options={{
-          title: 'Rota',
-          tabBarAccessibilityLabel: 'Staff rota',
-          tabBarIcon: pillIcon('people-outline', 'people'),
+          title: 'Classes',
+          tabBarAccessibilityLabel: 'Classes and courses',
+          tabBarIcon: pillIcon('school-outline', 'school'),
         }}
       />
       <Tabs.Screen
-        name="events"
+        name="messages"
         options={{
-          title: 'Content',
-          tabBarAccessibilityLabel: 'Events, campaigns and notices',
-          tabBarIcon: pillIcon('calendar-outline', 'calendar'),
+          title: 'Enquiries',
+          tabBarAccessibilityLabel: 'Enquiries',
+          tabBarIcon: pillIcon('chatbubbles-outline', 'chatbubbles'),
         }}
       />
       <Tabs.Screen
@@ -120,6 +137,7 @@ export default function AdminTabs() {
       />
 
       {/* ── Hidden routes: reached from Home tiles, editors and detail screens ── */}
+      <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="admin-account" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="admin-manage-mosques" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="admin-muezzin" options={{ href: null, headerShown: false }} />
@@ -130,15 +148,15 @@ export default function AdminTabs() {
       <Tabs.Screen name="campaign-preview/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="enquiry-detail" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="event-editor/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="events" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="iqamah-schedules/index" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="jumuah" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="messages" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="messages-thread" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque-onboarding" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque-services" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="muezzins" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="previous-conversations" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="services/index" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="staff-rota/index" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="services/[id]" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
