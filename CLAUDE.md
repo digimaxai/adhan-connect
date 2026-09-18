@@ -1,6 +1,20 @@
 # Adhan Connect - Claude/Codex Handoff
 
-Latest feature (2026-09-16, Codex): services/classes, reusable course intakes,
+Latest (2026-09-18, Claude Code): Local Admin now has a bottom tab bar
+(Home · Prayers · Classes · Enquiries · Settings), matching Listener/
+Muezzin. Fixed a real routing bug along the way — bare Expo Router group
+paths like `/(admin)` don't reliably resolve; the working pattern is a
+uniquely-named file inside the group (`admin-home.tsx`) with `index.tsx`
+as a redirect stub, mirroring `(user)`/`(muezzin)`. Also: three rounds of
+device-tested fixes (redundant "Managing mosque" cards removed, Enquiries
+fully redesigned and its missing-SafeAreaView status-bar overlap fixed,
+"Services offered" split out of Prayer Availability into a new "Services &
+Facilities" screen, prayer-time editor condensed into one table), and the
+Reflection Planner dashboard tile removed (unused tables left in place).
+Staging HEAD `d30f936`, hosted web `ct1o9bkpvl` → `preview`, both native
+builds green. Full detail: `docs/claude-code-handoff-2026-09-18.md`.
+
+Previous feature (2026-09-16, Codex): services/classes, reusable course intakes,
 external donation links and Guidance Centre review drafts. Staging migration
 `20260916000100` applied. See `docs/services-and-appeals-review-2026-09-16.md`
 for review paths, checks and scope. Courses are drafts; the expired appeal is
