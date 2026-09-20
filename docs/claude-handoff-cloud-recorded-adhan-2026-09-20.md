@@ -291,7 +291,7 @@ but deliberately **not** the HTTP/Edge-Function half of that pattern:
 4. Design and build the listener "automatic audio" opt-in preference and its notification_events/materialization integration — a separate milestone from the scheduler, not a quick add-on.
 5. Build listener-side playback (single audio owner arbitration, source-aware playback response, "Recorded adhan" vs "LIVE" labeling, late-join seek).
 6. Stop at a reviewable deployment decision with exact environment/SHA and rollback evidence before any shared staging migration; do not silently activate unfinished playback.
-6. Keep this document and its convenience copy in the original checkout's `docs/` updated. The original checkout's copy is intentionally untracked; do not commit it to staging or include unrelated iOS/auth changes.
+7. Keep this document and its convenience copy in the original checkout's `docs/` updated. The original checkout's copy is intentionally untracked; do not commit it to staging or include unrelated iOS/auth changes.
 
 ## Subsequent milestones: full requirement still to implement
 
@@ -327,4 +327,4 @@ but deliberately **not** the HTTP/Edge-Function half of that pattern:
 
 ## Suggested next-agent opening
 
-“I’ll continue on `feature/cloud-recorded-adhan`, first verify the existing private recording setup and its tests, then implement cloud scheduling and fallback behind a separate activation switch. I’ll keep the demo’s staging deployment unchanged until the feature is tested and ready for review.”
+“I’ll continue on `feature/cloud-recorded-adhan` at `b44719d`. The automatic dispatcher is built and verified for real (pg_cron ticking against a real local Supabase stack, not just unit tests), but nothing yet plans occurrences ahead of time, wires live confirmation into the real broadcast path, or notifies/plays for listeners. I’ll pick one of those as its own isolated milestone rather than combining them, and keep the demo’s staging deployment unchanged until each is tested and ready for review.”
