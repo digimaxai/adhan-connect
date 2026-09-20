@@ -2,6 +2,12 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Lets a handful of lib/*.ts files (reused by a Deno Edge Function, which
+    // requires explicit extensions on relative imports) spell their imports
+    // with a .ts extension. Safe with the existing moduleResolution:"bundler"
+    // + noEmit:true from expo/tsconfig.base; Metro/webpack resolve an
+    // extensioned relative import identically to an extensionless one.
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": [
         "./*"

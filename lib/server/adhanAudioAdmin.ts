@@ -48,15 +48,18 @@ export async function handleAdhanAudioAdmin(
     const bucket = db.storage.from(ADHAN_AUDIO_BUCKET);
 
     if (request.method === 'GET') {
-      const [assets, settings] = await Promise.all([
+      const [assets, settings, activation] = await Promise.all([
         db.from('adhan_audio_assets').select(ASSET_COLUMNS).or(`mosque_id.eq.${mosqueId},mosque_id.is.null`)
           .neq('state', 'archived').order('created_at', { ascending: false }),
         db.from('mosque_adhan_audio_settings').select(SETTINGS_COLUMNS).eq('mosque_id', mosqueId).maybeSingle(),
+        db.from('mosque_adhan_audio_activation').select('active,activated_at').eq('mosque_id', mosqueId).maybeSingle(),
       ]);
-      databaseError(assets.error); databaseError(settings.error);
+      databaseError(assets.error); databaseError(settings.error); databaseError(activation.error);
       return reply({ assets: (assets.data ?? []).filter(a => a.mosque_id !== null || a.state === 'ready' || context.isMainAdmin),
         settings: settings.data ?? EMPTY_ADHAN_AUDIO_DRAFT,
-        canManageCatalogue: context.isMainAdmin, automaticPlaybackActive: false });
+        canManageCatalogue: context.isMainAdmin,
+        active: activation.data?.active === true, activatedAt: activation.data?.activated_at ?? null,
+        automaticPlaybackActive: false });
     }
     if (request.method !== 'POST') return reply({ error: 'Method not allowed.' }, 405);
     // Consume a bounded JSON body even when Content-Length is absent or forged.
@@ -96,6 +99,22 @@ export async function handleAdhanAudioAdmin(
       });
       databaseError(result.error);
       return reply({ settings: result.data, automaticPlaybackActive: false });
+    }
+    if (body.action === 'activate' || body.action === 'deactivate') {
+      if (body.action === 'activate') {
+        const revision = body.settingsRevision;
+        if (typeof revision !== 'number' || !Number.isInteger(revision) || revision < 0) {
+          throw new AdhanAudioError('Reload the current settings before activating.');
+        }
+        const result = await db.rpc('activate_adhan_audio_v1', {
+          p_actor: context.userId, p_mosque: mosqueId, p_expected_settings_revision: revision,
+        });
+        databaseError(result.error);
+        return reply({ active: true, automaticPlaybackActive: false });
+      }
+      const result = await db.rpc('deactivate_adhan_audio_v1', { p_actor: context.userId, p_mosque: mosqueId });
+      databaseError(result.error);
+      return reply({ active: false, automaticPlaybackActive: false });
     }
     if (body.action === 'begin_upload') {
       const title = audioText(body.title, 'Title', 120);

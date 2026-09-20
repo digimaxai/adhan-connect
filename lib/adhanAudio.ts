@@ -24,6 +24,8 @@ export type AdhanAudioWorkspace = {
   settings: AdhanAudioDraft;
   assets: AdhanAudioAsset[];
   canManageCatalogue: boolean;
+  active: boolean;
+  activatedAt: string | null;
   automaticPlaybackActive: false;
 };
 export const EMPTY_ADHAN_AUDIO_DRAFT: AdhanAudioDraft = {

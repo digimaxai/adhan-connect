@@ -35,7 +35,8 @@
     "test:adhan-audio": "node scripts/test-adhan-audio.cjs",
     "test:adhan-audio:db": "node scripts/test-adhan-audio-db.cjs",
     "test:adhan-delivery": "node scripts/test-adhan-delivery.cjs",
-    "test:adhan-delivery:dispatch": "node scripts/test-adhan-delivery-dispatch.cjs"
+    "test:adhan-delivery:dispatch": "node scripts/test-adhan-delivery-dispatch.cjs",
+    "test:adhan-delivery:planner": "node scripts/test-adhan-delivery-planner.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/amiri-quran": "^0.4.1",

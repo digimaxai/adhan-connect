@@ -1,7 +1,9 @@
+// Extensioned: also loaded by the Deno adhan-delivery-plan Edge Function,
+// which requires explicit extensions on relative imports.
 import {
   ADHAN_PRAYERS, AdhanAudioAsset, AdhanAudioDraft, AdhanAudioMode, AdhanPrayer, audioUuid,
-} from './adhanAudio';
-import { isValidTimeZone } from './timeZones';
+} from './adhanAudio.ts';
+import { isValidTimeZone } from './timeZones.ts';
 
 export const ADHAN_FALLBACK_GRACE_MS = 10000;
 export const ADHAN_MAX_JOB_LATENESS_MS = 30000;

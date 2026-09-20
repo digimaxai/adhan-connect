@@ -59,6 +59,12 @@ let started = false;
   `);
   sql(fs.readFileSync('supabase/migrations/20260920001000_adhan_audio_setup.sql', 'utf8'));
   sql(fs.readFileSync('supabase/migrations/20260920002000_adhan_delivery_core.sql', 'utf8'));
+  // Activation only: 20260921000000 (dispatch) and 20260922001000 (plan
+  // schedule) both `create extension pg_cron`, unavailable on this plain
+  // Postgres install (only Supabase's hosted/Docker Postgres bundles it) —
+  // both were verified for real against that stack instead; see
+  // docs/claude-handoff-cloud-recorded-adhan-2026-09-20.md.
+  sql(fs.readFileSync('supabase/migrations/20260922000000_adhan_audio_activation.sql', 'utf8'));
   assert.equal(sql("select public from storage.buckets where id = 'adhan-audio'"), 'f');
   for (const role of ['anon', 'authenticated']) {
     rejects(`set role ${role}; select * from public.adhan_audio_assets;`, /permission denied/);
@@ -171,6 +177,47 @@ let started = false;
   assert.equal(sql(service + cancel(immediate.id)), 'cancelled');
   assert.equal(JSON.parse(sql(service + claim(immediate.id))).state, 'cancelled');
   console.log('Adhan delivery DB: one winner, grace deadline, scoped readiness, stale jobs/plans, no replay/handover, archive protection and cancellation passed.');
+
+  // Activation gate: the only thing a planner/scheduler may read as "is this
+  // mosque on". Draft settings alone must never be sufficient.
+  const activate = (rev, actor = admin) => `select row_to_json(r) from public.activate_adhan_audio_v1('${actor}','${mosque}',${rev}) r;`;
+  const deactivate = (actor = admin) => `select row_to_json(r) from public.deactivate_adhan_audio_v1('${actor}','${mosque}') r;`;
+  const currentRevision = () => Number(sql(`select revision from public.mosque_adhan_audio_settings where mosque_id='${mosque}';`));
+  rejects('set role anon; select * from public.mosque_adhan_audio_activation;', /permission denied/);
+  rejects('set role authenticated;' + activate(currentRevision()), /permission denied/);
+  rejects(service + activate(currentRevision(), stranger), /admin access required/i);
+  rejects(service + activate(currentRevision() - 1), /Settings changed/);
+  const liveOnlyMosque = other;
+  rejects(service + `select public.activate_adhan_audio_v1('${main}','${liveOnlyMosque}',0);`, /Choose recorded or hybrid mode/);
+  const activated = JSON.parse(sql(service + activate(currentRevision())));
+  assert.equal(activated.active, true);
+  assert.equal(sql(`select active from public.mosque_adhan_audio_activation where mosque_id='${mosque}';`), 't');
+  assert.ok(Number(sql(`select count(*) from public.adhan_audio_audit where mosque_id='${mosque}' and action='activated';`)) >= 1);
+  // Belt-and-braces asset check: save_adhan_audio_draft only accepts a ready
+  // asset at save time, and archive_adhan_audio_asset already refuses to
+  // archive a currently-selected one — so this branch is largely unreachable
+  // through the RPCs alone. Prove activate_adhan_audio_v1 still refuses a
+  // settings row an admin-bypass query points at a non-ready asset, rather
+  // than trusting those other layers alone.
+  const notReadyAsset = sql(service + reserve(mosque));
+  sql(`update public.mosque_adhan_audio_settings set default_asset_id='${notReadyAsset}' where mosque_id='${mosque}';`);
+  rejects(service + activate(currentRevision()), /no longer ready/);
+  sql(service + save(currentRevision(), coreAsset));
+  sql(service + activate(currentRevision()));
+
+  // A fresh calendar date (tomorrow): every prayer "today" already has an
+  // occurrence from earlier in this script, and plan_adhan_delivery_v1 is a
+  // no-op against an existing row that has left the "planned" state.
+  const pendingForDeactivation = JSON.parse(sql(service + plan('fajr', instant('1 day 10 minutes'), 'recorded_only', 0, 5)));
+  assert.equal(pendingForDeactivation.state, 'planned');
+  const deactivated = JSON.parse(sql(service + deactivate()));
+  assert.equal(deactivated.active, false);
+  assert.equal(JSON.parse(sql(`select row_to_json(o) from public.adhan_delivery_occurrences o where id='${pendingForDeactivation.id}';`)).state,
+    'cancelled', 'Deactivation must cancel a still-pending occurrence');
+  assert.equal(JSON.parse(sql(`select row_to_json(o) from public.adhan_delivery_occurrences o where id='${missed.id}';`)).state,
+    'expired', 'Deactivation must never touch an occurrence that already left planned for another reason');
+  rejects(service + deactivate(stranger), /admin access required/i);
+  console.log('Adhan audio activation: fail-closed gates, settings/asset validation, audit trail, and deactivation-cancels-pending passed.');
   sql(`delete from public.users where id='${admin}';`);
   assert.equal(sql(`select count(*) from public.adhan_audio_assets where mosque_id='${mosque}' and created_by is not null`), '0');
   sql(`delete from public.mosques where id='${mosque}';`);

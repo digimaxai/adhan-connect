@@ -24,3 +24,4 @@ jobs:
       - run: npm run test:adhan-delivery
       - run: npm run test:adhan-audio:db
       - run: npm run test:adhan-delivery:dispatch
+      - run: npm run test:adhan-delivery:planner

@@ -12,7 +12,7 @@ function load(file) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   vm.runInNewContext(code, { module, exports: module.exports, URLSearchParams, Request, Response,
-    require(name) { return load(path.resolve(path.dirname(absolute), `${name}.ts`)); },
+    require(name) { return load(path.resolve(path.dirname(absolute), name.endsWith('.ts') ? name : `${name}.ts`)); },
   });
   cache.set(absolute, module.exports);
   return module.exports;
