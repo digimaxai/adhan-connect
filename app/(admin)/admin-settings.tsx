@@ -482,6 +482,25 @@ export default function AdminSettingsScreen() {
         )}
       </View>
 
+      {process.env.EXPO_PUBLIC_RECORDED_ADHAN_SETUP_ENABLED === 'true' ? (
+        <View style={styles.section}>
+          <AppText style={styles.sectionLabel}>ADHAN RECORDINGS</AppText>
+          <View style={styles.groupCard}>
+            <Pressable onPress={() => router.push('/adhan-audio' as any)}
+              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}>
+              <View style={[styles.actionIcon, { backgroundColor: '#E7F3EE' }]}>
+                <Ionicons name="musical-notes-outline" size={18} color="#155F4E" />
+              </View>
+              <View style={styles.actionCopy}>
+                <AppText style={styles.actionLabel}>Prepare adhan recordings</AppText>
+                <AppText style={styles.actionDescription}>Upload audio and save draft broadcast preferences.</AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={tokens.color.text.muted} />
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       {/* ── Mosque profile ── */}
       <View style={styles.section}>
         <AppText style={styles.sectionLabel}>MOSQUE PROFILE</AppText>

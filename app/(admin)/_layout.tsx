@@ -139,6 +139,7 @@ export default function AdminTabs() {
       {/* ── Hidden routes: reached from Home tiles, editors and detail screens ── */}
       <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="admin-account" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="adhan-audio" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="admin-manage-mosques" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="admin-muezzin" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="announcement/[id]" options={{ href: null, headerShown: false }} />

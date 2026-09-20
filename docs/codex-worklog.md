@@ -2043,3 +2043,29 @@ Web preview remains `0qmhx0zeeo`: automatic approval review rejected the attempt
 web/server upload because the latest request authorized an iOS test build.
 No new server routes are required for build 20. Production is unchanged.
 Physical-device visual and interaction acceptance remains outstanding.
+
+## 2026-09-20 — Private cloud adhan preparation (feature branch only)
+
+Implemented the first cloud-recorded-adhan milestone on
+`feature/cloud-recorded-adhan` in an isolated worktree: off-by-default local-admin
+setup, private signed uploads/previews, optional Fajr audio, draft modes/prayers,
+main-admin catalogue (up to five), archive protections and audit history.
+Draft settings cannot activate broadcasts. The additive migration introduces no
+live triggers or scheduled jobs. Existing live, rota, assignment, prayer and
+listener implementations are unchanged; no shared backend, build or deployment
+was modified.
+
+Typecheck, lint (six existing warnings), service rules, new API/audio validation,
+local PostgreSQL permission/concurrency/deletion tests and web export passed.
+Existing live route/access contracts passed against localhost placeholders.
+All 18 protected live/rota files match staging `520b83d`; the historical notification
+safety script has three pre-existing stale hashes, documented in the handoff.
+Browser connection was unavailable; visual review, real Supabase storage round-trip
+and physical device/audio canaries remain outstanding. Metadata validation does not
+replace listening/decoding checks. Full scheduling, arbitration and listener support
+are subsequent milestones, not delivered by this checkpoint.
+
+The user requested a Claude handoff before credits run out. Full requirements,
+branch/worktree safety, implementation, validation evidence and remaining work are
+in `docs/claude-handoff-cloud-recorded-adhan-2026-09-20.md`, also copied into the
+original checkout without touching its unrelated changes.

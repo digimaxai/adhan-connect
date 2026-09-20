@@ -1,0 +1,159 @@
+# Claude handoff: cloud recordings and live fallback
+
+## Request to the next agent
+
+Continue implementing cloud-managed prerecorded adhans and live fallback for Adhan Connect. Preserve the currently working app: the mosque demo was postponed to next weekend (the user said this on 20 September 2026). The user explicitly requested a complete handoff if Codex credits run short. Codex cannot see the credit balance, so this document was created proactively. **Read the working tree and test results before assuming the unfinished implementation is correct.**
+
+Start by reading `CLAUDE.md`, `docs/codex-worklog.md`, and `docs/backend/recorded-adhan-assessment-2026-09-19.md`. Follow repository rules for protected live/rota code and physical-device canaries. Do not ask the user to repeat decisions already recorded here. Do not merge, deploy to shared staging, or enable automatic playback merely because the branch builds successfully.
+
+## User decisions and scope
+
+- The mosque's local admin chooses the recording for all that mosque's listeners. Listeners do not choose among the five catalogue recordings.
+- Offer live only, recorded only, and live with recorded fallback. Live only remains the default and preserves existing behaviour.
+- Recorded only starts at the mosque's adhan time with no intentional grace delay. Live with fallback waits 5–10 seconds; the proposed first release uses a fixed 10 seconds, avoiding another configuration field.
+- Audio may be a staff recording uploaded by the mosque, or one of five centrally curated worldwide recordings. No actual catalogue files or reproduction permissions have been supplied. Do not invent/download copyrighted recordings to populate the catalogue.
+- Optional separate Fajr recording; use the default recording if not selected. Allow selection of the five daily prayers. Other prayers remain live only. Do not treat sunrise or iqamah/Jumu'ah congregations as additional automatic adhans.
+- Store recordings, schedules and fallback decisions in the cloud. No listener download button or offline audio library. Normal transient streaming buffers are fine. An admin choosing a file for upload is not the rejected listener-download design.
+- Keep live broadcasting, staff rota, assignment authorization, mosque prayer times, local admin access and the existing demo app safe.
+- The user originally delayed implementation for the demo, then explicitly authorized starting on 20 September after postponement. Continue on the isolated feature branch.
+
+## Important platform limit
+
+Remaining signed in does not mean an app is running. Foreground, background-playing, background-idle/suspended, OS-terminated, and user-force-closed are different cases. A cloud scheduler can make a broadcast available but cannot guarantee full automatic audio starts on a suspended/terminated iPhone. Do not promise that cloud hosting fixes this. Test foreground opt-in autoplay and ongoing playback separately; notification-tap-to-listen is the reliable entry mechanism to design for idle/closed apps. No silent-audio keepalive or misuse of VoIP/background APIs. Platform-specific acceptance and honest product wording remain necessary before rollout.
+
+## Branches, working directories and deployment state
+
+Repository: `https://github.com/digimaxai/adhan-connect`.
+
+- Original working directory: `/Users/mzk/PROJECTS/adhan-connect`, still on `staging` at `520b83da9e47d1b3a2bc019b7e91c572a69b78e7` when work began.
+- **Implement here:** `/private/tmp/adhan-connect-cloud-recorded-adhan`, a separate Git worktree on `feature/cloud-recorded-adhan` tracking the same remote branch. It has its own installed `node_modules`, not a symlink into staging. Temporary directories may be cleared eventually; ensure all intended source is committed/pushed before ending work.
+- Recovery branch: `backup/staging-before-recorded-adhan-2026-09-19`, fixed at `520b83d`. Do not move it.
+- Feature branch initially had `70d72d0` (the assessment document only). Inspect `git log` for newer commits.
+- **No database migration, cron job, hosted API, listener app, Xcode Cloud workflow, Android build or staging environment has been deployed/changed for this feature.** Do not interpret local code as deployed functionality.
+- A branch protects committed source only, not shared database, storage, server configuration or installed binaries. Keep feature testing separate; disabling new code is preferable to destructive database rollback.
+- CI currently runs for PRs to staging/main and pushes to staging. Android builds are manually dispatched. Existing Xcode Cloud configuration is hosted on Apple; its branch triggers have not been independently verified. Never assume a feature push cannot trigger an Apple workflow without checking it.
+- Use `gh` CLI for GitHub writes if needed: connector reads work but its branch write returned 403. CLI network and shared Git metadata operations require the environment's approval mechanism. Never print tokens.
+
+The original staging checkout contains unrelated user work. Leave all of it untouched:
+
+```
+ M docs/auth/listener-no-login-review-2026-09-08.md
+ M ios/AdhanConnectStaging.xcodeproj/project.pbxproj
+ M ios/AdhanConnectStaging/Info.plist
+?? docs/auth/listener-no-signup-assessment-2026-09-18.md
+?? docs/backend/recorded-adhan-assessment-2026-09-19.md
+?? ios/AdhanConnectStaging.xcodeproj/xcshareddata/xcodecloud/
+?? ios/AdhanConnectStaging/PrivacyInfo.xcprivacy
+?? ios/Podfile.lock
+```
+
+## Current implementation milestone
+
+The first milestone is **admin preparation only**, behind disabled-by-default flags. This is deliberately not the full user requirement yet. Draft settings have no live or listener consumers. Complete and validate this milestone before implementing scheduling/fallback. The screen explicitly states that automatic playback is inactive.
+
+Files added/changed:
+
+- `lib/adhanAudio.ts`: shared modes, prayer names, asset/workspace types, draft validation, file limits, UUID/text validation.
+- `lib/server/adhanAudioPolicy.ts`: server flag plus exact mosque allowlist and mosque/catalogue authorization.
+- `lib/server/validateAdhanAudio.ts`: parses actual uploaded bytes using server-only `music-metadata`; permits supported MP3/AAC M4A/PCM WAV, mono/stereo, 1–600 seconds, maximum 20 MiB. Metadata validation is not full decoding, transcoding or human review.
+- `lib/server/adhanAudioAdmin.ts` and `app/api/admin/adhan-audio+api.ts`: authenticated admin workspace, reserve signed upload, verify upload, sign short-lived preview, save draft, archive unused asset. No-store responses; bounded JSON requests; existing account-consent and admin access checks. Client-supplied user identity is ignored.
+- `lib/api/admin/adhanAudio.ts`: authenticated API calls and direct PUT to a server-issued signed storage upload URL, then server verification. Explicit timeouts. Does not obtain a second session from the auth lock.
+- `app/(admin)/adhan-audio.tsx`: draft settings, library, preview, optional Fajr, upload permission details, main-admin catalogue management, archive/retry unfinished uploads. Preview stops when leaving screen/backgrounding. Settings are clearly inactive.
+- `app/(admin)/admin-settings.tsx`: gated entry; `_layout.tsx`: hidden route, preserving existing five visible tabs.
+- `supabase/migrations/20260920001000_adhan_audio_setup.sql`: additive private assets/settings/audit tables; private bucket; service-role-only RPCs; authorization checked again in SQL; optimistic revision guard; serial admin mutation lock for save/archive/quota races; max 20 mosque assets and 5 catalogue assets including unfinished uploads. Existing live tables untouched. No scheduled jobs.
+- `package.json` / lock: `music-metadata@11.13.0` added. Installed dependencies with `--ignore-scripts`, then ran `npx patch-package` successfully for existing LiveKit and slider patches. No native package added.
+
+The legacy `recorded_adhans` table has public read policies. We used new private `adhan_audio_assets` for preparation so unfinished uploads are not inadvertently exposed, instead of modifying deployed legacy policies without an audit. Reassess integration/mapping later, not by applying permissive policies to the new table.
+
+Flags (do not edit existing `.env`/`.env.local`):
+
+```
+EXPO_PUBLIC_RECORDED_ADHAN_SETUP_ENABLED=true  # compiled client entry
+RECORDED_ADHAN_SETUP_ENABLED=true              # server gate
+RECORDED_ADHAN_SETUP_MOSQUE_IDS=<uuid,...>      # exact allowlist, empty = deny
+```
+
+All flags are absent/off by default. A client flag alone grants nothing. These are **setup flags**, not playback activation. A future activation flag/state must be separate. No client or scheduler should treat a draft mode as effective.
+
+Private storage notes: signed upload URL is valid for two hours, upsert false, random immutable object name; preview is valid for five minutes. Turning off setup does not revoke already issued URLs, but they cannot activate broadcasts. Archive keeps objects for now; future cleanup must wait for upload/preview expiry. Implement cleanup before broad rollout; do not delete an object while a valid outstanding upload token could recreate it.
+
+## Checkpoint validation — 20 September 2026
+
+The private admin preparation implementation is now written. Automatic scheduling,
+fallback arbitration, listener playback and notifications are **not implemented**.
+No migration or build has been deployed to shared staging or production.
+
+Completed locally:
+
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed with six existing warnings confined to unchanged prayer/iqamah screens; no new warnings.
+- `npm run test:services` passed.
+- `npm run test:adhan-audio` passed: modes/prayers, malformed requests, fail-closed flags/allowlist, role/scope isolation, server-derived actor identity, stale revision HTTP status, pending/archived previews, retry idempotency and actual WAV/MP3/AAC M4A parsing. Synthetic fixtures contain no real adhan or third-party audio.
+- `npm run test:adhan-audio:db` passed on a disposable local PostgreSQL 17 instance: RLS/grants, restrictive storage isolation even in the presence of an old permissive policy, local/main admin access, catalogue quota, concurrent revision conflict, archive-versus-selection race, audit trail and deletion cascades/anonymized actor references. The script creates/destroys its own cluster and never accepts a remote database URL.
+- Existing `npm run test:live:contracts` passed against a localhost export with placeholder configuration: five pages returned 200, nine protected APIs rejected missing auth with 401, invalid playback/location requests returned 400. The first run lacked the public placeholder key in the local server process; rerun with it supplied passed. This is route/access regression coverage, **not a physical audio canary**.
+- Fresh web/server export passed with the client setup flag enabled and placeholder local Supabase values. Client bundle scan found no `music-metadata`, `parseBuffer`, server allowlist, reserve-upload RPC or service-role variable. No real secret files were read/copied.
+- `git diff --check` passed. All 18 files protected by the historical notification safety script are byte-for-byte identical to staging baseline `520b83d`.
+
+Known baseline test failure: `npm run test:notifications:safety` fails on historical
+hashes for `app/api/muezzin/rota-workspace+api.ts`,
+`screens/muezzin/live-broadcast.tsx` and `screens/muezzin/my-rota.tsx`.
+The same three mismatches exist in `520b83d`; this feature changes none of them.
+Do not update the stored hashes just to make this feature appear green.
+
+The in-app browser runtime reported no available browser connections after its
+documented discovery checks. Visual review, actual authenticated cloud-storage
+upload/preview, and physical iOS/Android playback remain unverified. The full
+permission/storage flow needs an isolated Supabase test environment before any
+shared staging migration. Metadata parsing does not prove full decodability;
+preview/listening and a normalization/transcoding decision remain release work.
+
+CI now also checks pushes to `feature/cloud-recorded-adhan`, running the new unit/API
+and disposable database tests alongside existing checks. Inspect the latest GitHub
+run for the authoritative remote result. Android dispatch and Xcode Cloud workflows
+were not changed or started. A feature push's Xcode Cloud effect remains subject to
+Apple's existing hosted branch filters, which have not been independently audited.
+
+## Next actions
+
+1. Read the current Git status/history and latest CI run. If any feature changes are uncommitted, preserve them and complete their verification before pushing. Work only in the feature worktree/branch.
+2. Review the admin screen visually and test with local and main admins, including a main admin with no local memberships. The new server mosque-list endpoint filters the configured allowlist by authenticated authority; it does not rely on the login payload containing every mosque. Test local admins cannot curate the shared catalogue and unaffiliated users cannot see the setup workspace.
+3. Exercise signed upload/preview against an isolated Supabase test environment: real MP3/M4A/WAV, invalid/mislabeled files, interrupted upload, retry verification, archive, stale settings, and flag-off. Confirm UI and API point to the same feature environment, not demo staging. Do not edit existing secret files.
+4. Inspect account export/deletion retention rules for the new mosque-owned files/audit metadata before deployment. SQL deletion compatibility was tested; the full account workflows and storage cleanup were not.
+5. Implement subsequent milestones below with a separate activation mechanism. Stop at a reviewable deployment decision with exact environment/SHA and rollback evidence; do not silently activate unfinished playback.
+6. Keep this document and its convenience copy in the original checkout's `docs/` updated. The original checkout's copy is intentionally untracked; do not commit it to staging or include unrelated iOS/auth changes.
+
+## Subsequent milestones: full requirement still to implement
+
+### Cloud decision and scheduling
+
+- One durable delivery session per `(mosque_id, mosque-local prayer date, prayer name)` with a unique database key. Resolve canonical mosque prayer times through existing `getDailyPrayerTimes` rules and adjustments; mosque timezone/date, not phone timezone. Inspect prayer source precedence before coding. Prayer time edits, midnight, DST and late jobs need explicit tests.
+- Separate planned/effective config and rollout switch; default all existing mosques to live only. A missing/unusable recording must not enable recorded mode or block live. Treat live-only flow as a regression boundary.
+- Idempotent server job creates/claims the session. Recorded-only has no intentional delay. Hybrid chooses verified live readiness before the fixed 10-second deadline or atomically claims the recording afterwards. A minute-based push cron cannot provide 5–10-second precision; design and measure a seconds-resolution scheduler, retries and recovery. Do not claim exact device playback timing from server timing.
+- Current live API marks a stream live before the microphone publication is confirmed. Distinguish requested/connecting from verified readiness before using it to suppress fallback. Handle transaction races with late live starts; once recording wins, prevent a second overlapping adhan and explain status to the muezzin/admin. No automatic midstream rescue or switching back to live in the initial design.
+- Store immutable selected audio/duration/start/end in each delivery session; do not let a mid-session edit change what different listeners hear. Expire old sessions; never replay missed adhans hours late. Signed playback access should be session-scoped with a bounded lifetime and server authorization.
+- Never fake `streams.is_live` or `adhans.status='live'` for recorded playback: existing live notification triggers would mislabel/duplicate it.
+
+### Listener and notification behaviour
+
+- Single audio owner arbitration so live and recording cannot overlap. Determine priority/interrupt policy versus Quran/manual playback explicitly and test it.
+- Follow primary mosque only for automatic audio; user opt-in and per-prayer controls; avoid overlapping broadcasts from multiple followed mosques. Do not silently change subscriptions or notification consent.
+- Show “Recorded adhan”/fallback status and reciter, never “LIVE”. Late join seeks to elapsed server session position; expired session does not start from zero. Handle signed URL renewal/network loss without duplicate playback.
+- Deduplicate live/recorded push/session events; suppressed live notification if fallback wins. Device tap route handles active/expired session truthfully.
+- Test iOS and Android foreground, lock screen during playback, background idle, suspended/terminated, force closed, network loss, mute/DND and denied notifications. Explicitly state limits. No listener offline library.
+
+### Rota, assignments, settings
+
+- Hybrid retains existing duty/assignment permission. Recorded-only can mark the adhan delivery automated without silently deleting staff duties or other responsibilities. Rota needs a clear read-only badge/indicator before changing duty reminders.
+- Local admins can manage only their own mosque settings and audio; only main admins can curate shared recordings. Staff cannot change mosque mode by default. Audit who changed config, selected audio and activation.
+- Keep primary source of prayer times; do not introduce a competing schedule in the recording UI. Admin setting changes should have documented effect on future sessions and no retroactive replay.
+
+### Release/rollback and acceptance
+
+- Use the existing Xcode Cloud iOS / GitHub Android tooling only with explicitly selected feature branch builds and verified server/environment routing. Same staging backend is a shared dependency: a separate feature branch alone is insufficient isolation.
+- Before demo-critical rollout, show evidence from automated tests and at least a two-device live canary: one broadcaster, one listener, actual audio audible, safe start/stop/reconnect. Require fallback/recorded canaries on physical iOS and Android too. Leave new flags off for all non-test mosques.
+- Prepare rollback by disabling new activation/allowlist, stopping new scheduler dispatch and using the known working demo binary/server. Do not reverse shared database changes destructively as the first rollback step.
+- Keep deployment approval a concrete final decision with reviewed diff, test results, exact branch/SHA, target environment and rollback instructions. Ordinary reversible implementation and tests are already authorized.
+
+## Suggested next-agent opening
+
+“I’ll continue on `feature/cloud-recorded-adhan`, first verify the existing private recording setup and its tests, then implement cloud scheduling and fallback behind a separate activation switch. I’ll keep the demo’s staging deployment unchanged until the feature is tested and ready for review.”
