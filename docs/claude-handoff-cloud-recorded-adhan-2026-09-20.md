@@ -162,16 +162,135 @@ preview/listening and a normalization/transcoding decision remain release work.
 CI now also checks pushes to `feature/cloud-recorded-adhan`, running the new unit/API
 and disposable database tests alongside existing checks. Inspect the latest GitHub
 run for the authoritative remote result. Android dispatch and Xcode Cloud workflows
-were not changed or started. A feature push's Xcode Cloud effect remains subject to
-Apple's existing hosted branch filters, which have not been independently audited.
+were not changed or started. **Confirmed 2026-09-20 in App Store Connect:** the
+`AdhanConnectStaging` Xcode Cloud "Default" workflow's Branch Changes start condition
+is scoped to Custom Branches → `staging` only, so pushes to `feature/*` do not trigger
+an iOS build. This was checked directly in the dashboard, not inferred.
+
+## Verification checkpoint — 20 September 2026 (continued by Claude)
+
+Items 2–4 below (the original "Next actions" 2–4) were completed:
+
+- **Item 3 (real Supabase round-trip):** stood up a genuine local Supabase stack
+  (Postgres + Auth + Storage + PostgREST via `supabase start`/Docker, same Postgres
+  image Supabase hosts) and ran the actual `handleAdhanAudioAdmin` handler against
+  it — not mocks. All checks passed: real signed upload URL, real PUT of actual
+  bytes, real download + `music-metadata` parse + RPC confirmation, real signed
+  preview URL serving back byte-identical audio, cross-mosque rejection via real
+  RLS, unaffiliated-user rejection, local-admin-blocked-from-catalogue-scope, and
+  archive. Captured as `scripts/verify-adhan-audio-live-stack.cjs` (Docker-dependent,
+  intentionally **not** wired into `npm run test:*`/CI — run manually before any
+  future storage/RLS change to this feature). Full replay of the other 93 tracked
+  migrations was not attempted: it hits the genesis migration's PostGIS-not-yet-
+  enabled issue immediately, and CLAUDE.md documents a second known ordering bug
+  further down the chain (`profiles` created too late) — both pre-existing and out
+  of scope for this feature. Worked around locally only via a throwaway, uncommitted
+  bootstrap migration (parking the other 93 files during the test run, restoring them
+  after); nothing about this touched the real tracked migration history.
+- **Item 4 (account export/deletion):** reviewed `lib/server/accountDeletion.ts` and
+  `lib/server/accountExport.ts` against the new tables. SQL is safe — `created_by`/
+  `actor_id` are `on delete set null`, so deleting a user anonymizes attribution
+  rather than orphaning rows or cascading into a mosque's recordings/settings. Gap:
+  neither file's authored-content sections/warnings include the new
+  `adhan_audio_assets`/`adhan_audio_audit` tables yet. Not a leak (both use an
+  explicit column allowlist, never `select *`) — just an incompleteness versus the
+  existing `authoredOperationalRecordCount` pattern for events/campaigns/etc. Low
+  severity since account deletion remains gated off platform-wide regardless; worth
+  a small follow-up before that gate ever opens.
+- **Item 2 (visual review):** deliberately deferred, by the user's explicit choice
+  after weighing the cost. Rendering the real screen needs the app's full boot
+  sequence (role resolution, session-access, etc. touch many tables beyond this
+  feature's four), which runs into the same two pre-existing migration-replay bugs
+  above. Chosen path: verify via code review + the real-stack test above, and do
+  visual QA once this reaches an actual feature-branch device build rather than
+  spending more time working around unrelated known bugs, or provisioning new cloud
+  infrastructure, for a screenshot.
+
+## Third checkpoint: automatic delivery dispatcher (pushed as `7f2aad2`)
+
+The decision core (`plan`/`confirm`/`claim`/`cancel` RPCs, second checkpoint) had
+no caller — nothing actually invoked `claim_adhan_delivery_v1` on a schedule. This
+checkpoint adds exactly that piece, reusing the existing `pg_cron` pattern this repo
+already relies on for push dispatch (see `20260903143000_notification_dispatch_schedule.sql`),
+but deliberately **not** the HTTP/Edge-Function half of that pattern:
+
+- `supabase/migrations/20260921000000_adhan_delivery_dispatch_schedule.sql`: a new
+  `dispatch_due_adhan_deliveries_v1()` function, called directly by `pg_cron` every
+  10 seconds (`cron.schedule('adhan-connect-delivery-dispatch', '10 seconds', ...)`)
+  — pure in-database SQL, no `pg_net.http_post`, no Edge Function invocation on the
+  poll itself. It scans `adhan_delivery_occurrences` for `state='planned'` rows past
+  `recording_due_at` (the existing partial index already covers this) and calls
+  `claim_adhan_delivery_v1` on each; one occurrence's error can't abort the batch.
+  Fail-closed: revoked from `anon`/`authenticated`/`service_role`, callable only in
+  the migration-owning/cron execution context.
+- **Why no Edge Function for the poll:** the original design draft would have had
+  `pg_cron` call an Edge Function every 10 seconds via `pg_net.http_post`, which
+  bills/costs an invocation every tick forever, whether or not anything is due. The
+  user asked whether a cheaper option was still viable long-term; the answer is yes,
+  and better than "cheaper" — genuinely zero added cost as mosque count grows, since
+  `claim_adhan_delivery_v1` is already pure SQL and needs no HTTP round-trip at all.
+  Edge Function/push work only happens at genuine prayer occurrences (mosques × 5
+  prayers/day), never from idle polling.
+- **Verified for real, not just unit-tested:** confirmed `pg_cron` 1.6.4 is what
+  ships in Supabase's own Postgres image (same one used here), actually scheduled
+  and watched a `'10 seconds'` test job execute. Then, against the same real local
+  Supabase stack, inserted real due rows directly via SQL and let the actual cron
+  job (not a manual RPC call) claim them — all three cases fired correctly with zero
+  manual intervention: recorded-only claimed at T, hybrid-with-live-confirmed-before-
+  deadline stayed `live_selected` untouched past the deadline, hybrid-with-no-live
+  fell back to `recording_selected` at exactly T+10s with the right reason string.
+- `scripts/test-adhan-delivery-dispatch.cjs` (`npm run test:adhan-delivery:dispatch`,
+  now in CI): a fast, disposable-Postgres unit test of `dispatch_due_adhan_deliveries_v1`'s
+  own logic only — pg_cron itself isn't installed on this machine's or CI's plain
+  Postgres (only Supabase's hosted/Docker Postgres bundles it), so this test extracts
+  just the function+revoke statements from the real migration file (regex match, not
+  hand-copied, so it can't silently drift from the shipped SQL) and calls it directly.
+  Covers: batches multiple due rows in one call, ignores not-yet-due rows, idempotent
+  on repeat invocation, fail-closed direct execute. The genuine end-to-end tick above
+  is the real proof of the scheduling mechanism; this test is regression coverage for
+  the function's own logic, not a re-test of pg_cron's reliability.
+- Local verification passed: `npx tsc --noEmit`, `npm run lint` (same 6 pre-existing
+  warnings, no new ones), all of `test:services`/`test:adhan-audio`/`test:adhan-delivery`/
+  `test:adhan-audio:db`/`test:adhan-delivery:dispatch`. Protected live/rota files
+  (`app/api/muezzin/rota-workspace+api.ts`, `screens/muezzin/live-broadcast.tsx`,
+  `screens/muezzin/my-rota.tsx`, `app/api/muezzin/live-broadcast+api.ts`,
+  `lib/hooks/useLiveBroadcastEngine.ts`) confirmed byte-identical to `origin/staging`
+  via `git diff --stat`. Pushed and CI green: https://github.com/digimaxai/adhan-connect/actions/runs/35535868411.
+
+**Still not wired (explicitly deferred, not forgotten):**
+
+- **Planning ahead:** nothing yet calls `plan_adhan_delivery_v1` from resolved prayer
+  times. Needs a separate, lower-frequency job (minutes, not seconds) reusing the
+  existing JS prayer-time resolution the same way `adhanSchedulePreview.ts` already
+  does read-only, then calling the RPC to actually create/update occurrence rows
+  ahead of each prayer.
+- **Listener notifications on a real fire:** a fire today only changes
+  `adhan_delivery_occurrences.state`/`reason` — which is already a complete,
+  queryable delivery-outcome audit trail on its own (matching the assessment's
+  "Live"/"Scheduled recording"/"Fallback used"/"Cancelled" outcomes) — but nothing
+  notifies listeners yet. Deliberately not folded into this checkpoint: wiring it
+  correctly means adding a new listener "automatic audio" opt-in preference (does
+  not exist yet — existing notification consent is explicitly not automatic-audio
+  consent per the assessment) and integrating with the existing
+  `notification_events` materialization/preference pipeline across several
+  migrations (`20260903120000`, `20260904231500`, `20260907190000`), which deserves
+  its own careful pass rather than being conflated with the scheduler.
+- **Live confirmation wiring:** nothing yet calls `confirm_adhan_delivery_live_v1`
+  from the real live-broadcast start path — that's protected live code
+  (`app/api/muezzin/live-broadcast+api.ts` and its transactional START migration)
+  and needs its own deliberate, carefully reviewed change, not a same-session patch
+  alongside the scheduler.
+- **Listener playback itself:** still nothing on the listener side consumes a
+  recorded/live delivery session at all.
 
 ## Next actions
 
 1. Read the current Git status/history and latest CI run. If any feature changes are uncommitted, preserve them and complete their verification before pushing. Work only in the feature worktree/branch.
-2. Review the admin screen visually and test with local and main admins, including a main admin with no local memberships. The new server mosque-list endpoint filters the configured allowlist by authenticated authority; it does not rely on the login payload containing every mosque. Test local admins cannot curate the shared catalogue and unaffiliated users cannot see the setup workspace.
-3. Exercise signed upload/preview against an isolated Supabase test environment: real MP3/M4A/WAV, invalid/mislabeled files, interrupted upload, retry verification, archive, stale settings, and flag-off. Confirm UI and API point to the same feature environment, not demo staging. Do not edit existing secret files.
-4. Inspect account export/deletion retention rules for the new mosque-owned files/audit metadata before deployment. SQL deletion compatibility was tested; the full account workflows and storage cleanup were not.
-5. Implement subsequent milestones below with a separate activation mechanism. Stop at a reviewable deployment decision with exact environment/SHA and rollback evidence; do not silently activate unfinished playback.
+2. Build the planning-ahead job (calls `plan_adhan_delivery_v1` from resolved prayer times, minute-scale frequency, reuses existing JS prayer-time resolution).
+3. Wire `confirm_adhan_delivery_live_v1` into the real live-broadcast start path — protected live code, needs its own careful, isolated change and physical-device testing before merge consideration.
+4. Design and build the listener "automatic audio" opt-in preference and its notification_events/materialization integration — a separate milestone from the scheduler, not a quick add-on.
+5. Build listener-side playback (single audio owner arbitration, source-aware playback response, "Recorded adhan" vs "LIVE" labeling, late-join seek).
+6. Stop at a reviewable deployment decision with exact environment/SHA and rollback evidence before any shared staging migration; do not silently activate unfinished playback.
 6. Keep this document and its convenience copy in the original checkout's `docs/` updated. The original checkout's copy is intentionally untracked; do not commit it to staging or include unrelated iOS/auth changes.
 
 ## Subsequent milestones: full requirement still to implement
