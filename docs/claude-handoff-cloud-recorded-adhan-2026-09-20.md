@@ -283,10 +283,100 @@ but deliberately **not** the HTTP/Edge-Function half of that pattern:
 - **Listener playback itself:** still nothing on the listener side consumes a
   recorded/live delivery session at all.
 
+## Fourth checkpoint: planning-ahead job and explicit activation gate (pushed as `45f4dab`)
+
+The third checkpoint's dispatcher had nothing to act on outside manual test
+inserts — nothing called `plan_adhan_delivery_v1` from real prayer times. This
+checkpoint closes that gap and adds the activation gate the second checkpoint's
+own migration comment required before any scheduler could safely exist.
+
+- `supabase/migrations/20260922000000_adhan_audio_activation.sql`: new
+  `mosque_adhan_audio_activation` table — the **only** thing a planner/scheduler
+  may read to decide a mosque is live. `mosque_adhan_audio_settings` remains
+  draft-only; editing it never silently changes live behaviour.
+  `activate_adhan_audio_v1` validates current settings revision, non-empty
+  enabled prayers, and that the selected recording(s) are still `ready` before
+  turning on. `deactivate_adhan_audio_v1` turns off and cancels any
+  still-`planned` (not yet started) occurrences for that mosque, so nothing an
+  admin just turned off can still fire; it never touches an occurrence already
+  claimed/started.
+- `lib/server/adhanDeliveryPlanner.ts`: reuses the exact same
+  `resolveAdhanScheduleSlots`/`planAdhanDay` logic the admin schedule preview
+  already used (refactored out of `adhanSchedulePreview.ts` so both paths can
+  never diverge on "today's resolved prayer time"), then calls
+  `plan_adhan_delivery_v1` for each `ready` slot of every mosque the
+  activation table says is active. A mosque whose draft has since been edited
+  back to `live_only` is safely skipped rather than trusted from a stale
+  activation row.
+- `supabase/functions/adhan-delivery-plan/index.ts` +
+  `supabase/migrations/20260922001000_adhan_delivery_plan_schedule.sql`: runs
+  every 15 minutes via the exact same `pg_cron`+`pg_net`+shared-secret pattern
+  as `push-dispatch`. **Important:** this Edge Function runs on Deno and
+  cannot import an Expo Router `+api.ts` route directly (different runtime,
+  incompatible dependency graph — it imports `expo-router/server` and other
+  Node-oriented modules). It calls the existing `/api/prayer-times-daily`
+  route over **real HTTP** instead, exactly the way any other client does,
+  via a new required env var `ADHAN_DELIVERY_PLAN_API_BASE_URL` pointing at
+  the hosted API deployment. This guarantees the planner sees exactly what
+  listeners/admins see, with zero duplicated prayer-time logic — do not try
+  to shortcut this with an in-process import again.
+- **Deno also requires explicit extensions on relative imports**, which
+  `lib/adhanAudio.ts`, `lib/adhanDelivery.ts` and
+  `lib/server/adhanSchedulePreview.ts` (all reused by the Edge Function)
+  didn't have. Fixed by adding `allowImportingTsExtensions` to
+  `tsconfig.json` (already compatible with the existing
+  `moduleResolution:"bundler"` + `noEmit:true` from `expo/tsconfig.base`) and
+  adding `.ts` extensions **only** to the imports actually reached by the
+  Edge Function's module graph. `adhanSchedulePreview.ts` was decoupled from
+  `./adminAccess` (which pulls in `./accountConsentAccess` and a much larger
+  tree) — it only ever needed `context.supabaseAdmin`, so it now takes a
+  small structural type instead of the full `AdminAccessContext`. Do not
+  casually add `.ts` extensions to other files' imports elsewhere in the repo
+  without a reason; this was a narrow, deliberate fix for exactly the files
+  Deno's graph builder touches.
+- **Verified for real, not just unit-tested:** ran the actual Edge Function
+  locally via `supabase functions serve` against a real local Supabase stack,
+  with a stub HTTP server standing in for the hosted API's
+  `/api/prayer-times-daily`. Confirmed the full chain end-to-end with zero
+  manual RPC calls: an inactive mosque contributes zero database writes;
+  activating requires a valid settings revision/mode/ready-recording; the
+  real HTTP fetch resolves prayer times; `plan_adhan_delivery_v1` creates real
+  occurrence rows (a past-due time correctly lands as `expired`, not
+  `planned`, matching the RPC's own tombstone logic — this is not a bug); a
+  second planner run is idempotent (`planned: 0, unchanged: 10`);
+  deactivation cancels the still-pending occurrences and the next planner run
+  excludes that mosque entirely (`mosques: 0`).
+- Added a minimal "Automatic playback" on/off control to the existing admin
+  screen (`app/(admin)/adhan-audio.tsx`) — the smallest UI needed to make
+  this checkpoint usable end-to-end from an admin's perspective, not only
+  backend-verified. It calls the new `activate`/`deactivate` actions added to
+  `lib/server/adhanAudioAdmin.ts`, which also now returns `active`/
+  `activatedAt` in its `GET` response.
+- New tests: `scripts/test-adhan-delivery-planner.cjs`
+  (`npm run test:adhan-delivery:planner`, mocked db, matches
+  `test-adhan-delivery.cjs`'s style — activation gating, reverted-draft skip,
+  per-mosque error isolation) and expanded `scripts/test-adhan-audio-db.cjs`
+  with activation RPC coverage (fail-closed grants, stale revision, asset
+  readiness, deactivation-cancels-pending). Both in CI.
+- Local verification passed: `npx tsc --noEmit`, `npm run lint` (same 6
+  pre-existing warnings — 2 new ones were introduced by this checkpoint's UI
+  text and fixed before commit), all seven `test:*` scripts for this feature,
+  fresh web/iOS/Android bundle exports with the client-facing bundle scanned
+  clean of every server-only identifier this checkpoint introduced. Protected
+  live/rota files confirmed byte-identical to `origin/staging` via
+  `git diff --stat`. Pushed and CI green:
+  https://github.com/digimaxai/adhan-connect/actions/runs/35541318652.
+
+**Still not wired (explicitly deferred, not forgotten):** listener push
+notifications on a real fire (needs a new opt-in preference — see the third
+checkpoint's note, unchanged), `confirm_adhan_delivery_live_v1` integration
+with the real live-broadcast start path (protected live code, its own
+deliberate change), and any listener-side playback at all.
+
 ## Next actions
 
 1. Read the current Git status/history and latest CI run. If any feature changes are uncommitted, preserve them and complete their verification before pushing. Work only in the feature worktree/branch.
-2. Build the planning-ahead job (calls `plan_adhan_delivery_v1` from resolved prayer times, minute-scale frequency, reuses existing JS prayer-time resolution).
+2. Before relying on the planning-ahead job in a real environment: set `ADHAN_DELIVERY_PLAN_API_BASE_URL` for the `adhan-delivery-plan` function, and call it once with `{"configureSchedule": true}` (authenticated as service role) to register its `pg_cron` job — mirroring how `configure-push-dispatch.mjs` does this for push-dispatch. No such operator step has been run against any real environment yet.
 3. Wire `confirm_adhan_delivery_live_v1` into the real live-broadcast start path — protected live code, needs its own careful, isolated change and physical-device testing before merge consideration.
 4. Design and build the listener "automatic audio" opt-in preference and its notification_events/materialization integration — a separate milestone from the scheduler, not a quick add-on.
 5. Build listener-side playback (single audio owner arbitration, source-aware playback response, "Recorded adhan" vs "LIVE" labeling, late-join seek).
@@ -327,4 +417,4 @@ but deliberately **not** the HTTP/Edge-Function half of that pattern:
 
 ## Suggested next-agent opening
 
-“I’ll continue on `feature/cloud-recorded-adhan` at `b44719d`. The automatic dispatcher is built and verified for real (pg_cron ticking against a real local Supabase stack, not just unit tests), but nothing yet plans occurrences ahead of time, wires live confirmation into the real broadcast path, or notifies/plays for listeners. I’ll pick one of those as its own isolated milestone rather than combining them, and keep the demo’s staging deployment unchanged until each is tested and ready for review.”
+“I’ll continue on `feature/cloud-recorded-adhan` at `45f4dab`. Activation, planning-ahead and the automatic dispatcher are all built and verified for real end-to-end (a real local Supabase stack, real pg_cron ticking, a real Deno Edge Function resolving real HTTP-fetched prayer times), but nothing yet wires live confirmation into the real broadcast path, notifies listeners, or plays anything for listeners. I’ll pick one of those as its own isolated milestone rather than combining them, and keep the demo’s staging deployment unchanged until each is tested and ready for review.”
