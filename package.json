@@ -33,7 +33,8 @@
     "postinstall": "patch-package",
     "test:services": "node scripts/services/test-rules.js",
     "test:adhan-audio": "node scripts/test-adhan-audio.cjs",
-    "test:adhan-audio:db": "node scripts/test-adhan-audio-db.cjs"
+    "test:adhan-audio:db": "node scripts/test-adhan-audio-db.cjs",
+    "test:adhan-delivery": "node scripts/test-adhan-delivery.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/amiri-quran": "^0.4.1",

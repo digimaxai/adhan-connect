@@ -2069,3 +2069,25 @@ The user requested a Claude handoff before credits run out. Full requirements,
 branch/worktree safety, implementation, validation evidence and remaining work are
 in `docs/claude-handoff-cloud-recorded-adhan-2026-09-20.md`, also copied into the
 original checkout without touching its unrelated changes.
+
+## 2026-09-20 — Recording schedule preview and decision core
+
+Continued after the user explicitly requested it. Added a read-only two-day
+preview of saved recording settings and the mosque's existing prayer times,
+with unavailable-prayer, missing-time/audio, timezone/date and Fajr handling.
+The existing legacy/calculated fallback assumes London; new automation candidates
+outside London therefore require matching explicit canonical timestamps.
+No existing prayer resolver was changed or adjustments applied twice.
+
+Added a private service-only delivery occurrence/transaction core, with stable
+mosque/date/prayer identity, immutable winners, CAS plan revisions, confirmed
+live before a fixed 10-second deadline, recorded-only without a grace period,
+late-job expiry, cancellation and snapshot/archive protection. Core tests exercise
+concurrent workers and early/late live evidence in a disposable local database.
+No scheduler, provider readiness bridge, live guard, notification or listener
+consumer is installed. Runtime activation must remain separate from draft settings;
+these are foundations and preview functionality, not active broadcasts.
+
+The full Claude handoff lists the new files, contracts, checks and remaining
+integration boundary. Staging/backup refs remain at `520b83d`; the first feature
+checkpoint `c224823` passed GitHub CI and web/iOS/Android bundle exports.

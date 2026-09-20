@@ -31,7 +31,7 @@ Repository: `https://github.com/digimaxai/adhan-connect`.
 - Feature branch initially had `70d72d0` (the assessment document only). Inspect `git log` for newer commits.
 - **No database migration, cron job, hosted API, listener app, Xcode Cloud workflow, Android build or staging environment has been deployed/changed for this feature.** Do not interpret local code as deployed functionality.
 - A branch protects committed source only, not shared database, storage, server configuration or installed binaries. Keep feature testing separate; disabling new code is preferable to destructive database rollback.
-- CI currently runs for PRs to staging/main and pushes to staging. Android builds are manually dispatched. Existing Xcode Cloud configuration is hosted on Apple; its branch triggers have not been independently verified. Never assume a feature push cannot trigger an Apple workflow without checking it.
+- CI runs for PRs to staging/main and pushes to staging and the feature branch. Android builds are manually dispatched. Existing Xcode Cloud configuration is hosted on Apple; its branch triggers have not been independently verified. Never assume a feature push cannot trigger an Apple workflow without checking it.
 - Use `gh` CLI for GitHub writes if needed: connector reads work but its branch write returned 403. CLI network and shared Git metadata operations require the environment's approval mechanism. Never print tokens.
 
 The original staging checkout contains unrelated user work. Leave all of it untouched:
@@ -77,10 +77,62 @@ All flags are absent/off by default. A client flag alone grants nothing. These a
 
 Private storage notes: signed upload URL is valid for two hours, upsert false, random immutable object name; preview is valid for five minutes. Turning off setup does not revoke already issued URLs, but they cannot activate broadcasts. Archive keeps objects for now; future cleanup must wait for upload/preview expiry. Implement cleanup before broad rollout; do not delete an object while a valid outstanding upload token could recreate it.
 
+## Current continuation status
+
+The first implementation checkpoint is committed and pushed as `c2248234cf70b18e68aa6f0f77f03cd2435b1036`.
+GitHub CI passed: https://github.com/digimaxai/adhan-connect/actions/runs/35515478398.
+Fresh iOS and Android Hermes/JavaScript exports also passed with setup enabled;
+these are bundle checks, not installed native builds or physical playback tests.
+The user then explicitly said “continue please”. Work has moved on to scheduling
+and fallback foundations; inspect uncommitted changes and later commits before
+assuming this checkpoint describes the entire tree.
+
+New finding: the existing prayer-time fallback code interprets bare clock values
+as Europe/London even when a mosque has another timezone. Do not change the current
+app's prayer calculations incidentally. New automatic scheduling must use explicit
+timestamps and the mosque timezone, refuse unresolved/nonmatching times, respect
+`prayers_not_offered`, and conservatively block unverified non-London fallback times.
+A live stream being marked live precedes published microphone audio, so this flag
+alone cannot count as confirmed live delivery for fallback arbitration.
+
+## Second checkpoint: schedule preview and transactional decision core
+
+The continuation adds the following feature-only code. None of this has been
+applied to shared staging or production, and no worker/cron is configured.
+
+- `lib/adhanDelivery.ts`: stable `(mosque, local date, prayer)` identity, explicit UTC/offset timestamp validation, mosque-local calendar operations, Fajr/default audio selection, availability/recording checks, zero intentional delay for recorded-only, fixed 10-second hybrid grace, 30-second maximum job lateness, and a pure decision contract. Confirmed live from up to three minutes early suppresses fallback even if that live adhan already finished. The previous winner is immutable and bound to its occurrence; late proof, wrong-prayer evidence or disconnect cannot cause a second adhan.
+- `lib/server/adhanSchedulePreview.ts`: authenticated read-only preview of today's/tomorrow's **saved drafts**. It calls the unchanged existing prayer-times read handler in process (no user-controlled URL), applies no second adjustment, and requires exact draft agreement. Non-London prayers only qualify when their resolved time matches an explicit saved canonical timestamp; this conservatively blocks the existing London-only fallbacks. Inactive mosques, missing times/audio, date mismatches and `prayers_not_offered` get explicit reasons. Local browser/device timezone never controls planning.
+- `app/(admin)/adhan-audio.tsx`: on-demand saved schedule preview; editing the draft clears the old preview. API action is `preview_schedule` on the same authenticated, allowlisted setup endpoint. It always reports `automaticPlaybackActive: false`.
+- `supabase/migrations/20260920002000_adhan_delivery_core.sql`: private `adhan_delivery_occurrences` plus service-only plan/confirm/claim/cancel RPCs. No consumer, trigger or timer calls these in the app yet. Rows snapshot recording path/duration and keep a unique occurrence through timetable edits. Plan revisions protect against out-of-order planners/jobs, settings revisions cannot go backwards, and snapshots freeze once live is confirmed or the original prayer time arrives. Confirming qualified live selects it atomically; duplicate confirmation is idempotent. Other workers cannot replace its winner. Late jobs expire rather than replay. Admin cancellation is mosque-scoped and sticky. Archive protection now covers pending/active recording snapshots. The migration also explicitly removes service-role direct table writes that Supabase default privileges could otherwise grant; writes use the RPCs.
+- `scripts/test-adhan-delivery.cjs`: deterministic boundaries, DST repeated hours, local midnight/UTC previous day, source trust, wrong/future/stale live evidence, saved-draft preview and no handover/replay.
+- `scripts/test-adhan-audio-db.cjs`: expanded disposable-cluster tests with Supabase-style permissive default grants, actual concurrent claims, late confirmation, early live plus later timetable edit, idempotent live confirmation, stale/null revisions, exclusion cancellation, active asset archive protection and deletion. No external service or database URL is accepted.
+
+Second-checkpoint local verification passed: TypeScript, lint (the same six
+baseline warnings), audio/API and delivery domain tests, expanded PostgreSQL
+concurrency/security tests, and fresh web/iOS/Android bundle exports. Protected
+live/rota files and both existing prayer resolvers still match `520b83d` byte for
+byte. The updated web client bundle contains no private worker RPC, service-role
+setting, allowlist or metadata parser. Check the latest GitHub CI for the pushed
+checkpoint; no physical-device or authenticated storage round-trip is implied.
+
+**Important integration boundary:** The SQL confirmation RPC assumes its trusted
+server caller has verified actual provider publisher/track presence. Matching an
+active `streams` row is an additional scope check, not that media verification.
+There is no such provider bridge wired yet. The current live start/token paths
+have not been altered to honour a recorded winner. Do not enable a scheduler just
+because the core tests pass: that would permit conflicting old live behaviour.
+
+The worker must use separately activated effective configuration, never consume
+the current draft settings as an activation signal. A future runtime config and
+activation API, schedule refresh/version strategy, provider readiness bridge,
+coordinated live-start/publisher-token guards, single notification outbox and
+listener playback/consent are still required. All existing live, prayer, rota and
+assignment source files remain unchanged. Preserve that boundary until the
+integration can be canary-tested on real devices.
+
 ## Checkpoint validation — 20 September 2026
 
-The private admin preparation implementation is now written. Automatic scheduling,
-fallback arbitration, listener playback and notifications are **not implemented**.
+The private admin preparation implementation is now written. An automatic worker, integrated live fallback, listener playback and recording notifications are **not implemented**. The second checkpoint adds planning and a tested transaction core only.
 No migration or build has been deployed to shared staging or production.
 
 Completed locally:

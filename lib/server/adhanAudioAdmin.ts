@@ -80,6 +80,13 @@ export async function handleAdhanAudioAdmin(
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
     } catch { throw new AdhanAudioError('Invalid request.'); }
 
+    if (body.action === 'preview_schedule') {
+      const [{ loadAdhanSchedulePreview }, { GET: readDaily }] = await Promise.all([
+        import('./adhanSchedulePreview'), import('../../app/api/prayer-times-daily+api'),
+      ]);
+      return reply(await loadAdhanSchedulePreview(context, mosqueId, body.settings, request => readDaily(request, {})));
+    }
+
     if (body.action === 'save_settings') {
       const draft = validateAudioDraft(body.settings);
       const result = await db.rpc('save_adhan_audio_draft', {

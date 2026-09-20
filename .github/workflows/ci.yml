@@ -21,4 +21,5 @@ jobs:
       - run: npm run lint
       - run: npm run test:services
       - run: npm run test:adhan-audio
+      - run: npm run test:adhan-delivery
       - run: npm run test:adhan-audio:db

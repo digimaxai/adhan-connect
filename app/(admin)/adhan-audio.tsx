@@ -11,6 +11,7 @@ import {
   ADHAN_PRAYERS, AdhanAudioDraft, AdhanAudioMode, AdhanAudioWorkspace, validateAudioDraft,
 } from '../../lib/adhanAudio';
 import { adhanAudioRequest, uploadAdhanAudio } from '../../lib/api/admin/adhanAudio';
+import type { AdhanSchedulePreview } from '../../lib/adhanDelivery';
 
 const MODES: { value: AdhanAudioMode; title: string; description: string }[] = [
   { value: 'live_only', title: 'Live only', description: 'Staff lead the adhan live, as today.' },
@@ -87,6 +88,8 @@ function AudioEditor({ mosqueId, mosqueName, token }: { mosqueId: string; mosque
   const [scope, setScope] = useState<'mosque' | 'catalogue'>('mosque');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [schedulePreview, setSchedulePreview] = useState<AdhanSchedulePreview | null>(null);
+  useEffect(() => { setSchedulePreview(null); }, [draft]);
   const alive = useRef(true);
   const operation = useRef(false);
   const sound = useRef<Audio.Sound | null>(null);
@@ -201,6 +204,24 @@ function AudioEditor({ mosqueId, mosqueName, token }: { mosqueId: string; mosque
           const saved = await adhanAudioRequest<{ settings: AdhanAudioDraft }>(token, mosqueId, { action: 'save_settings', settings });
           if (alive.current) { setDraft(saved.settings); setMessage('Draft saved. Automatic playback is not active.'); }
         })} />
+      </View>
+      <View style={styles.card}>
+        <AppText style={styles.title}>Preview saved schedule</AppText>
+        <AppText style={styles.muted}>Check today and tomorrow in the mosque’s timezone. This preview does not start a broadcast.</AppText>
+        <Choice title="Check saved schedule" disabled={busy} onPress={() => void run(async () => {
+          const result = await adhanAudioRequest<AdhanSchedulePreview>(token, mosqueId, { action: 'preview_schedule', settings: draft });
+          if (alive.current) setSchedulePreview(result);
+        })} />
+        {schedulePreview ? <>
+          <AppText style={styles.muted}>{schedulePreview.timeZone} · Saved revision {schedulePreview.settingsRevision}</AppText>
+          {schedulePreview.slots.map(slot => <View key={slot.key} style={styles.asset}>
+            <AppText style={styles.title}>{slot.prayer[0].toUpperCase() + slot.prayer.slice(1)} · {slot.localDate}</AppText>
+            <AppText>{slot.scheduledAt ? new Intl.DateTimeFormat('en-GB', { timeZone: schedulePreview.timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date(slot.scheduledAt)) : 'Time unavailable'}
+              {' · '}{slot.status === 'live_only' ? 'Live only' : slot.status === 'not_offered' ? 'Not offered' : slot.status === 'blocked' ? 'Needs attention' : slot.mode === 'live_with_fallback' ? 'Recording fallback after 10 seconds' : 'Recording at prayer time'}</AppText>
+            {slot.status === 'ready' ? <AppText style={styles.muted}>{slot.recordingTitle} · {slot.durationSec}s</AppText> : null}
+            {slot.reason ? <AppText style={slot.status === 'blocked' ? styles.error : styles.muted}>{slot.reason}</AppText> : null}
+          </View>)}
+        </> : null}
       </View>
       <View style={styles.card}>
         <AppText style={styles.title}>Recording library</AppText>
