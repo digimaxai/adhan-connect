@@ -59,6 +59,15 @@ export function validateAudioDraft(value: unknown): AdhanAudioDraft {
     enabled_prayers: ADHAN_PRAYERS.filter(p => v.enabled_prayers!.includes(p)), revision: v.revision!,
   };
 }
+/** The first release offers live or scheduled recordings. Keep the broader
+ * stored-data contract above for historical drafts and the deferred core tests. */
+export function validateAdhanSetupDraft(value: unknown): AdhanAudioDraft {
+  const draft = validateAudioDraft(value);
+  if (draft.draft_mode === 'live_with_fallback') {
+    throw new AdhanAudioError('Recording fallback is deferred. Choose Live only or Scheduled recording only.', 409);
+  }
+  return draft;
+}
 export function audioFileType(name: unknown): { mime: string; extension: string } {
   const ext = typeof name === 'string' ? name.split('.').pop()?.toLowerCase() : '';
   if (ext === 'mp3') return { mime: 'audio/mpeg', extension: 'mp3' };

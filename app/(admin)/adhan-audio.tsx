@@ -8,15 +8,14 @@ import { ScreenContainer } from '../../components/ui/screen-container';
 import { useAuth } from '../../lib/auth';
 import { useRoleFlags } from '../../lib/roles';
 import {
-  ADHAN_PRAYERS, AdhanAudioDraft, AdhanAudioMode, AdhanAudioWorkspace, validateAudioDraft,
+  ADHAN_PRAYERS, AdhanAudioDraft, AdhanAudioMode, AdhanAudioWorkspace, validateAdhanSetupDraft,
 } from '../../lib/adhanAudio';
 import { adhanAudioRequest, uploadAdhanAudio } from '../../lib/api/admin/adhanAudio';
 import type { AdhanSchedulePreview } from '../../lib/adhanDelivery';
 
 const MODES: { value: AdhanAudioMode; title: string; description: string }[] = [
   { value: 'live_only', title: 'Live only', description: 'Staff lead the adhan live, as today.' },
-  { value: 'recorded_only', title: 'Recorded only', description: 'Planned: play the chosen recording at the mosque’s adhan time, with no intentional delay.' },
-  { value: 'live_with_fallback', title: 'Live with a recording fallback', description: 'Planned: allow 10 seconds for live audio to start, then use the recording.' },
+  { value: 'recorded_only', title: 'Scheduled recording only', description: 'Prepare a recording for the mosque’s adhan times. Scheduled playback is coming later.' },
 ];
 
 function Choice({ title, onPress, selected = false, disabled = false }: {
@@ -61,8 +60,8 @@ function AdhanAudioWorkspaceScreen() {
     <Choice title="Back to settings" onPress={() => router.replace('/admin-settings' as any)} />
     <AppText style={styles.heading}>Adhan recordings</AppText>
     <View style={styles.notice}>
-      <AppText style={styles.title}>Prepare, then turn on separately</AppText>
-      <AppText>Uploading audio and saving settings here never changes what happens live by itself. Each mosque has its own separate &ldquo;Automatic playback&rdquo; switch below — nothing plays automatically until you turn it on for that mosque. Your mosque’s current live broadcasts and staff duties continue as usual either way.</AppText>
+      <AppText style={styles.title}>Recording preparation</AppText>
+      <AppText>Upload and preview recordings, choose a planned mode and save your preferences. Scheduled playback is not available yet.</AppText>
     </View>
     {roles.loading || loading ? <ActivityIndicator /> : null}
     {error ? <><AppText style={styles.error}>{error}</AppText><Choice title="Try again" onPress={() => setRefresh(value => value + 1)} /></> : null}
@@ -182,6 +181,12 @@ function AudioEditor({ mosqueId, mosqueName, token }: { mosqueId: string; mosque
     {workspace && draft ? <>
       <View style={styles.card}>
         <AppText style={styles.title}>Planned broadcast mode</AppText>
+        {draft.draft_mode === 'live_with_fallback' ? <AppText style={styles.muted}>
+          Recording fallback is deferred. Choose Live only or Scheduled recording only before saving.
+        </AppText> : null}
+        {workspace.active ? <AppText style={styles.error}>
+          An earlier scheduling test is active. The central team must safely pause it before these settings can be changed.
+        </AppText> : null}
         {MODES.map(mode => <View key={mode.value} style={styles.group}>
           <Choice title={mode.title} selected={draft.draft_mode === mode.value} disabled={busy}
             onPress={() => setDraft({ ...draft, draft_mode: mode.value })} />
@@ -199,41 +204,21 @@ function AudioEditor({ mosqueId, mosqueName, token }: { mosqueId: string; mosque
           <Choice title="Clear default" disabled={busy || !draft.default_asset_id} onPress={() => setDraft({ ...draft, default_asset_id: null })} />
           <Choice title="Use default for Fajr" selected={!draft.fajr_asset_id} disabled={busy} onPress={() => setDraft({ ...draft, fajr_asset_id: null })} />
         </View>
-        <Choice title="Save draft settings" disabled={busy} onPress={() => void run(async () => {
-          const settings = validateAudioDraft(draft);
+        <Choice title="Save preparation settings" disabled={busy || workspace.active || draft.draft_mode === 'live_with_fallback'} onPress={() => void run(async () => {
+          const settings = validateAdhanSetupDraft(draft);
           const saved = await adhanAudioRequest<{ settings: AdhanAudioDraft }>(token, mosqueId, { action: 'save_settings', settings });
           if (alive.current) {
             setDraft(saved.settings);
             setWorkspace(w => w ? { ...w, settings: saved.settings } : w);
-            setMessage('Draft saved. Automatic playback is not active until you turn it on below.');
+            setMessage('Preparation settings saved. Scheduled playback is not available yet.');
           }
         })} />
       </View>
       <View style={styles.card}>
-        <AppText style={styles.title}>Automatic playback</AppText>
-        {workspace.active ? <>
-          <AppText style={styles.muted}>On since {workspace.activatedAt ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(workspace.activatedAt)) : 'recently'}. Editing and saving settings above does not change this — deactivate and reactivate to apply a changed draft.</AppText>
-          <Choice title="Turn off automatic playback" disabled={busy} onPress={() => void run(async () => {
-            await adhanAudioRequest(token, mosqueId, { action: 'deactivate' });
-            await reload(false);
-            if (alive.current) setMessage('Automatic playback turned off. Any already-scheduled plays for this mosque were cancelled.');
-          })} />
-        </> : <>
-          <AppText style={styles.muted}>{workspace.settings.draft_mode === 'live_only'
-            ? 'Choose recorded or hybrid mode and save it above before turning this on.'
-            : 'Turns on the saved settings above for real listeners. Save any changes first — activating uses the last saved draft, not unsaved edits on screen.'}</AppText>
-          <Choice title="Turn on automatic playback" disabled={busy || workspace.settings.draft_mode === 'live_only'} onPress={() => void run(async () => {
-            await adhanAudioRequest(token, mosqueId, { action: 'activate', settingsRevision: workspace.settings.revision });
-            await reload(false);
-            if (alive.current) setMessage('Automatic playback is now on for this mosque.');
-          })} />
-        </>}
-      </View>
-      <View style={styles.card}>
         <AppText style={styles.title}>Preview saved schedule</AppText>
         <AppText style={styles.muted}>Check today and tomorrow in the mosque’s timezone. This preview does not start a broadcast.</AppText>
-        <Choice title="Check saved schedule" disabled={busy} onPress={() => void run(async () => {
-          const result = await adhanAudioRequest<AdhanSchedulePreview>(token, mosqueId, { action: 'preview_schedule', settings: draft });
+        <Choice title="Check saved schedule" disabled={busy || draft.draft_mode === 'live_with_fallback'} onPress={() => void run(async () => {
+          const result = await adhanAudioRequest<AdhanSchedulePreview>(token, mosqueId, { action: 'preview_schedule', settings: validateAdhanSetupDraft(draft) });
           if (alive.current) setSchedulePreview(result);
         })} />
         {schedulePreview ? <>

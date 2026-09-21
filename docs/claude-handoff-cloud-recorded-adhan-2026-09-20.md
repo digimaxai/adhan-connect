@@ -1,4 +1,20 @@
-# Claude handoff: cloud recordings and live fallback
+# Claude handoff: cloud recordings — simplified first release
+
+## Current scope and short implementation checkpoint — 21 September 2026
+
+The user accepted a simpler first release: **Live only or Scheduled recording only per mosque; automatic live fallback is deferred.** Keep cloud-hosted mosque uploads/catalogue selection and optional Fajr audio. Basic scheduling is still needed for recording-only; manual listener playback was offered as an alternative but was NOT the option accepted. Simplify the final admin flow to choosing a mode/recording and saving changes for future prayers, without an exposed draft/activate/deactivate/reactivate workflow. Internal versioning and safe cancellation remain necessary.
+
+The user initially paused until the evening, then authorized a short ten-minute work session. This checkpoint deliberately contains setup/UI/API changes only:
+
+- The admin mode picker offers only Live only and Scheduled recording only. Earlier hybrid drafts remain readable and require an explicit supported selection; they are not silently converted.
+- Removed the unfinished playback activation card and corrected the screen/success text to recording preparation. Saving preparation preferences does not enable playback.
+- The authenticated API rejects `activate` with HTTP 409 before a database call, including for main admins and older feature clients. It rejects hybrid saves/schedule previews through the shared `validateAdhanSetupDraft` validator. Existing broader types/core tests remain for stored-data compatibility and deferred work.
+- Preparation saves refuse a mosque with an active earlier scheduling test, or an unreadable activation state. This defensive HTTP check is not an atomic SQL lifecycle fix. The existing authenticated `deactivate` action remains available for recovery, without a public playback switch or a claim that its known race is fixed.
+- Uploads, previews, catalogue permissions and saved schedule preview remain. No SQL migration, cron, existing live/rota/prayer code, native project or build workflow changed. No shared migration/deployment/native build was performed.
+- Added focused API regression coverage for unsupported hybrid settings, blocked activation for both admin roles, allowed live/recorded preparation, refused active-test edits, database read failure and retained recovery. The former review findings about effective settings, stale planners, reactivation and timetable invalidation are still open.
+- Validation: TypeScript, lint (the same six baseline warnings), audio/API tests, delivery and planner tests, services tests, and fresh web/iOS/Android bundle exports passed. SQL/cron files were not changed in this checkpoint. Exports are not installed native builds; authenticated visual/device testing is still pending. The feature branch's CI runs the full existing database suite after push.
+
+Resume this evening by designing the **recording-only** effective configuration and scheduler lifecycle, addressing R1–R4 in the review before any activation. Do not spend the next session building hybrid publisher-readiness/fallback machinery: that feature is now deferred. Retain ordinary live-only broadcasts and existing staff duty/assignment authority. Recording-only still needs a guard against conflicting manual live starts and safe mode changes; deferring hybrid does not remove that requirement. Complete listener consent/playback/notifications and physical-device checks in later isolated checkpoints.
 
 ## Latest status — independent Codex review, 21 September 2026
 
@@ -21,15 +37,15 @@ Next-agent ask: continue in `/private/tmp/adhan-connect-cloud-recorded-adhan` on
 
 ## Request to the next agent
 
-Continue implementing cloud-managed prerecorded adhans and live fallback for Adhan Connect. Preserve the currently working app: the mosque demo was postponed to next weekend (the user said this on 20 September 2026). The user explicitly requested a complete handoff if Codex credits run short. Codex cannot see the credit balance, so this document was created proactively. **Read the working tree and test results before assuming the unfinished implementation is correct.**
+Continue implementing cloud-managed prerecorded adhans for Adhan Connect within the simplified first-release scope above. Automatic live fallback is deferred. Preserve the currently working app: the mosque demo was postponed to next weekend (the user said this on 20 September 2026). The user explicitly requested a complete handoff if Codex credits run short. Codex cannot see the credit balance, so this document was created proactively. **Read the working tree and test results before assuming the unfinished implementation is correct.**
 
 Start by reading `CLAUDE.md`, `docs/codex-worklog.md`, and `docs/backend/recorded-adhan-assessment-2026-09-19.md`. Follow repository rules for protected live/rota code and physical-device canaries. Do not ask the user to repeat decisions already recorded here. Do not merge, deploy to shared staging, or enable automatic playback merely because the branch builds successfully.
 
 ## User decisions and scope
 
 - The mosque's local admin chooses the recording for all that mosque's listeners. Listeners do not choose among the five catalogue recordings.
-- Offer live only, recorded only, and live with recorded fallback. Live only remains the default and preserves existing behaviour.
-- Recorded only starts at the mosque's adhan time with no intentional grace delay. Live with fallback waits 5–10 seconds; the proposed first release uses a fixed 10 seconds, avoiding another configuration field.
+- Offer live only or scheduled recording only in the first release. Live only remains the default and preserves existing behaviour. The user explicitly deferred live-with-recording-fallback on 21 September.
+- Recorded only targets the mosque's adhan time with no intentional grace delay. The earlier proposed fixed ten-second live fallback is historical/deferred, not a first-release requirement. Measure and resolve polling jitter separately.
 - Audio may be a staff recording uploaded by the mosque, or one of five centrally curated worldwide recordings. No actual catalogue files or reproduction permissions have been supplied. Do not invent/download copyrighted recordings to populate the catalogue.
 - Optional separate Fajr recording; use the default recording if not selected. Allow selection of the five daily prayers. Other prayers remain live only. Do not treat sunrise or iqamah/Jumu'ah congregations as additional automatic adhans.
 - Store recordings, schedules and fallback decisions in the cloud. No listener download button or offline audio library. Normal transient streaming buffers are fine. An admin choosing a file for upload is not the rejected listener-download design.
@@ -392,7 +408,7 @@ checkpoint's note, unchanged), `confirm_adhan_delivery_live_v1` integration
 with the real live-broadcast start path (protected live code, its own
 deliberate change), and any listener-side playback at all.
 
-## Next actions
+## Earlier next actions — superseded by the simplified scope above
 
 1. Read the current Git status/history and latest CI run. If any feature changes are uncommitted, preserve them and complete their verification before pushing. Work only in the feature worktree/branch.
 2. Before relying on the planning-ahead job in a real environment: set `ADHAN_DELIVERY_PLAN_API_BASE_URL` for the `adhan-delivery-plan` function, and call it once with `{"configureSchedule": true}` (authenticated as service role) to register its `pg_cron` job — mirroring how `configure-push-dispatch.mjs` does this for push-dispatch. No such operator step has been run against any real environment yet.
@@ -402,7 +418,7 @@ deliberate change), and any listener-side playback at all.
 6. Stop at a reviewable deployment decision with exact environment/SHA and rollback evidence before any shared staging migration; do not silently activate unfinished playback.
 7. Keep this document and its convenience copy in the original checkout's `docs/` updated. The original checkout's copy is intentionally untracked; do not commit it to staging or include unrelated iOS/auth changes.
 
-## Subsequent milestones: full requirement still to implement
+## Original wider design — hybrid portions deferred
 
 ### Cloud decision and scheduling
 

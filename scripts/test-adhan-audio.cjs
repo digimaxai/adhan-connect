@@ -86,6 +86,9 @@ async function main() {
   let dbCalls = 0;
   let listedIds = [];
   let rpcError = null;
+  let activationActive = false;
+  let activationError = null;
+  const rpcCalls = [];
   let storedAsset = { id: assetId, mosque_id: mosque, state: 'ready', storage_path: 'test.wav', mime_type: 'audio/wav', size_bytes: audio.length };
   const db = {
     storage: { from() { return {
@@ -99,11 +102,17 @@ async function main() {
           async order() { return { data: listedIds.map(id => ({ id, name: 'Test mosque' })) }; } };
         return query;
       }
+      if (table === 'mosque_adhan_audio_activation') {
+        const query = { select() { return query; }, eq() { return query; },
+          async maybeSingle() { return { data: { active: activationActive }, error: activationError }; } };
+        return query;
+      }
       const query = { select() { return query; }, eq() { return query; }, async maybeSingle() { return { data: storedAsset }; } };
       return query;
     },
     async rpc(name, params) {
       dbCalls++;
+      rpcCalls.push({ name, params });
       assert.equal(params.p_actor, context.userId, 'Must use verified identity');
       return { data: { ...draft, revision: 1 }, error: rpcError };
     },
@@ -132,7 +141,32 @@ async function main() {
   await expectStatus({ action: 'begin_upload', title: 'A', reciter: 'B', rightsNote: 'Written permission', rightsConfirmed: true,
     scope: 'catalogue', sizeBytes: 12, fileName: 'test.mp3' }, 403);
   assert.equal(dbCalls, 0);
+  // Neither an old feature client nor a main admin can activate this unfinished
+  // release. Reject before any RPC or database read, after normal authorization.
+  await expectStatus({ action: 'activate', settingsRevision: 1 }, 409);
+  await expectStatus({ action: 'activate', settingsRevision: 1 }, 409, {
+    access: async () => ({ context: { ...context, isMainAdmin: true, supabaseAdmin: db } }),
+  });
+  const hybrid = { ...draft, draft_mode: 'live_with_fallback', default_asset_id: assetId };
+  await expectStatus({ action: 'save_settings', settings: hybrid }, 409);
+  await expectStatus({ action: 'preview_schedule', settings: hybrid }, 409);
+  assert.equal(dbCalls, 0, 'Deferred modes and activation must not reach the database');
   await expectStatus({ action: 'save_settings', settings: draft, userId: 'spoofed' }, 200);
+  const recorded = { ...draft, draft_mode: 'recorded_only', default_asset_id: assetId };
+  await expectStatus({ action: 'save_settings', settings: recorded }, 200);
+  assert.equal(rpcCalls.at(-1).params.p_mode, 'recorded_only');
+  const savedCount = rpcCalls.length;
+  activationActive = true;
+  await expectStatus({ action: 'save_settings', settings: recorded }, 409);
+  await expectStatus({ action: 'save_settings', settings: draft }, 409);
+  assert.equal(rpcCalls.length, savedCount, 'Do not edit a draft consumed by earlier scheduling tests');
+  activationActive = false;
+  activationError = { code: 'XX000', message: 'unavailable' };
+  await expectStatus({ action: 'save_settings', settings: draft }, 503);
+  assert.equal(rpcCalls.length, savedCount, 'An unreadable activation state must prevent saves');
+  activationError = null;
+  await expectStatus({ action: 'deactivate' }, 200);
+  assert.equal(rpcCalls.at(-1).name, 'deactivate_adhan_audio_v1', 'Keep recovery available for prior local tests');
   rpcError = { code: '40001', message: 'conflict' };
   await expectStatus({ action: 'save_settings', settings: draft }, 409);
   rpcError = { code: '42501', message: 'no access' };
@@ -157,6 +191,6 @@ async function main() {
   const mainAccess = async () => ({ context: { ...context, isMainAdmin: true, adminMosqueIds: [], supabaseAdmin: db } });
   const mainListed = await handleAdhanAudioAdmin(listing, env, mainAccess);
   assert.equal((await mainListed.json()).mosques.length, 1, 'Main admin needs no local membership to curate the catalogue');
-  console.log('Adhan audio: domain, fail-closed gates, scope/identity, HTTP errors, upload verification and idempotency passed.');
+  console.log('Adhan audio: domain, two-mode preparation, blocked activation, active-test edit guard, scope/identity, HTTP errors, upload verification and idempotency passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

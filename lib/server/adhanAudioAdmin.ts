@@ -1,6 +1,6 @@
 import {
   ADHAN_AUDIO_BUCKET, ADHAN_AUDIO_MAX_BYTES, AdhanAudioError, EMPTY_ADHAN_AUDIO_DRAFT,
-  audioFileType, audioText, audioUuid, validateAudioDraft,
+  audioFileType, audioText, audioUuid, validateAdhanSetupDraft,
 } from '../adhanAudio';
 import { requireAdminAccess } from './adminAccess';
 import { audioSetupEnabled, audioSetupMosqueIds, authorizeAudioAsset, authorizeAudioMosque } from './adhanAudioPolicy';
@@ -84,14 +84,22 @@ export async function handleAdhanAudioAdmin(
     } catch { throw new AdhanAudioError('Invalid request.'); }
 
     if (body.action === 'preview_schedule') {
+      const settings = validateAdhanSetupDraft(body.settings);
       const [{ loadAdhanSchedulePreview }, { GET: readDaily }] = await Promise.all([
         import('./adhanSchedulePreview'), import('../../app/api/prayer-times-daily+api'),
       ]);
-      return reply(await loadAdhanSchedulePreview(context, mosqueId, body.settings, request => readDaily(request, {})));
+      return reply(await loadAdhanSchedulePreview(context, mosqueId, settings, request => readDaily(request, {})));
     }
 
     if (body.action === 'save_settings') {
-      const draft = validateAudioDraft(body.settings);
+      const draft = validateAdhanSetupDraft(body.settings);
+      // Preparation must not edit a configuration consumed by an earlier local
+      // scheduling test. This is not a replacement for the pending SQL lifecycle fix.
+      const activation = await db.from('mosque_adhan_audio_activation').select('active').eq('mosque_id', mosqueId).maybeSingle();
+      databaseError(activation.error);
+      if (activation.data?.active === true) {
+        throw new AdhanAudioError('An earlier scheduling test is active. The central team must safely pause it before these settings can be changed.', 409);
+      }
       const result = await db.rpc('save_adhan_audio_draft', {
         p_actor: context.userId, p_mosque: mosqueId, p_revision: draft.revision,
         p_mode: draft.draft_mode, p_default: draft.default_asset_id,
@@ -100,18 +108,12 @@ export async function handleAdhanAudioAdmin(
       databaseError(result.error);
       return reply({ settings: result.data, automaticPlaybackActive: false });
     }
-    if (body.action === 'activate' || body.action === 'deactivate') {
-      if (body.action === 'activate') {
-        const revision = body.settingsRevision;
-        if (typeof revision !== 'number' || !Number.isInteger(revision) || revision < 0) {
-          throw new AdhanAudioError('Reload the current settings before activating.');
-        }
-        const result = await db.rpc('activate_adhan_audio_v1', {
-          p_actor: context.userId, p_mosque: mosqueId, p_expected_settings_revision: revision,
-        });
-        databaseError(result.error);
-        return reply({ active: true, automaticPlaybackActive: false });
-      }
+    if (body.action === 'activate') {
+      // No client (including an older feature build) may enable unfinished playback.
+      throw new AdhanAudioError('Scheduled playback is not available yet. You can prepare recordings and settings.', 409);
+    }
+    if (body.action === 'deactivate') {
+      // Retained for recovery of prior local tests; not exposed as a playback switch.
       const result = await db.rpc('deactivate_adhan_audio_v1', { p_actor: context.userId, p_mosque: mosqueId });
       databaseError(result.error);
       return reply({ active: false, automaticPlaybackActive: false });

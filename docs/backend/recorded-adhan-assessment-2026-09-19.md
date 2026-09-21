@@ -1,5 +1,7 @@
 # Recorded adhan and live fallback assessment — 19 September 2026
 
+**Scope update, 21 September:** the user chose a simpler first release with Live only or Scheduled recording only. Automatic live fallback is deferred. Keep cloud audio and basic recording-only scheduling; simplify the admin save flow. The wider hybrid design below is retained as historical assessment, not current implementation scope. See the current [Claude handoff](../claude-handoff-cloud-recorded-adhan-2026-09-20.md) and [independent review](../claude-recorded-adhan-review-2026-09-21.md).
+
 This is an assessment of the repository and published platform documentation, not an implementation or an audit of the deployed database. The user confirmed that the mosque's local admin selects the recording, including selections from the five-item worldwide catalogue. Listeners retain control over whether their own phone plays audio.
 
 The current direction is cloud-managed recordings, prayer scheduling and live/fallback decisions, with online playback and no listener download feature, persistent offline audio library or device-scheduled audio alarms. Ordinary temporary streaming buffers are still necessary. The local admin manages the content; listeners receive one playback experience without managing files.

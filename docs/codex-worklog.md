@@ -2091,3 +2091,20 @@ these are foundations and preview functionality, not active broadcasts.
 The full Claude handoff lists the new files, contracts, checks and remaining
 integration boundary. Staging/backup refs remain at `520b83d`; the first feature
 checkpoint `c224823` passed GitHub CI and web/iOS/Android bundle exports.
+
+## 2026-09-21 — Simplified recording setup after review
+
+The user accepted Live only or Scheduled recording only for the first release,
+deferring automatic live fallback, and authorized a short work session before
+resuming in the evening. Removed the hybrid picker option and premature playback
+activation controls; kept uploads, previews and preparation settings. The API now
+blocks activation and hybrid preparation even for older clients, and refuses
+draft saves consumed by an active earlier scheduling test. Existing recovery
+deactivation remains accessible to authorized admins. Added focused API tests.
+
+This is a setup checkpoint, not a scheduler lifecycle repair or a working listener
+playback release. The independent review's R1–R4 remain open. The next milestone
+is safe effective configuration and scheduling for recording-only, not hybrid
+publisher-readiness/fallback integration. No shared deployment, SQL migration,
+native build or existing live/rota/prayer implementation changed. The full handoff
+records the accepted scope and continuation steps.
