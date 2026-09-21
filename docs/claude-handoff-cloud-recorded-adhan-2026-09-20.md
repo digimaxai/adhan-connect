@@ -1,5 +1,24 @@
 # Claude handoff: cloud recordings and live fallback
 
+## Latest status — independent Codex review, 21 September 2026
+
+**Read [the independent review](claude-recorded-adhan-review-2026-09-21.md) before continuing.** It reviews Claude's completed checkpoints through `a16c8f5f3e8d14fa09300fedbec2ae2f72fc1e23` and supersedes earlier claims below about activation safety, exact dispatch timing, full verification and the next implementation priority. The checkpoint accounts are retained as history, not release approval.
+
+Codex independently reran the existing feature/SQL tests, TypeScript, lint, fresh web/iOS/Android bundle exports and the live-route regression smoke; they pass. All 18 protected live/rota files and both prayer resolvers still match `520b83d`. GitHub CI at `a16c8f5` passed: https://github.com/digimaxai/adhan-connect/actions/runs/35541442675. Remote staging and the recovery branch remain at `520b83da9e47d1b3a2bc019b7e91c572a69b78e7`.
+
+Additional review probes reproduced gaps those tests miss:
+
+1. Changing an already-active mosque's saved draft changes planning without another activation; effective configuration is not snapshotted.
+2. An in-flight planner can create a new occurrence after deactivation, and the SQL claim can select a recording with activation false.
+3. Deactivate/reactivate leaves already-planned future prayers cancelled, potentially through tomorrow.
+4. A timetable edit before the next 15-minute planner run can leave an old-time occurrence executable.
+
+Fix these lifecycle issues before adding listener playback or enabling shared automation. The review also covers ten-second polling jitter, misleading playback-on wording, missing Edge gateway authentication deployment instructions, pagination/runtime bounds, incomplete authenticated end-to-end coverage and the real scope of the cost claim. It includes exact code locations, reproduction steps, local evidence and acceptance criteria. No application code was changed or fixes applied during the review.
+
+Build/deployment status: these iOS/Android exports are JavaScript/Hermes/assets, not installable IPA/APK/AAB builds. This review triggered no native builds or shared deployment. Claude's user-confirmed Xcode Cloud staging-only filter is recorded below; Codex did not independently access Apple's dashboard. The separate feature branch is not sufficient isolation for shared databases or hosted APIs. Keep the demo app/backend at its known working version.
+
+Next-agent ask: continue in `/private/tmp/adhan-connect-cloud-recorded-adhan` on `feature/cloud-recorded-adhan`; inspect current Git status first. Implement an approved effective-settings generation and atomic plan/claim/deactivation fencing, restore only eligible never-started future plans after reactivation, and invalidate stale timetable plans. Turn the review reproductions into expected-behaviour regression tests. Correct the UI/deployment documentation, then continue the remaining live/provider, listener consent/notifications/playback and rota work. Keep all review and device gates below. Do not ask the user to repeat decisions, and do not merge/deploy/activate unfinished playback.
+
 ## Request to the next agent
 
 Continue implementing cloud-managed prerecorded adhans and live fallback for Adhan Connect. Preserve the currently working app: the mosque demo was postponed to next weekend (the user said this on 20 September 2026). The user explicitly requested a complete handoff if Codex credits run short. Codex cannot see the credit balance, so this document was created proactively. **Read the working tree and test results before assuming the unfinished implementation is correct.**
