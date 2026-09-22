@@ -17,10 +17,10 @@ const protectedFiles = {
   'app/api/listener/livekit-token+api.ts': 'b54aba982f58468086b32856277d7b5f3f6e7567be0daf2e36e3933e3b66bf12',
   'app/api/live-stream-access+api.ts': 'bc725a7b3de143677bc396354af947009fb104ae762775d4f680a3a2393b51ad',
   'app/api/muezzin/livekit-token+api.ts': '288c4189fd390048b69409424fada196f55779c75b41a81bd21c205cb87e7707',
-  'app/api/muezzin/rota-workspace+api.ts': '44f5249c81eacd3d161d13936e475d90e3fffdf3f8015d0040f6dfec721be139',
+  'app/api/muezzin/rota-workspace+api.ts': 'f0b348014a4b7290980329a2c8f20a2a4ce0c81020cbf1c3328a5f69d31ffe49',
   'screens/admin/staff-rota.tsx': '79abd2d97493c8b1a07da3efbee02ed10231d928c68b8353847530696d093c4d',
-  'screens/muezzin/live-broadcast.tsx': '20937c668962d580a652241ef99a84cd475a0dd07213d5c9da43ddc4e8d816c7',
-  'screens/muezzin/my-rota.tsx': '733a04943485bef0fe9aac40818ea1deb923e28e63981ffd2161b8ddde50ff03',
+  'screens/muezzin/live-broadcast.tsx': '1874881a527e89c049232ee6d778221f521e4fe73c763711dedd7632dec82a54',
+  'screens/muezzin/my-rota.tsx': 'cebf0b39fc8b4ed386b017d0ff71279be1299abdb944f05e26d61e7c26e620f1',
   'screens/user/now.tsx': 'e1177bdd42a4c6120b9920519191f18563e715ed0238204e3ee5f6f723b53823',
   'screens/shared/hooks/useLiveStreamForMosque.ts': '29a015c4861dd9578c5193942330f0eb3a172929e7863f04d21545ff631c508a',
 };
@@ -157,7 +157,7 @@ assert.ok(
 );
 assert.ok(
   sharedSettings.includes('!isMuezzinWorkspace ? (') &&
-    sharedSettings.includes('Listener is included'),
+    sharedSettings.includes('Your Listener workspace remains available for personal listening preferences.'),
   'Muezzin settings must separate operational controls while preserving universal Listener access.'
 );
 
@@ -300,7 +300,7 @@ assert.ok(
   'Admin settings must not expose local-only toggles as real push delivery controls.'
 );
 
-const adminDashboard = fs.readFileSync(path.join(root, 'app/(admin)/index.tsx'), 'utf8');
+const adminDashboard = fs.readFileSync(path.join(root, 'app/(admin)/admin-home.tsx'), 'utf8');
 const adminLayout = fs.readFileSync(path.join(root, 'app/(admin)/_layout.tsx'), 'utf8');
 const adminMosqueHook = fs.readFileSync(path.join(root, 'lib/hooks/useAdminMosque.ts'), 'utf8');
 const adminMosqueApi = fs.readFileSync(path.join(root, 'lib/api/admin/adminMosques.ts'), 'utf8');
