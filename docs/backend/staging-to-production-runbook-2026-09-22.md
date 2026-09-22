@@ -175,6 +175,35 @@ The production workspace also completed a signing-disabled Release compile on
 Xcode 27.0, including Metro export and Hermes bytecode generation with the
 reviewed production public environment values.
 
+## Isolated release-candidate Hosting canary
+
+The release branch was exported with the EAS `preview` environment so that its
+server routes target staging Supabase and use the staging LiveKit credentials
+and `staging` room namespace. The export produced 40 API routes. A scan against
+the four injected server-secret values checked 223 files and found none of
+those values embedded in the artifact. EAS dry-run packaging passed; the
+185-entry tarball had SHA-256
+`7c9a708fe924165fad43b5e1ce8a81d2dd6741a5df5bfdad44de1c1654351112`.
+
+After explicit owner approval, deployment `8tahix06lu` was assigned only to:
+
+```text
+https://adhan-connect--production-release-canary-20260922.expo.app
+```
+
+The existing demo `preview` alias remained on `ct1o9bkpvl`; the production
+alias remained on `b5blckazxb`. Root, callback and password-reset routes
+returned HTTP 200. The non-mutating live regression suite passed against the
+canary: five listener/staff pages returned 200, all nine unauthenticated
+live/rota/admin requests returned 401, malformed playback and location requests
+returned 400, and the suite reported zero production data mutations.
+
+This proves Hosting packaging, routing, staging-service selection and access
+guards without changing the demo or production services. The authenticated
+publisher/listener token and physical audio test remains required to prove the
+runtime `staging-` room prefix and end/restart behavior; do not create or alter
+a staging user solely to bypass that device gate.
+
 ## Migration-copy preparation rehearsal
 
 The staging recovery export was restored again into a fresh PostgreSQL 17.6
