@@ -152,6 +152,37 @@ The production Expo identity resolves to:
 - iOS bundle identifier `com.maksumsdigitalagency.adhanconnect`;
 - Android package `com.maksumsdigitalagency.adhanconnect`.
 
+## Migration-copy preparation rehearsal
+
+The staging recovery export was restored again into a fresh PostgreSQL 17.6
+container with Docker networking disabled. The production-copy preparation and
+verification scripts then passed and were rerun successfully to prove that the
+operation is idempotent. An intentionally incorrect target project reference
+was rejected before the transaction began.
+
+The prepared copy retained:
+
+- 8 Auth users with non-empty password hashes and 8 identities;
+- 7 application users, 3 profiles, 1,116 mosques, 2 mosque-admin memberships,
+  and 2 muezzin memberships;
+- 145 prayer-time rows, 7 mosque-prayer-time rows, and 3 notification preference
+  rows;
+- both stream configuration rows in an offline state;
+- 1 Storage bucket and all 4 Storage metadata objects.
+
+The preparation invalidated Auth sessions, login flows, reusable/legacy tokens
+and challenges; cleared staging push devices, notification queues, travel
+regions and inbox rows; closed snapshot-time live/scheduled state; removed
+upstream health state and environment-specific approvals/counters; cancelled
+executable assistant jobs; disabled assistant automation; rotated and
+quarantined the notification dispatcher; and removed known outbound cron jobs.
+All database constraints remained validated.
+
+Both source exports contained zero `auth.instances` rows. Staging and production
+Auth users each referenced one distinct instance identifier, and those identifier
+sets matched. The final hosted Auth-service rehearsal remains required because
+local PostgreSQL validation cannot prove GoTrue behavior.
+
 ## Data transfer rules
 
 The recovery copies remain complete and immutable. Build a separate migration

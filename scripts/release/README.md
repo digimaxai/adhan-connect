@@ -37,3 +37,24 @@ promotion manifest must separately decide which transient rows to reset, such
 as active Auth sessions, refresh tokens, pending notification deliveries,
 device registrations, active stream markers, and scheduled jobs. Do not modify
 the recovery copy to create the migration copy.
+
+After restoring into a separate disposable migration database, prepare and
+verify the production copy with explicit target guards:
+
+```bash
+psql "$MIGRATION_DATABASE_URL" \
+  --set=release_reset_token=PREPARE_ADHAN_CONNECT_PRODUCTION_COPY \
+  --set=target_project_ref=yecbsezhwvpdkuzmmziv \
+  --file scripts/release/prepare-production-migration-copy.sql
+psql "$MIGRATION_DATABASE_URL" \
+  --file scripts/release/verify-production-migration-copy.sql
+```
+
+The preparation is intentionally fail closed: it invalidates imported Auth
+sessions/tokens, clears staging push/runtime state, ends snapshot-time live
+markers, disables mosque-assistant automation, rotates and quarantines the push
+dispatcher, and unschedules known outbound jobs. It preserves Auth users,
+password hashes, identities, roles, mosque/prayer/rota data, notification
+preferences, content, and offline stream configuration. Do not import
+`cron-data.sql` into production; configure production jobs separately after
+the app and hosted services pass acceptance checks.
