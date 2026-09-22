@@ -4,6 +4,7 @@ type LiveKitConfig = {
   apiKey: string;
   apiSecret: string;
   url: string;
+  roomNamespace: string;
 };
 
 type DeleteLiveKitRoomOptions = {
@@ -17,28 +18,49 @@ type DeleteLiveKitRoomOptions = {
 // and role/mosque access before minting every replacement.
 export const LIVEKIT_ACCESS_TOKEN_TTL_SECONDS = 10 * 60;
 
+const LIVEKIT_ROOM_NAMESPACE_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
+export function getLiveKitRoomNamespace(): string {
+  const roomNamespace = process.env.LIVEKIT_ROOM_NAMESPACE?.trim().toLowerCase();
+  if (!roomNamespace || !LIVEKIT_ROOM_NAMESPACE_PATTERN.test(roomNamespace)) {
+    throw new Error(
+      'LIVEKIT_ROOM_NAMESPACE must be 1-32 lowercase letters, numbers, underscores, or hyphens.'
+    );
+  }
+  return roomNamespace;
+}
+
 function getConfig(): LiveKitConfig {
   const apiKey = process.env.LIVEKIT_API_KEY?.trim();
   const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
   const url = process.env.LIVEKIT_URL?.trim();
+  const roomNamespace = getLiveKitRoomNamespace();
   if (!apiKey || !apiSecret || !url) {
-    throw new Error('LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL must be set.');
+    throw new Error(
+      'LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, and LIVEKIT_ROOM_NAMESPACE must be set.'
+    );
   }
-  return { apiKey, apiSecret, url };
+  return { apiKey, apiSecret, url, roomNamespace };
 }
 
 export function isLiveKitConfigured(): boolean {
-  return !!(
-    process.env.LIVEKIT_API_KEY?.trim() &&
-    process.env.LIVEKIT_API_SECRET?.trim() &&
-    process.env.LIVEKIT_URL?.trim()
-  );
+  try {
+    return !!(
+      process.env.LIVEKIT_API_KEY?.trim() &&
+      process.env.LIVEKIT_API_SECRET?.trim() &&
+      process.env.LIVEKIT_URL?.trim() &&
+      getLiveKitRoomNamespace()
+    );
+  } catch {
+    return false;
+  }
 }
 
-// Deterministic room name: same muezzin + mosque + prayer + date always lands in the same room.
+// Deterministic and environment-isolated: the same mosque UUID can safely
+// exist in staging and production even when both use one LiveKit service.
 export function computeLiveKitRoomName(mosqueId: string, prayer: string, isoDateOrTimestamp: string): string {
   const date = isoDateOrTimestamp.slice(0, 10); // YYYY-MM-DD
-  return `adhan-${mosqueId}-${prayer.toLowerCase()}-${date}`;
+  return `${getLiveKitRoomNamespace()}-adhan-${mosqueId}-${prayer.toLowerCase()}-${date}`;
 }
 
 export function getLiveKitHttpUrl(): string {

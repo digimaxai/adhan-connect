@@ -141,9 +141,14 @@ the GitHub workflow compile therefore remains a release gate.
 Production redirect overrides are absent. Native auth therefore uses the
 production app scheme `adhanconnect`; its generated callback and reset URLs
 must be confirmed in the production Supabase Auth allowlist before release.
-Production EAS has `LIVEKIT_URL` but does not currently expose the required
-`LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` names. Resolve that server-side gap,
-and the shared-service room-collision risk, before a production live canary.
+EAS preview and production now have non-secret `LIVEKIT_ROOM_NAMESPACE` values
+of `staging` and `production`. Server code requires a validated namespace and
+prefixes every new room, so identical mosque UUID/prayer/date combinations
+cannot collide when environments share one LiveKit service. Production EAS has
+`LIVEKIT_URL` but does not currently expose the required `LIVEKIT_API_KEY` and
+`LIVEKIT_API_SECRET` names. Keep production broadcasting fail closed until the
+namespace-enabled server is deployed and credentials are provisioned for the
+production canary.
 
 The production Expo identity resolves to:
 
@@ -222,9 +227,9 @@ identity.
 3. Inventory and stage production API, Edge Function, Auth redirect, email,
    Realtime, notification and provider configuration without copying staging
    endpoints or secrets wholesale.
-4. Isolate LiveKit before simultaneous staging and production tests. Current
-   deterministic room names use mosque UUID, prayer and date; both environments
-   currently reference the same LiveKit service.
+4. Deploy the namespace-enabled LiveKit server to staging and validate that new
+   room names begin with `staging-`. Provision production credentials only with
+   the `production-` namespace in place, then run simultaneous isolation tests.
 5. Prepare a disposable hosted restore or equivalent supported rehearsal with
    outbound jobs disabled. Validate Auth and Storage through their actual
    services, not only PostgreSQL.

@@ -292,6 +292,23 @@ assert.ok(
   'Expo send and receipt requests must have explicit deadlines.'
 );
 
+const liveKitRoom = fs.readFileSync(path.join(root, 'lib/server/livekitRoom.ts'), 'utf8');
+const broadcastReadiness = fs.readFileSync(
+  path.join(root, 'lib/server/broadcastReadiness.ts'),
+  'utf8'
+);
+assert.ok(
+  liveKitRoom.includes('LIVEKIT_ROOM_NAMESPACE') &&
+    liveKitRoom.includes('getLiveKitRoomNamespace()') &&
+    liveKitRoom.includes('`${getLiveKitRoomNamespace()}-adhan-${mosqueId}-${prayer.toLowerCase()}-${date}`'),
+  'LiveKit rooms must include a validated environment namespace.'
+);
+assert.ok(
+  broadcastReadiness.includes("import { isLiveKitConfigured } from './livekitRoom';") &&
+    broadcastReadiness.includes("config.provider !== 'livekit' ||\n    isLiveKitConfigured();"),
+  'Broadcast readiness must fail closed when the LiveKit namespace or credentials are missing.'
+);
+
 const adminSettings = fs.readFileSync(path.join(root, 'app/(admin)/admin-settings.tsx'), 'utf8');
 assert.ok(
   !adminSettings.includes('Cover request alerts') &&
@@ -337,6 +354,7 @@ console.log(JSON.stringify({
   listenerAccess: 'universal-additive-workspace',
   staffListenerPreferenceIsolation: true,
   staleNotificationDelivery: 'expired-before-dispatch',
+  liveKitRoomIsolation: 'required-environment-namespace',
   adminWorkspaceEntry: 'cached-authority-bounded-fallback',
   nearbySubscriptionMutations: 0,
 }, null, 2));
