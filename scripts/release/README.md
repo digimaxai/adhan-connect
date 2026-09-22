@@ -1,5 +1,11 @@
 # Production-promotion backup tools
 
+The active plan is now [in-place promotion](../../docs/backend/in-place-production-promotion-review-2026-09-22.md).
+The backup scripts below still use the historical environment map. Reconcile
+their project guards when roles change. The migration-copy reset/verification
+SQL is historical rehearsal tooling and MUST NOT run against the retained
+`zhrucqghrqkjyzmupdyy` production candidate.
+
 These scripts create read-only Supabase database and Storage exports before the
 staging-to-production beta promotion. They do not restore, reset, deploy, link,
 or mutate either cloud project.

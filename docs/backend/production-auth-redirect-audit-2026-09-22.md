@@ -1,5 +1,10 @@
 # Production Auth redirect audit
 
+> Historical audit of the old production project `yecbsezhwvpdkuzmmziv`.
+> The [in-place promotion plan](in-place-production-promotion-review-2026-09-22.md)
+> instead retains `zhrucqghrqkjyzmupdyy`. Do not apply this patch to the old
+> project or remove demo redirects from the retained project during preparation.
+
 Status at 22 September 2026: read-only audit complete; production unchanged.
 
 ## Verified identities

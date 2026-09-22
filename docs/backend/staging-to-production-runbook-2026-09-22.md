@@ -1,5 +1,10 @@
 # Staging-to-production beta promotion runbook
 
+> Superseded for execution by [the in-place promotion review](in-place-production-promotion-review-2026-09-22.md).
+> Keep the backup and validation evidence below. Do not run the replacement,
+> runtime-reset or hosted-rehearsal sequence: the working staging database is
+> now proposed for retention as production, with its records left in place.
+
 Status at 22 September 2026: backup and local restore rehearsal complete;
 production unchanged. This document records preparation evidence and does not
 authorise the final database replacement or public release.
@@ -198,8 +203,10 @@ canary: five listener/staff pages returned 200, all nine unauthenticated
 live/rota/admin requests returned 401, malformed playback and location requests
 returned 400, and the suite reported zero production data mutations.
 
-This proves Hosting packaging, routing, staging-service selection and access
-guards without changing the demo or production services. The authenticated
+This checks Hosting packaging, routing and access guards using the selected
+preview environment. It does not independently prove every downstream target.
+The canary shares the demo database; authenticated mutations would affect it.
+The authenticated
 publisher/listener token and physical audio test remains required to prove the
 runtime `staging-` room prefix and end/restart behavior; do not create or alter
 a staging user solely to bypass that device gate.

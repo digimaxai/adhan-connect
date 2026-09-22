@@ -1,5 +1,16 @@
 # Adhan Connect - Claude/Codex Handoff
 
+Latest release decision (2026-09-22): the owner requested a simpler promotion
+because there are no real production users yet. Retain the working staging
+Supabase project as production; do not replace its database or create the
+previously planned hosted rehearsal project. The full current review, evidence,
+environment map, demo constraints, rollback and next steps are in
+`docs/backend/in-place-production-promotion-review-2026-09-22.md`. Preparation
+is on `release/stable-staging-to-production-2026-09-21` / draft PR #9.
+No in-place cutover has happened. Existing staging/demo, production and their
+database configurations remain unchanged by the review. Older release/runbook
+instructions are superseded where they conflict with that review.
+
 Latest (2026-09-18, Claude Code): Local Admin now has a bottom tab bar
 (Home · Prayers · Classes · Enquiries · Settings), matching Listener/
 Muezzin. Fixed a real routing bug along the way — bare Expo Router group

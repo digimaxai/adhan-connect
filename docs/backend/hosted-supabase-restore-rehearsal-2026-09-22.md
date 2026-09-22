@@ -1,5 +1,9 @@
 # Hosted Supabase restore rehearsal
 
+> Superseded: [in-place promotion](in-place-production-promotion-review-2026-09-22.md)
+> retains the working database. Do not create this rehearsal project. The earlier
+> creation approval is not being exercised. This plan is historical reference.
+
 Status at 22 September 2026: plan prepared; no hosted rehearsal project has
 been created.
 
