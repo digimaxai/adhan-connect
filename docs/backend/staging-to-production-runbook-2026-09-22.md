@@ -139,8 +139,14 @@ local Gradle compile could not complete because this Mac had no Android SDK;
 the GitHub workflow compile therefore remains a release gate.
 
 Production redirect overrides are absent. Native auth therefore uses the
-production app scheme `adhanconnect`; its generated callback and reset URLs
-must be confirmed in the production Supabase Auth allowlist before release.
+production app scheme `adhanconnect`. The read-only Auth audit found the
+production site URL still set to localhost, only the native callback route
+present, and the native password-reset plus production web routes absent. The
+exact proposed release state, current rollback values and acceptance matrix are
+recorded in
+`docs/backend/production-auth-redirect-audit-2026-09-22.md`. Production remains
+unchanged; apply that narrow Auth patch only through the controlled release
+gate.
 EAS preview and production now have non-secret `LIVEKIT_ROOM_NAMESPACE` values
 of `staging` and `production`. Server code requires a validated namespace and
 prefixes every new room, so identical mosque UUID/prayer/date combinations
