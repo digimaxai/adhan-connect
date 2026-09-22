@@ -1,5 +1,12 @@
 # Adhan Connect - Claude/Codex Handoff
 
+**Start here for production promotion:**
+[`docs/claude-production-promotion-handoff-2026-09-22.md`](docs/claude-production-promotion-handoff-2026-09-22.md).
+It contains the ordered execution tasks, exact environment mapping, approval
+boundaries, acceptance evidence, rollback requirements and explicit unknowns.
+No build-target correction or in-place cutover has happened yet. Do not infer
+completion from the existence of a plan or reuse superseded reset instructions.
+
 Latest release decision (2026-09-22): the owner requested a simpler promotion
 because there are no real production users yet. Retain the working staging
 Supabase project as production; do not replace its database or create the

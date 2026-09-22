@@ -1,5 +1,10 @@
 # Promote the stable staging backend in place
 
+Execution companion and primary Claude instructions:
+[`../claude-production-promotion-handoff-2026-09-22.md`](../claude-production-promotion-handoff-2026-09-22.md).
+The review below explains the decision; the companion specifies the remaining
+tasks, fixed values, verification gates and what must not be assumed.
+
 Status: reviewed proposal and continuation handover, 22 September 2026.
 The user authorised preparation of this simpler approach. No cutover, project
 creation, project deletion, production environment rewrite or database reset

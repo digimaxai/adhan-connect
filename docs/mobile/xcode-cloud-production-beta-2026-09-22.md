@@ -1,5 +1,12 @@
 # Xcode Cloud production-beta workflow
 
+For the current in-place promotion, production targets the retained Supabase
+project `zhrucqghrqkjyzmupdyy`, not the old production project. Follow the exact
+environment mapping and workflow-inspection gates in
+[`../claude-production-promotion-handoff-2026-09-22.md`](../claude-production-promotion-handoff-2026-09-22.md).
+The native configuration below remains applicable; do not copy stale EAS
+production values before that environment mapping has been reconciled.
+
 The release branch contains a clean production native baseline generated from
 the reviewed Expo configuration:
 
