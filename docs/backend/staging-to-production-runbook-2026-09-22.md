@@ -116,6 +116,8 @@ validated against the staging environment without production data mutations:
   HTTP 401 for all nine unauthenticated protected API checks, and HTTP 400 for
   unsigned playback and invalid-location checks;
 - the live regression run reported zero production data mutations.
+- draft GitHub PR #9 passed the repository `checks` job on the reconciled
+  release branch.
 
 These checks establish a clean baseline for release preparation. They do not
 replace native device smoke tests or the two-device live audio canary.
@@ -132,6 +134,9 @@ The manual `Android Production Beta Build` workflow validates the exact
 production Supabase project and package identity before generating native code.
 It produces a debug APK for smoke testing and, when signing secrets are present,
 a signed AAB. It has no automatic trigger and does not upload to Google Play.
+The production-configured Expo prebuild and identity check passed locally. The
+local Gradle compile could not complete because this Mac had no Android SDK;
+the GitHub workflow compile therefore remains a release gate.
 
 Production redirect overrides are absent. Native auth therefore uses the
 production app scheme `adhanconnect`; its generated callback and reset URLs
