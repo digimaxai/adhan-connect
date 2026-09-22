@@ -120,6 +120,33 @@ validated against the staging environment without production data mutations:
 These checks establish a clean baseline for release preparation. They do not
 replace native device smoke tests or the two-device live audio canary.
 
+## Build configuration inventory
+
+The EAS production environment contains the three public values required to
+build the client: the expected production Supabase URL/key and an HTTPS API
+base URL. Their values were validated without printing them, then copied into
+GitHub Actions as the corresponding `PRODUCTION_EXPO_PUBLIC_*` secrets. The
+repository already contains the four Android upload-signing secrets.
+
+The manual `Android Production Beta Build` workflow validates the exact
+production Supabase project and package identity before generating native code.
+It produces a debug APK for smoke testing and, when signing secrets are present,
+a signed AAB. It has no automatic trigger and does not upload to Google Play.
+
+Production redirect overrides are absent. Native auth therefore uses the
+production app scheme `adhanconnect`; its generated callback and reset URLs
+must be confirmed in the production Supabase Auth allowlist before release.
+Production EAS has `LIVEKIT_URL` but does not currently expose the required
+`LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` names. Resolve that server-side gap,
+and the shared-service room-collision risk, before a production live canary.
+
+The production Expo identity resolves to:
+
+- display name `Adhan Connect`;
+- scheme `adhanconnect`;
+- iOS bundle identifier `com.maksumsdigitalagency.adhanconnect`;
+- Android package `com.maksumsdigitalagency.adhanconnect`.
+
 ## Data transfer rules
 
 The recovery copies remain complete and immutable. Build a separate migration
