@@ -157,6 +157,18 @@ The production Expo identity resolves to:
 - iOS bundle identifier `com.maksumsdigitalagency.adhanconnect`;
 - Android package `com.maksumsdigitalagency.adhanconnect`.
 
+The committed iOS native baseline is now production-specific on the release
+branch: project/scheme/target `AdhanConnect`, production bundle identifier and
+`adhanconnect` URL scheme. A clean generation and a subsequent non-clean
+prebuild both passed in a disposable copy. The `staging` branch retains its
+separate `AdhanConnectStaging` native project. Creating the production Xcode
+Cloud workflow in App Store Connect remains an owner/UI step; use the exact
+manual workflow configuration in
+`docs/mobile/xcode-cloud-production-beta-2026-09-22.md`.
+The production workspace also completed a signing-disabled Release compile on
+Xcode 27.0, including Metro export and Hermes bytecode generation with the
+reviewed production public environment values.
+
 ## Migration-copy preparation rehearsal
 
 The staging recovery export was restored again into a fresh PostgreSQL 17.6

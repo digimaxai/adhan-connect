@@ -9,7 +9,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Adhan Connect Staging</string>
+    <string>Adhan Connect</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -29,8 +29,8 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>adhanconnect-staging</string>
-          <string>com.maksumsdigitalagency.adhanconnect.staging</string>
+          <string>adhanconnect</string>
+          <string>com.maksumsdigitalagency.adhanconnect</string>
         </array>
       </dict>
       <dict>

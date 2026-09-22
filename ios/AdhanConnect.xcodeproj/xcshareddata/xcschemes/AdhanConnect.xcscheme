@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "AdhanConnectStaging.app"
-               BlueprintName = "AdhanConnectStaging"
-               ReferencedContainer = "container:AdhanConnectStaging.xcodeproj">
+               BuildableName = "AdhanConnect.app"
+               BlueprintName = "AdhanConnect"
+               ReferencedContainer = "container:AdhanConnect.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "AdhanConnectStagingTests.xctest"
-               BlueprintName = "AdhanConnectStagingTests"
-               ReferencedContainer = "container:AdhanConnectStaging.xcodeproj">
+               BuildableName = "AdhanConnectTests.xctest"
+               BlueprintName = "AdhanConnectTests"
+               ReferencedContainer = "container:AdhanConnect.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "AdhanConnectStaging.app"
-            BlueprintName = "AdhanConnectStaging"
-            ReferencedContainer = "container:AdhanConnectStaging.xcodeproj">
+            BuildableName = "AdhanConnect.app"
+            BlueprintName = "AdhanConnect"
+            ReferencedContainer = "container:AdhanConnect.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "AdhanConnectStaging.app"
-            BlueprintName = "AdhanConnectStaging"
-            ReferencedContainer = "container:AdhanConnectStaging.xcodeproj">
+            BuildableName = "AdhanConnect.app"
+            BlueprintName = "AdhanConnect"
+            ReferencedContainer = "container:AdhanConnect.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

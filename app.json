@@ -63,6 +63,12 @@
       ],
       "expo-secure-store",
       [
+        "./plugins/with-ios-pod-build-settings",
+        {
+          "deploymentTarget": "15.1"
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
