@@ -279,7 +279,10 @@ identity.
    the `production-` namespace in place, then run simultaneous isolation tests.
 5. Prepare a disposable hosted restore or equivalent supported rehearsal with
    outbound jobs disabled. Validate Auth and Storage through their actual
-   services, not only PostgreSQL.
+   services, not only PostgreSQL. Use the bounded logical-restore plan in
+   `docs/backend/hosted-supabase-restore-rehearsal-2026-09-22.md`; do not use
+   automatic physical cloning because copied external jobs can start before
+   they are inspected.
 6. Run production-build smoke tests and the two-device broadcaster/listener
    physical canary while existing production remains recoverable.
 7. Take fresh quiesced database and Storage snapshots and produce the exact
