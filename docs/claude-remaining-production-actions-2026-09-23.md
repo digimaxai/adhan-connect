@@ -6,6 +6,13 @@
 > status and signing must be verified; uploads still need the applicable release
 > approval. This supersedes the old assumption that Play is unavailable.
 
+> **Current continuation checkpoint:** Claude created
+> `docs/backend/production-cutover-manifest.md`; Codex reviewed it in
+> `docs/codex-review-cutover-manifest-2026-09-23.md`. The draft is useful but is
+> not yet ready for approval. Revise it against every numbered review item and
+> the Google Play addendum. Do not create a competing second manifest and do not
+> skip directly to merge/configuration/builds.
+
 Prepared 23 September 2026 at the owner's request. This is the current task
 order and status entry point. It clarifies sequencing; it does not authorise a
 cutover, database reset, public store release or permission-policy changes.
@@ -19,13 +26,18 @@ testing the recorded-adhan work. Preserve the current demo through preparation.
 Read these files in order before making changes:
 
 1. This file.
-2. `docs/codex-production-preparation-review-2026-09-23.md` — actual review,
+2. `docs/backend/production-cutover-manifest.md` — current DRAFT; revise in place.
+3. `docs/codex-review-cutover-manifest-2026-09-23.md` — mandatory corrections to
+   the current manifest before a preparation approval request.
+4. `docs/mobile/google-play-beta-plan-2026-09-23.md` — confirmed organisation
+   account status and first-app/internal-testing requirements.
+5. `docs/codex-production-preparation-review-2026-09-23.md` — actual review,
    tests, external inspection and limitations.
-3. `docs/claude-production-promotion-handoff-2026-09-22.md` — complete environment
+6. `docs/claude-production-promotion-handoff-2026-09-22.md` — complete environment
    matrix, notification hazards, acceptance requirements and rollback rules.
-4. `docs/backend/in-place-production-promotion-review-2026-09-22.md` — rationale;
+7. `docs/backend/in-place-production-promotion-review-2026-09-22.md` — rationale;
    its historical statements that build-source fixes are pending are superseded.
-5. `docs/mobile/xcode-cloud-production-beta-2026-09-22.md` — native setup details.
+8. `docs/mobile/xcode-cloud-production-beta-2026-09-22.md` — native setup details.
 
 Reviewed implementation commit: `c1b8f57223197bdea5fa7fd753797460d8d3cace`.
 GitHub CI passed: https://github.com/digimaxai/adhan-connect/actions/runs/35838600659.
@@ -122,12 +134,14 @@ Known App Store Connect evidence, to refresh rather than assume unchanged:
 Output: timestamped current-state inventory with differences reconciled or marked
 blocking. No cloud values or workflows changed in this step.
 
-## 4. Prepare Task B's manifest and an executable release-preparation proposal
+## 4. Revise Task B's manifest and finish the release-preparation proposal
 
-Create `docs/backend/production-cutover-manifest.md`. Start with status
-`DRAFT — NOT AUTHORISED FOR EXECUTION`. Separate observed values, intended values,
-and unverified values. Every unknown must have a resolution action and owner;
-never turn placeholders into guessed resource IDs or executable commands.
+Revise the existing `docs/backend/production-cutover-manifest.md` in place. Keep
+status `DRAFT — NOT AUTHORISED FOR EXECUTION` until every item in
+`docs/codex-review-cutover-manifest-2026-09-23.md` is resolved, incorporated or
+recorded as a tested blocker. Separate observed values, intended values and
+unverified values. Every unknown must have a resolution action and owner; never
+turn placeholders into guessed resource IDs or executable commands.
 
 Include these sections:
 
@@ -161,6 +175,40 @@ existing test accounts/mosque, two-device availability, installed demo build,
 internal testers and an acceptable switch window. Bundle these questions and
 continue independent preparation. Never ask for passwords in chat or reset
 accounts merely to make testing easier.
+
+For Google Play, the owner has already answered: organisation account; no app
+record; no previous upload; Console shows “Create your first app”. Do not ask for
+the numeric account ID unless a specific API operation later requires it. Before
+proposing app creation, obtain or confirm: default language, store name, app/free
+classification, public support email, and which internal tester Google accounts
+or group will be used. Proposed defaults are English (United Kingdom), `Adhan
+Connect`, app, free. The owner must accept Google's policy/export/signing terms.
+
+### How to guide the owner
+
+The owner has asked for clear step-by-step guidance with no assumed Console or
+release knowledge. Follow these communication rules throughout:
+
+1. Perform every safe read-only or repository task available to the agent before
+   asking the owner to do anything. Do not hand-edit source through the owner.
+2. When owner action is genuinely required, give the exact service, navigation
+   path, app/project identity, field names and safe values. Explain what must not
+   be pasted into chat. Ask for the smallest non-sensitive confirmation needed.
+3. Present no more than one coherent checkpoint at a time. State what the action
+   changes, whether it affects the demo, how it is verified and how it is reversed.
+4. Distinguish an information question from permission to mutate. An answer about
+   account type, tester or window is not approval to create, upload, merge,
+   distribute or cut over.
+5. After each external action, independently verify the observable result where
+   access permits. If only the owner can verify it, state the exact screen/result
+   they should report; do not mark it complete from intent alone.
+6. Use the exact status vocabulary in §9 below. Never call a build “deployed,” an
+   upload “distributed,” or CI “device-tested.”
+7. Keep secrets, tester email lists and recovery exports out of Git and chat.
+   Never request passwords, OTPs, private keys or identity documents.
+8. If an automation/API route is unavailable, establish that from actual access
+   or supported capability before asking for a manual Console step. Do not ask
+   the owner to change agent permissions to repeat completed source work.
 
 ### Resolve the build/approval sequencing explicitly
 
@@ -380,7 +428,10 @@ Use distinct status terms: source prepared; CI passed; native build produced;
 internally distributed; service switched; devices accepted; staging isolated.
 Never substitute one for another or claim the app cannot break based on CI.
 
-**Next action now:** reconcile repository/service state read-only, then create
-the draft cutover manifest and bounded release-preparation proposal in sections
-3–4. Do not redo completed Android edits or start by asking the owner to paste
-patches, change agent permissions, or delete production.
+**Next action now:** recheck repository/service drift, then revise the existing
+draft cutover manifest against the full Codex review and Google Play addendum.
+Finish the environment/recovery map and exact preparation forward/reverse steps;
+ask the bundled owner choices while continuing independent work. Do not redo
+completed Android edits or ask the owner to paste patches, change agent
+permissions, supply secrets or delete production. Present a bounded preparation
+approval request only after the draft satisfies the review.

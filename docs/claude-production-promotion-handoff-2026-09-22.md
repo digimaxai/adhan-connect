@@ -192,8 +192,10 @@ be inventoried by name/scope; no blanket copying of all preview secrets.
    variant/package, require all four signing secrets, and build `assembleRelease`
    alongside `bundleRelease`. Use the existing upload keystore and
    `scripts/patch-android-release-signing.py`. Upload the signed release APK.
-   A debug APK requiring Metro does not satisfy standalone acceptance. No Play
-   Console upload or release; its developer-account approval is outstanding.
+   A debug APK requiring Metro does not satisfy standalone acceptance. The
+   organisation developer account is now approved and has no app/upload yet.
+   Prepare internal Play testing under the 23 September addendum after the
+   applicable bounded approval; no public Play release is included.
 2. Add fail-closed production environment/identity assertions before native
    generation in `ios/ci_scripts/ci_post_clone.sh`. Keep non-clean prebuild and
    the working CocoaPods plugin. Do not alter the staging native project.

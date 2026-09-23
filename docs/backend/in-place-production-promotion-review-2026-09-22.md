@@ -43,7 +43,7 @@ needed for future staging, but it is outside the working production database.
 | EAS production root | `b5blckazxb`, old API | Newly exported production API targeting `zhrucqghrqkjyzmupdyy` |
 | EAS release canary | `8tahix06lu`, staging services | Test evidence only; retire after acceptance |
 | iOS production | App ID `6792143739`, scheme `adhanconnect` | New Xcode Cloud internal TestFlight build |
-| Android production | Package `com.maksumsdigitalagency.adhanconnect` | New GitHub Actions build; no Play release |
+| Android production | Package `com.maksumsdigitalagency.adhanconnect` | New GitHub Actions build; internal Play testing now available after approved setup; no public Play release |
 | New feature staging | Work remains isolated in Git | New backend plus new staging binaries before recorded-adhan work |
 
 Renaming a project does not change its URL, keys, app configuration, or access.
@@ -122,8 +122,11 @@ the working environment selectively, with production links/recipients checked.
 Re-export with production configuration; the existing staging canary artifact
 must not be promoted unchanged. Build iOS through Xcode Cloud and Android
 through GitHub. The Android debug APK is a development artifact and may need
-Metro; use a signed release APK with bundled JS for standalone phone acceptance
-while Google Play is unavailable. AAB compilation alone is not a phone test.
+Metro; use a signed release APK with bundled JS for standalone phone acceptance.
+The approved organisation Play account can additionally use internal testing
+after its first app is created under the reviewed release-preparation step. AAB
+compilation alone is not a phone test, and an APK test does not verify Play's
+delivery/signing path.
 
 Do not assume merging main has no deployment side effects: inspect GitHub and
 Xcode Cloud branch triggers first. Keep initial distribution internal/manual.
