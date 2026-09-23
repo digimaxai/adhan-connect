@@ -161,8 +161,46 @@ registration, broadcast, or mosque-request action was performed against
 this candidate. It is not deleted and not aliased — held for cutover
 review per the handover.
 
-**Phase 6 (Android build) and Phase 7 (iOS onboarding): IN PROGRESS —
-see below.**
+**Phase 6 (Android build): DONE.** Dispatched
+`android-production-build.yml` from `main`
+(`gh workflow run ... --ref main`); the created run's `headSha` matched
+`MERGE_SHA` exactly. **Run
+[35916661014](https://github.com/digimaxai/adhan-connect/actions/runs/35916661014)
+— every step succeeded**, including the new "Verify signed release
+artifacts" step from Phase 0:
+
+- Package: `com.maksumsdigitalagency.adhanconnect`, `versionCode='2'`,
+  `versionName='1.0.0'` (from `aapt dump badging`).
+- APK signature: v2 scheme verified `true` (v1/v3/v3.1/v4 all `false`,
+  expected for this signing setup); **certificate SHA-256 digest
+  `4737eb3f41db5a8f114f2812e5a06d12a872d2d6c67fab425242a2699a90557f`**;
+  public key SHA-256 digest
+  `b43ec6b2579da5bf8bd4bb3adbca8792678f3e4203ec617ee808e30acf5e5679`.
+- AAB: `jar verified.` (jarsigner).
+- CI-reported SHA-256: APK
+  `b9eec1d4b37c820f274c293e6fb8b2b4a75ce84895e08beb8e4dd36020b878a6`, AAB
+  `031a46819b4471b04c99081d6364e1af7006d86861aba120ad9f159a635b435c`.
+- Downloaded both artifacts to
+  `/Users/mzk/PROJECTS/adhan-connect-backups/2026-09-23-production-environment-reconciliation/android-artifacts-run-35916661014/`
+  (directory `0700`) and **recomputed SHA-256 locally — both hashes match
+  the CI-reported values exactly**, confirming no corruption in transit.
+  APK 151,780,231 bytes; AAB 78,011,546 bytes.
+
+Not yet done (separately gated, outside this checkpoint): physical-device
+install/launch check (no device available in this session), AAB upload to
+Google Play.
+
+**Phase 7 (iOS onboarding): IN PROGRESS.** In the post-merge worktree,
+regenerated the native iOS project under `eas env:exec production` with
+explicit `APP_VARIANT=production` (`npx expo prebuild --platform ios`,
+non-clean, reused the existing `ios/` directory — matches
+`ci_post_clone.sh`'s documented behaviour), then `pod install`
+(117 dependencies from the Podfile, 124 total pods, completed in 8s).
+`ios/AdhanConnect.xcworkspace` now exists and is ready to open. The
+remaining steps (Create Workflow in Xcode, product/workflow onboarding,
+archive) are the owner-only interactive part — no public API creates the
+missing `ciProduct` directly, confirmed by both this session's and the
+prior review's research. Presenting the exact steps to the owner now.
 
 **Owner input still needed (per the execution handover §12, non-blocking
 for independent work):** mosque-request recipients yes/no (§3's remaining
