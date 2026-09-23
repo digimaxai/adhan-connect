@@ -36,16 +36,19 @@ action and owner). Nothing here is a guess.
 
 ## 1. Source, PR and trigger state
 
-**OBSERVED**, re-verified 2026-09-23 (this revision):
+**OBSERVED**, re-verified 2026-09-23 while preparing this revision. The
+branch necessarily gains a documentation commit when this file is saved, so
+the table distinguishes the reviewed operational source from the moving PR
+head. Step 1 in §8 is the authoritative live gate immediately before merge.
 
 | Item | Value |
 | --- | --- |
 | Branch | `release/stable-staging-to-production-2026-09-21` |
-| HEAD | `afbb5124743dfab2e55efefdff3be6fb5a8b0ed6` |
-| Local vs. `origin/release/...` | clean, matches origin |
+| Reviewed operational source before this document-only revision | `afbb5124743dfab2e55efefdff3be6fb5a8b0ed6` |
+| Local vs. `origin/release/...` at evidence collection | clean, matches origin |
 | Task A implementation commit | `c1b8f57223197bdea5fa7fd753797460d8d3cace` — ancestor of HEAD |
-| PR #9 | `OPEN`, `isDraft: true`, base `main`, `headRefOid` = `afbb5124743dfab2e55efefdff3be6fb5a8b0ed6`, **`mergeable: MERGEABLE`, `mergeStateStatus: CLEAN`** |
-| PR #9 CI | `checks` (workflow `CI`) — `SUCCESS`, completed `2026-09-23T16:28:20Z`, run `35888883922` |
+| PR #9 at evidence collection | `OPEN`, `isDraft: true`, base `main`, `headRefOid` = `afbb5124743dfab2e55efefdff3be6fb5a8b0ed6`, **`mergeable: MERGEABLE`, `mergeStateStatus: CLEAN`** |
+| PR #9 CI at evidence collection | `checks` (workflow `CI`) — `SUCCESS`, completed `2026-09-23T16:28:20Z`, run `35888883922`; the revision-4 documentation commit triggers its own check and must also pass before merge |
 | Registered GitHub Actions workflows (default branch `main`) | `CI` (`ci.yml`), `Android Staging Build` (`android-staging-build.yml`) only |
 | `Android Production Beta Build` | Not registered on `main`; cannot be `workflow_dispatch`-triggered until merged |
 
