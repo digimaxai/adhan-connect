@@ -95,6 +95,21 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleRelease bundleRelease
 
+      - name: Verify signed release artifacts
+        working-directory: android
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          test -n "$APKSIGNER" && test -x "$APKSIGNER"
+          test -n "$AAPT" && test -x "$AAPT"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$AAPT" dump badging "$APK" | sed -n '1p'
+          jarsigner -verify "$AAB"
+          sha256sum "$APK" "$AAB"
+
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:

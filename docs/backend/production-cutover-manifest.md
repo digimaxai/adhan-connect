@@ -384,7 +384,7 @@ Unchanged from revision 1 — still genuinely blocked, nothing to fill:
 
 | Slot | Status |
 | --- | --- |
-| Production iOS build number/run ID | BLOCKED — no workflow exists (product onboarding needed first, §4) |
+| Production iOS build number | **Set: 11** (verified max uploaded was 10, §10 item 4). Run ID BLOCKED — no workflow exists yet (product onboarding needed first, §4/§10) |
 | Production Android run URL/SHA/checksums | BLOCKED — not registered on `main`; version code will be **2** (committed `app.json` value, confirmed this revision, §4) |
 | Candidate production Hosting deployment ID | BLOCKED — no production-configured export produced |
 | Google Play app record | **Created** — `Adhan Connect`, `com.maksumsdigitalagency.adhanconnect` (§4) |
@@ -626,34 +626,63 @@ Rollback route unchanged from revision 1.
    testers remain **UNRESOLVED — ask owner**, needed before store-listing
    setup and before any internal-testing release respectively — not
    before anything else in release preparation.
-4. The committed iOS build number is `1`, while the last observed production
-   upload is `10`. Refresh App Store Connect and set the source build number
-   to the fresh maximum plus one before merge/iOS archive, as required by the
-   Claude execution handover. This blocks only the iOS archive until resolved.
+4. ~~iOS build number~~ — **RESOLVED (Phase 0, this session).** Fresh
+   GET-only App Store Connect query (`filter[app]=6792143739`, paginated,
+   3 builds inspected, matching Codex's earlier finding of builds 8/9/10)
+   confirmed the maximum uploaded build number is still **10**, uploaded
+   `2026-07-18T15:33:33-07:00`. Set source build number to **11** in both
+   required locations: `app.json` (`expo.ios.buildNumber`) and both
+   `CURRENT_PROJECT_VERSION` entries in
+   `ios/AdhanConnect.xcodeproj/project.pbxproj` (confirmed exactly two
+   matches, both updated, `MARKETING_VERSION` and Android `versionCode`
+   left untouched). The query script and its ES256-signed JWT construction
+   never printed the private key or token — only the final JSON summary
+   (`appId`, `buildsInspected`, `maxBuildNumber`, `maxBuildUploadedDate`)
+   was output.
+5. ~~Android artifact verification~~ — **RESOLVED (Phase 0, this session).**
+   Added the exact "Verify signed release artifacts" step (apksigner,
+   aapt badging, jarsigner, sha256sum) to
+   `.github/workflows/android-production-build.yml`, positioned after
+   "Build signed release APK and AAB" and before both upload-artifact
+   steps, exactly as specified. The always-run keystore cleanup and both
+   artifact-upload steps are unchanged.
+
+**Phase 0 full validation re-run (this session, after both corrections):**
+`npx tsc --noEmit` clean; `npm run lint` 0 errors/6 baseline warnings;
+`npm run test:services` passed; `npm run test:notifications:safety`
+`ok:true`, 18 protected files unchanged; `npm run test:production-build-guards`
+24/24 passed; `validate:app-identity` both fixtures passed; `git diff --check`
+clean. No baseline was altered to force a pass.
 
 **Blocking cutover only (not release preparation, §6's boundary
 correction):**
 
-5. Fresh Auth safe-field audit of the retained project.
-6. Fresh notification/automation/live-state re-check.
-7. Fresh full-database snapshot "after write quiescence" (§7).
+6. Fresh Auth safe-field audit of the retained project.
+7. Fresh notification/automation/live-state re-check.
+8. Fresh full-database snapshot "after write quiescence" (§7).
 
-**Resolved across this session's two revisions:**
+**Resolved across this session's revisions:**
 
-8. ~~App Store Connect key role~~ — **Admin**, confirmed by owner
+9. ~~App Store Connect key role~~ — **Admin**, confirmed by owner
    2026-09-23. Not "Apple's highest role" (that's `Account Holder`) —
    corrected in revision 3 per r2 review item 1.
-9. ~~Whether the GitHub repository is connected to Xcode Cloud~~ — **yes**,
-   `digimaxai/adhan-connect` already connected (Codex's r2 inspection).
-   The actual gap is app `6792143739`'s missing product onboarding, not a
-   GitHub authorization — corrected in revision 3.
-10. ~~EAS account-scope precedence risk~~ — checked read-only by Codex, no
-   account-wide production variables exist.
+10. ~~Whether the GitHub repository is connected to Xcode Cloud~~ — **yes**,
+    `digimaxai/adhan-connect` already connected (Codex's r2 inspection).
+    The actual gap is app `6792143739`'s missing product onboarding, not a
+    GitHub authorization — corrected in revision 3.
+11. ~~EAS account-scope precedence risk~~ — checked read-only by Codex, no
+    account-wide production variables exist.
+12. ~~iOS build number and Android artifact verification~~ — see items 4–5
+    above, Phase 0 of the authorised execution handover.
 
 **Owner-input questions, not blockers on my independent work:**
 
-11. The four acceptance-window questions (§9) plus Play tester group (§4)
+13. The four acceptance-window questions (§9) plus Play tester group (§4)
     — bundled, asked in the r2-revision reply; awaiting answers.
+14. Whether the same existing staging mosque-request recipients should
+    receive production requests — yes/no only, per the execution
+    handover §12; still awaiting the owner's answer, not blocking
+    independent work.
 
 **Next concrete action**: execute the authorised release-preparation sequence
 using `docs/claude-release-preparation-execution-2026-09-23.md`. Resolve the

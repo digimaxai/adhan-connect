@@ -13,7 +13,7 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "bundleIdentifier": "com.maksumsdigitalagency.adhanconnect",
-      "buildNumber": "1",
+      "buildNumber": "11",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Adhan Connect needs microphone access for live Adhan broadcasts.",
         "NSCameraUsageDescription": "Adhan Connect's live broadcast feature is built on WebRTC, which may request camera access even though video broadcasting is not currently used.",
