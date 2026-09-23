@@ -1,6 +1,110 @@
 # Adhan Connect - Claude/Codex Handoff
 
-Last audited by Codex: 2026-07-24
+**Google Play update (23 September):** owner reports developer approval. Read
+[`docs/mobile/google-play-beta-plan-2026-09-23.md`](docs/mobile/google-play-beta-plan-2026-09-23.md).
+Prepare internal testing alongside GitHub APK/AAB builds; verify exact account/app
+approval, signing and tester status. No upload or public rollout is authorised by
+the status update. Historical statements that account approval is pending are stale.
+
+**Remaining action checklist (23 September):**
+[`docs/claude-remaining-production-actions-2026-09-23.md`](docs/claude-remaining-production-actions-2026-09-23.md).
+Read this first for current task order, completed Android work, build/cutover
+sequencing and exact remaining outputs. Next: read-only reconciliation and the
+revision of the existing draft cutover manifest against
+`docs/codex-review-cutover-manifest-2026-09-23.md`; no manual source patch is
+needed from the owner.
+
+Latest (2026-09-23): Claude's source preparation was reviewed and completed by
+Codex. Production iOS/Android now share strict target/identity validation;
+Android requires signing and builds a standalone release APK plus AAB. Local
+checks pass. Existing Apple API access allowed read-only workflow inspection:
+staging auto-builds only `staging`; no production Xcode Cloud product was found.
+See `docs/codex-production-preparation-review-2026-09-23.md` for exact evidence,
+build history and remaining gates. No cloud settings, builds or cutover changed.
+
+**Start here for production promotion:**
+[`docs/claude-production-promotion-handoff-2026-09-22.md`](docs/claude-production-promotion-handoff-2026-09-22.md).
+It contains the ordered execution tasks, exact environment mapping, approval
+boundaries, acceptance evidence, rollback requirements and explicit unknowns.
+Build-target code corrections are recorded in the 23 September review; no
+in-place cutover has happened. Do not infer
+completion from the existence of a plan or reuse superseded reset instructions.
+
+Latest release decision (2026-09-22): the owner requested a simpler promotion
+because there are no real production users yet. Retain the working staging
+Supabase project as production; do not replace its database or create the
+previously planned hosted rehearsal project. The full current review, evidence,
+environment map, demo constraints, rollback and next steps are in
+`docs/backend/in-place-production-promotion-review-2026-09-22.md`. Preparation
+is on `release/stable-staging-to-production-2026-09-21` / draft PR #9.
+No in-place cutover has happened. Existing staging/demo, production and their
+database configurations remain unchanged by the review. Older release/runbook
+instructions are superseded where they conflict with that review.
+
+Latest (2026-09-18, Claude Code): Local Admin now has a bottom tab bar
+(Home · Prayers · Classes · Enquiries · Settings), matching Listener/
+Muezzin. Fixed a real routing bug along the way — bare Expo Router group
+paths like `/(admin)` don't reliably resolve; the working pattern is a
+uniquely-named file inside the group (`admin-home.tsx`) with `index.tsx`
+as a redirect stub, mirroring `(user)`/`(muezzin)`. Also: three rounds of
+device-tested fixes (redundant "Managing mosque" cards removed, Enquiries
+fully redesigned and its missing-SafeAreaView status-bar overlap fixed,
+"Services offered" split out of Prayer Availability into a new "Services &
+Facilities" screen, prayer-time editor condensed into one table), and the
+Reflection Planner dashboard tile removed (unused tables left in place).
+Staging HEAD `d30f936`, hosted web `ct1o9bkpvl` → `preview`, both native
+builds green. Full detail: `docs/claude-code-handoff-2026-09-18.md`.
+
+Previous feature (2026-09-16, Codex): services/classes, reusable course intakes,
+external donation links and Guidance Centre review drafts. Staging migration
+`20260916000100` applied. See `docs/services-and-appeals-review-2026-09-16.md`
+for review paths, checks and scope. Courses are drafts; the expired appeal is
+paused. User will perform visual/device review. Native builds continue through
+Xcode Cloud (iOS) and GitHub Actions (Android).
+
+Latest (2026-09-17, Claude Code): Classes & courses redesigned after device review —
+single-class model with predefined categories, picked audience/days/times, derived
+status and a "Taking enrolments" switch; 3-step admin editor with live preview; new
+listener card/detail. Migration `20260917000000_mosque_classes_simplify.sql` applied
+to staging (drops the free-text state columns). See the superseded-note at the top of
+`docs/services-and-appeals-review-2026-09-16.md` for the current model and file map.
+
+Previous (2026-09-16, Codex): staging LIVE configuration repair deployed to
+EAS Hosting `preview` as `6o7jr2scu2`. Both `LIVEKIT_API_KEY` and
+`LIVEKIT_API_SECRET` were absent from EAS preview; restored as sensitive
+variables from the rotated credentials after a successful read-only LiveKit
+authentication check. Before deployment, both token endpoints returned 503
+for missing LiveKit configuration; afterwards both correctly returned 401
+for missing authentication. The preview LIVE contract smoke passed with no
+data mutations. The user subsequently tested staging LIVE at Al Falah Islamic
+Education Centre and confirmed "it's all working now" (2026-09-16).
+Individual listener-audio/end/restart steps were not separately reported;
+this confirmation applies to staging, not production.
+Native builds use **Xcode Cloud for iOS** and **GitHub
+Actions for Android**; EAS Hosting still serves the shared web/API backend.
+This repair did not run EAS Build or change production configuration.
+
+Latest (2026-09-15, Claude Code): see `docs/claude-code-handoff-2026-09-15.md` —
+secret-leak remediation (history rewritten, all SHAs changed: reset, never pull),
+Supabase staging moved to `sb_secret`/`sb_publishable` keys, hosted API now
+`zkij5trusg`, iOS sign-in fixed (`86ce97d`). Covers 11–15 Sept work in full.
+
+Previous (2026-09-14, Claude Code): hosted staging web/API redeployed as `89bc41p84p`
+(alias `preview` → `https://adhan-connect--preview.expo.app`). The previous hosted API
+predated the 2026-09-13 iqamah-schedule resolution, so `/api/prayer-times-daily` and
+`/api/admin/prayer-times-workspace` returned `iqama: null` for every date without a
+saved `prayer_times` row — verified live before and after. Native builds (Xcode Cloud
+iOS, GitHub Actions Android) do not contain these routes; they call the hosted API, so
+any server-route change needs `EXPO_NO_DOTENV=1 eas env:exec preview "npx expo export
+--platform web --clear"` + `eas deploy --alias preview` in addition to a native build.
+Also note: a saved `prayer_times` row (manual correction or import) is canonical for
+that date, so iqamah schedules and calculation adjustments never surface there until
+the row is removed — the Local Admin "View & correct a date" screen now explains this
+and offers "Remove saved times — use automatic" (client delete via existing RLS).
+
+Previous: Codex addressed build-19 feedback on 2026-09-07: homepage readability, prayer availability, Nearby placement, explicit countdown, event attendance/reactions and local-admin event/Jumu’ah summaries. See `docs/claude-code-handoff-2026-09-07.md`. Two event-engagement migrations are applied to staging; iOS build 20 (`23872dc3-fa2a-4d32-8f48-64a8d8bff21d`) completed and is ready to test. Web preview remains `0qmhx0zeeo`; the attempted web deployment was rejected by automatic approval review as outside the latest test-build authorization.
+
+Last audited by Codex: 2026-09-04. Claude Code added the Local Admin content-attachments feature on 2026-09-05 (see `docs/claude-code-handoff-2026-09-05.md`); Codex's own 2026-09-05 work (notification reliability, Guidance hub, nearby redesign) is covered separately in `docs/codex-worklog.md`. Claude Code added mosque About & Contact info, prayers_not_offered display, and Guidance Centre seed on 2026-09-06 (see `docs/claude-code-handoff-2026-09-06.md`) — staging migration applied; Codex deployed latest preview `0qmhx0zeeo`. Staging iOS build 19 (`c7fec1e9-be0f-46ab-b617-efb16c6d0148`) finished successfully and includes availability-aware service labels, the off-site Jumu’ah service, and the homepage Friday strip. Existing binaries have OTA disabled, so install the fresh build.
 
 This file is a handoff summary for Claude.ai or any second coding agent working alongside Codex. It captures the current app shape, completed functionality, important source-of-truth files, known risks, and remaining work. Do not paste or expose values from `.env` or `.env.local`.
 
@@ -39,6 +143,126 @@ Important package scripts:
 - `npm run web:portal` - custom server web start for API routes.
 - `npm run lint` - Expo lint.
 - `npx tsc --noEmit` - TypeScript check.
+- `npm run test:email:staging` - controlled staging confirmation-email smoke
+  using Resend's delivered test recipient; refuses non-staging projects and
+  deletes its test user.
+- `npm run test:live:contracts` - read-only protected-surface smoke: listener,
+  broadcast, muezzin-assignment and rota pages must serve, while their APIs
+  must reject missing authentication before any protected action.
+- `npm run test:quran:api` - Quran reciter, single-ayah/full-surah audio,
+  validation, and CDN range-request integration smoke (requires the web portal
+  on port 8081 unless `QURAN_API_BASE_URL` is set).
+- `npm run test:devotional:api` - all five prayer-dua filters, reflection
+  rotation/themes, and invalid-input behavior.
+- `npm run test:notifications:safety` - hashes the established LIVE,
+  assignment, rota and listener paths and verifies notification delivery stays
+  asynchronous and nearby lookup never mutates subscriptions.
+- `npm run configure:push-dispatch` - staging/production operator command that
+  reads the DB-held dispatcher credential without printing it, authenticates
+  the Edge Function, and installs its recurring schedule.
+
+Latest verification through 2026-09-05:
+
+- On 2026-09-04, staging gained opt-in listener/muezzin upcoming and LIVE push
+  preferences, a durable outbox/receipt pipeline, a fail-open post-commit LIVE
+  wake-up, and an active one-minute dispatcher schedule. Production was not
+  changed. Muezzin duty reminders now mirror the existing assignment resolution:
+  approved/provisional cover, then an explicit rota assignee, then the active
+  mosque default muezzin when no rota row exists. No second assignment system
+  was introduced.
+- Nearby context uses PostGIS distance filtering, LIVE-first ordering, current
+  mosque schedules or labelled cached calculation estimates, and refreshes on
+  app resume without background tracking. Established listeners see one compact
+  result below their primary prayer information; the full list, directions and
+  mosque details live under the existing Mosques tab. First-run listeners may
+  see up to three suggestions because choosing a mosque is their primary task.
+  This never changes subscriptions or the primary mosque.
+- Staging iOS preview build 11 (`034cc7a5-8a8a-43a9-9dd7-238d78dfc467`)
+  is the current internal test binary. It contains the comprehensive
+  notification/workspace reliability repair plus the 3-minute Muezzin
+  reminder: 30/10/5-minute alerts are preparation prompts routed to My Rota,
+  while the 3-minute alert opens the existing LIVE broadcast screen when its
+  established window begins. Follow
+  `docs/mobile/push-nearby-staging-test.md` before any production promotion.
+- The EAS Hosting `preview` alias now targets deployment `9cuik64wko`. This
+  repairs the Quran and Daily Reflection 404s in already-installed staging
+  builds. The production alias remains on `b5blckazxb` and was not changed.
+  Exact preview-alias Quran, Quran-audio, dua, and reflection integration smokes
+  pass; Quran MP3 bytes still travel directly from Quran CDN hosts to clients.
+
+- Local `staging` was accidentally compiling against the production Supabase
+  URL from `.env`; EAS preview values are now in ignored `.env.local` on this
+  machine. `scripts/start-web-fast.js` refuses to start the staging branch
+  against the known production ref unless explicitly overridden.
+- Staging email confirmation is operational. Supabase Auth logs identified the
+  exact failure as DNS lookup of the malformed SMTP host
+  `smtpsmtp.resend.com`. The exposed Resend credential was rotated and the full
+  staging SMTP block was restored with `smtp.resend.com`. The protected smoke
+  test now returns HTTP `200`, keeps email confirmation required, and deletes
+  its temporary user; the corresponding Auth log has status `200` with no SMTP
+  error. Supabase Support escalation is not needed.
+- Staging Auth retains the native `adhanconnect://` callbacks and now also
+  allowlists exact localhost callback/password-reset URLs on ports `8081` and
+  `8082`. Before this change, successful web confirmations fell back to the
+  native scheme and appeared broken after Supabase had already confirmed the
+  account. A fresh staging sign-up now records the requested web callback.
+- The six August API additions now use Expo Router `+api.ts` filenames. Local
+  staging smoke tests confirm JSON responses for nearby mosques, mosque search,
+  Quran reciters, daily duas, daily tips, and nearby live adhans. Location
+  endpoints use canonical `lat`/`lng`, current prayer-time column names, and
+  stale-live filtering.
+- Quran reciters are normalized to `display_name` with nullable styles. Verse
+  audio uses Quran Foundation's recitation-audio endpoint through
+  `/api/quran/verse-audio`; only metadata crosses the Expo server, while MP3
+  playback goes directly from `verses.quran.foundation` to the client. No
+  Quran request or audio byte uses Supabase.
+- The Quran tab is a mobile-first surah/ayah browser: 114 searchable surahs,
+  normalized Arabic plus Saheeh International translation, a prominent full-
+  surah action, explicit per-ayah Listen actions, an in-session reciter choice,
+  and a compact bottom player. Full-surah mode uses one continuous chapter MP3
+  plus ayah timestamps for gap-free transitions and in-file previous/next
+  seeking. A per-ayah queue remains as a voice-safe fallback when Quran.com's
+  separate chapter catalogue cannot be matched confidently. `/api/quran/chapters` and
+  `/api/quran/chapter` cache content for seven days; `/api/quran/surah-audio`
+  caches direct-CDN chapter/queue metadata for 24 hours. Audio bytes still go
+  straight from Quran Foundation's CDN to the client, never through Supabase.
+- Qur'anic Arabic uses the bundled `AmiriQuran_400Regular` face from
+  `@expo-google-fonts/amiri-quran`. It is loaded once in the root layout and is
+  intentionally limited to Arabic Quran/surah text; keep generous line height
+  so vowel and recitation marks do not collide.
+- The former “Islamic Wisdom” screen is now “Daily Reflection”. Prayer filters,
+  transliteration disclosure, reflection themes, retry controls, and “another
+  reminder” all execute real behavior; placeholder collections/resources were
+  removed.
+- Quran and Daily Reflection share `tokens.color.reading` and
+  `tokens.typography.reading`: Amiri Quran Arabic at 25/46 and English
+  translation at 15/24, plus the same sage surfaces, borders, and actions.
+  Arabic source text and its Latin translation/transliteration are both
+  right-aligned, while Latin text retains left-to-right word order.
+- The Listener bottom bar now has four stable destinations: Home, Guidance,
+  Mosques and Settings. Guidance is a nested content hub with responsive,
+  full-card actions for Qur’an and Daily Reflection plus a separate,
+  non-interactive upcoming Knowledge Centre module. The two primary cards stack
+  on narrow screens or with larger accessibility text. Qur’an and Reflection
+  keep their legacy route modules for compatibility while current navigation
+  uses `/guidance/quran` and `/guidance/reflection` so Guidance stays selected.
+- Production live broadcasting is a protected release surface. The current
+  Quran/Reflection working-tree changes do not modify the established
+  muezzin broadcast, role assignment, staff rota, listener-home, listener-live,
+  or LiveKit implementations. `npm run test:live:contracts` passes with zero
+  data mutations, and clean iOS/Android/web exports pass. This is a contract
+  and build check, not authenticated two-device E2E approval.
+- Do not deploy the current `staging` branch wholesale to production based on
+  those checks alone. At the committed level it is 20 commits ahead of and 3
+  commits behind `main`, and its broader delta includes earlier auth/consent
+  and live-access hardening. Before promotion, reconcile it with `main` and run
+  the existing role → rota → publisher → listener audio → end → restart
+  physical canary from `docs/mobile/iphone-livekit-e2e-test-app.md` and
+  `docs/admin/live-broadcast-onboarding.md`.
+- The nested web button structure on Discover mosque cards and the live-adhan
+  card was removed.
+- A plaintext Resend API key was redacted from the latest handoff commit and
+  rotated. Never place SMTP credentials in repository files or documentation.
 
 Latest verification from the 2026-07-24 auth/account work (Codex, then
 continued same day by Claude Code after Codex hit its usage limit):
@@ -74,7 +298,9 @@ continued same day by Claude Code after Codex hit its usage limit):
 - Legal-page static link/CSS/HTML checks passed, but the pages have not been
   deployed and the Terms remain a lawyer-review draft.
 
-There are no test files except `scripts/create_test_users.js`; the project relies on lint/tsc and manual flow testing right now.
+There is no automated test suite. The repository has targeted operational
+scripts (`scripts/create_test_users.js` and `scripts/test-staging-email.js`) and
+otherwise relies on lint, TypeScript, route smoke tests, and manual flow testing.
 
 ## Environment And Secrets
 
@@ -240,6 +466,7 @@ Completed functionality:
 - Staff rota screen loads prayer times, active muezzins, and existing rota for a date; admins assign muezzins per prayer and notes.
 - Staff rota save creates `app_notifications` rows for assignment changes where supported.
 - Muezzins screen lets local admins invite/reactivate muezzins by email, activate/deactivate/remove assignments, and resolve cover requests.
+- Events, Campaigns, and Notices (the Content hub) support a cover image and optional documents (PDF or image), uploaded through `components/admin/ContentAttachmentsEditor.tsx` into a public `content-media` Storage bucket. Listener-facing detail pages (`screens/user/event/[id].tsx`, `screens/user/campaign/[id].tsx`) render an image-led hero (or an informative gradient placeholder when no image is set), tappable document links, and a share action. See `docs/claude-code-handoff-2026-09-05.md` for the full implementation and two rounds of physical-device fixes. Publishing new content does not currently notify followers — deliberately deferred.
 
 Important local admin files:
 
@@ -424,21 +651,48 @@ Not implemented:
 
 Implemented:
 
-- `lib/notify.ts` supports local notification permissions, Android channel creation, and local scheduled reminders.
-- `lib/api/appNotifications.ts` supports in-app notification rows and read/unread state.
-- Staff rota save and cover request workflows create `app_notifications` records.
-- Settings notifications screen lists in-app notifications.
+- `lib/notify.ts` supports notification permission handling, Android channel
+  creation, local scheduled reminders, and fail-soft native module loading.
+- `lib/api/appNotifications.ts` retains in-app activity rows and read/unread
+  state for staff rota and cover workflows.
+- Physical devices register variant-scoped Expo push tokens in `push_devices`;
+  sign-out deactivates the account/device association.
+- Listener preferences independently control upcoming prayer alerts, prayer
+  selection, lead time, primary/all-followed scope, and followed-mosque LIVE
+  alerts.
+- Muezzin preferences independently control assignment updates, upcoming duty
+  lead times, and served-mosque LIVE status. In the muezzin workspace, listener
+  and travel settings are deliberately hidden; users can switch to Listener
+  mode to configure those interests.
+- Current-area LIVE alerts are optional, store only an approximately 1 km area,
+  expire within 24 hours, and do not modify subscriptions or the primary mosque.
+- `notification_events` is a durable, idempotent outbox and
+  `notification_deliveries` records bounded delivery attempts and receipts.
+- Staging runs `push-dispatch` from a one-minute database schedule. Immediate
+  LIVE wake-ups are post-commit and fail open so push infrastructure cannot
+  fail or roll back an Adhan broadcast.
+- Duty reminder assignment precedence matches the app: active
+  approved/provisional cover, explicit rota, then an active default muezzin
+  when no explicit rota row exists.
 
-Still missing:
+Still required before production:
 
-- No Expo push-token registration flow was found.
-- No production push delivery pipeline was found.
-- Reminder/broadcast push scheduling still needs product decisions and implementation.
+- Confirm real APNs arrival, notification tap routing, duplicate suppression,
+  sign-out isolation, and disabled-device behavior on physical staging iPhones.
+- Run the existing two-device LIVE audio canary alongside listener, travel, and
+  muezzin LIVE push checks. A successful Expo ticket is not acceptance evidence.
+- Reconcile `staging` with `main`; review and deploy only approved migrations,
+  function configuration, credentials, and binaries. Production is untouched.
 
 ## Existing Documentation
 
 Read these before touching sensitive flows:
 
+- `docs/claude-code-handoff-2026-09-04.md` - prior multi-day staging handoff,
+  deployed build/migration status, physical test gate, and unresolved risks.
+- `docs/claude-code-handoff-2026-09-05.md` - Local Admin content-attachments
+  feature (cover images/documents for events/campaigns/notices), build 14-17
+  history, and the EAS quota/billing note.
 - `docs/codex-worklog.md` - most important current engineering log and "do not regress" rules.
 - `docs/backend/live-adhan-architecture.md`
 - `docs/backend/prayer_times_and_staff_rota_schema.md`
@@ -464,6 +718,25 @@ The default `README.md` is still mostly Expo starter text and should be replaced
 
 ## Current Known Risks / Tech Debt
 
+- Notification reliability was comprehensively repaired on 2026-09-05 after a
+  build-9 Muezzin loading failure. Staging internal preview build 11
+  (`034cc7a5-8a8a-43a9-9dd7-238d78dfc467`) contains the repair, direct
+  email-to-password sign-in UX, and 3-minute LIVE-window reminder. Read the latest section of
+  `docs/claude-code-handoff-2026-09-04.md` before touching roles, notification
+  settings, push registration, workspace switching, or Listener mosque
+  preferences. The documented physical acceptance matrix is still required.
+- Web main-admin session access must stay lightweight. Do not add the complete
+  mosque directory back to `/api/session-access`; main-admin pages own their
+  paginated directory reads. The access endpoint carries authorization and
+  explicit membership context only, with a bounded 10-second client deadline.
+- Email sign-in intentionally goes directly from a valid email to password.
+  Keep account creation on the initial email screen and do not add an
+  unauthenticated identifier-existence lookup; known and unknown emails must
+  remain indistinguishable before authentication.
+- Listener is universal and additive for every authenticated account. Admin and
+  Muezzin are separate operational workspaces; never use staff role flags to
+  replace or suppress Listener home, mosque, travel, Quran, or Reflection UX.
+
 - No automated unit/integration/E2E tests.
 - Supabase generated `Database` types are not present; shared hand-written types exist under `lib/types`.
 - Some compatibility fallback code supports old schema shapes (`staff_user_id`, `prayer`, missing `adhan_time`/`iqama_time`). Be careful before deleting.
@@ -475,8 +748,24 @@ The default `README.md` is still mostly Expo starter text and should be replaced
 - Canonical public event, campaign, mosque and jumuah paths resolve through
   `app/(user)` wrappers. Admin editor and muezzin alias routes use unique names;
   do not recreate the deleted top-level duplicate wrappers.
-- Expo config references `assets/images/notification-icon.png`, but this file was not listed by `rg --files`; verify before building production notifications.
-- The app has microphone permissions in native config, but current production flow does not actually capture/upload mic audio.
+- 2026-09-15 secret-leak remediation: GitGuardian flagged `.env.local.staging`
+  (tracked since `d90bb2f`) and an older tracked `.env` (May–June 2026). Both,
+  plus runtime logs holding LiveKit room tokens, were purged from all history
+  with `git filter-repo` and every branch force-pushed. `.gitignore` now covers
+  `.env.local.*`, `expo-*.log` and `.codex/live-watch/*.log`. Staging
+  `SUPABASE_SERVICE_ROLE`, `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` and
+  `LPT_API_KEY` were rotated; after any rotation, update GitHub Actions
+  secrets, EAS env (`eas env:update`), Xcode Cloud env, and redeploy the
+  hosted preview API so `/api/*` routes pick up the new service role.
+  Staging Supabase now uses `sb_secret_…`/`sb_publishable_…` keys (the
+  legacy JWT secret cannot be rotated once signing keys are migrated); Edge
+  Functions read `SB_SECRET_KEY` first. `eas deploy` needs
+  `--environment preview` or server routes fail with "supabaseUrl is
+  required". Updating a shared EAS variable can detach it from the other
+  environment — verify `development` after touching `preview`.
+- Native LiveKit is the established in-app microphone media path. Treat any
+  change to its capture, room-token, publisher, listener, or cleanup behavior as
+  production-critical and require the physical two-device canary.
 
 ## Recommended Next Build Steps
 
@@ -497,11 +786,10 @@ The default `README.md` is still mostly Expo starter text and should be replaced
    - E2E smoke tests for sign-in, listener home, muezzin live, and admin prayer-times save.
 6. Add Supabase generated types and replace broad `any`/manual table types where practical.
 7. Done 2026-07-24: migration folders reconciled into a single `supabase/migrations/`, CLI-linked and drift-verified against production; a genesis migration was added for the 14 core tables that predated tracking; a dedicated staging Supabase project now exists with EAS `preview`/`development` pointed at it. Remaining: reconcile the ~20 untracked functions and their dependent RLS policies into a follow-up migration; fix the pre-existing `profiles`-created-too-late ordering bug between `20251207100000` and `20251207101500`; finish the `main`/`staging` git branching model so future migrations (starting with `20260724090000_account_control_foundation.sql`) land in staging before production.
-8. Complete notifications:
-   - push-token registration;
-   - production push sender;
-   - user preferences;
-   - rota/cover/reminder delivery rules.
+8. Complete the physical staging notification acceptance gate, including
+   default-muezzin, explicit-rota and approved-cover precedence; then prepare a
+   narrowly reviewed production rollout without changing LIVE transaction
+   semantics.
 9. Clean legacy/duplicate routes after confirming active paths.
 10. Harden main-admin and local-admin UX for production:
     - empty/error/loading states;

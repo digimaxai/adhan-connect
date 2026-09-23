@@ -10,8 +10,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AdminScreenShell } from '@/components/admin/AdminScreenShell';
 import { AdminBanner } from '@/components/admin/AdminBanner';
 import { DateSelector } from '@/components/admin/DateSelector';
@@ -23,6 +24,7 @@ import { useRoleFlags } from '@/lib/roles';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import {
   PrayerTimesRow,
+  deletePrayerTimesForDate,
   listPrayerTimesByDates,
   upsertPrayerTimes,
 } from '@/lib/api/admin/prayerTimes';
@@ -40,6 +42,9 @@ import {
   rollbackPrayerScheduleImport,
 } from '@/lib/api/admin/prayerScheduleImports';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import { ALADHAN_METHODS, DEFAULT_ALADHAN_METHOD } from '@/lib/api/aladhan';
+import { EMPTY_PRAYER_TIME_ADJUSTMENTS, PRAYER_ADJUSTMENT_KEYS, formatPrayerAdjustment, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '@/lib/prayerTimeAdjustments';
 
 const prayers: { key: keyof PrayerTimeForm; label: string }[] = [
   { key: 'fajr', label: 'Fajr' },
@@ -234,15 +239,18 @@ export default function PrayerTimesAdminScreen({
       ? effectiveMosqueId
         ? `/admin/mosques/${effectiveMosqueId}`
         : '/admin/prayer-times'
-      : '/(admin)');
-  const backLabel =
-    backLabelOverride ?? (isMainAdminWeb && effectiveMosqueId ? 'Back to Mosque' : 'Back to Console');
+      : '/admin-home');
   const eyebrowLabel = eyebrowOverride ?? (isMainAdminWeb ? 'Main Admin' : 'Local Admin');
   const isOnboardingEntry =
     typeof onboardingMode === 'boolean'
       ? onboardingMode
       : (Array.isArray(params.onboarding) ? params.onboarding[0] : params.onboarding) === '1';
 
+  // Which top-level menu section is showing. The screen lands on a simple
+  // menu (matching the Local Admin dashboard's ToolSection pattern) and
+  // opens one section at a time instead of rendering every tool inline.
+  type PrayerTimesSection = 'menu' | 'today' | 'settings' | 'import';
+  const [activeSection, setActiveSection] = useState<PrayerTimesSection>('menu');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -263,6 +271,17 @@ export default function PrayerTimesAdminScreen({
   const [showPicker, setShowPicker] = useState(false);
   const [tempValue, setTempValue] = useState<Date | null>(null);
   const [currentRow, setCurrentRow] = useState<PrayerTimesRow | null>(null);
+  // Which prayers have an explicit day-specific iqama exception for this
+  // date. Unset prayers show the resolved (schedule/ELM) iqama read-only and
+  // are saved as null so that source keeps resolving it live — this avoids
+  // silently freezing iqama the same way the Hanafi Asr bug froze adhan.
+  const [iqamaOverridden, setIqamaOverridden] = useState<Partial<Record<keyof PrayerTimeForm, boolean>>>({});
+  const [prayerSource, setPrayerSource] = useState<'aladhan' | 'elm'>('aladhan');
+  const [calculationMethod, setCalculationMethod] = useState(DEFAULT_ALADHAN_METHOD);
+  const [prayerSchool, setPrayerSchool] = useState<0 | 1>(0);
+  const [adjustments, setAdjustments] = useState<PrayerTimeAdjustments>({ ...EMPTY_PRAYER_TIME_ADJUSTMENTS });
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [scheduleSourceLabel, setScheduleSourceLabel] = useState(
     'No published schedule for this date.'
   );
@@ -413,7 +432,7 @@ export default function PrayerTimesAdminScreen({
     setCoverageIntent(coverageAnalysis.recommendedIntent);
   }, [coverageAnalysis, coverageIntent, importPreview]);
 
-  const loadPrayerTimes = useCallback(async () => {
+  const loadPrayerTimes = useCallback(async (): Promise<{ hasManualOverride: boolean }> => {
     if (!selectedMosque) {
       setCurrentRow(null);
       setScheduleSourceLabel(
@@ -430,7 +449,7 @@ export default function PrayerTimesAdminScreen({
         maghrib: emptyPair,
         isha: emptyPair,
       });
-      return;
+      return { hasManualOverride: false };
     }
 
     setLoading(true);
@@ -439,6 +458,12 @@ export default function PrayerTimesAdminScreen({
 
     try {
       const payload = await loadPrayerTimesWorkspace(selectedMosque.mosqueId, dateIso, 6);
+      if (payload.prayerSettings) {
+        setPrayerSource(payload.prayerSettings.prayerSource);
+        setCalculationMethod(payload.prayerSettings.calculationMethod);
+        setPrayerSchool(payload.prayerSettings.school);
+        setAdjustments(payload.prayerSettings.adjustments);
+      }
       if (payload.currentRow) {
         setCurrentRow(payload.currentRow);
         setForm(mapRowToForm(payload.currentRow));
@@ -446,20 +471,38 @@ export default function PrayerTimesAdminScreen({
         setScheduleSourceMeta(
           payload.currentRow.updated_at ? `Last updated ${formatDateTime(payload.currentRow.updated_at)}` : null
         );
+        // A prayer counts as an explicit day-specific exception only if it
+        // has a saved iqama value AND wasn't just auto-filled by the
+        // workspace loader (schedule/ELM) for display purposes.
+        const autoFilled = new Set(payload.autoFilledIqama ?? []);
+        const overridden: Partial<Record<keyof PrayerTimeForm, boolean>> = {};
+        (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as const).forEach((key) => {
+          const field = `${key}_iqama_time` as const;
+          overridden[key] = !!(payload.currentRow as any)?.[field] && !autoFilled.has(key);
+        });
+        setIqamaOverridden(overridden);
+        return { hasManualOverride: true };
       } else {
         setCurrentRow(null);
+        setIqamaOverridden({});
         if (payload.fallbackRow) {
           setForm(mapRowToForm(payload.fallbackRow));
           setScheduleSourceLabel(
             payload.fallbackSource === 'staff_rota'
               ? 'Staff rota fallback schedule loaded'
-              : 'Legacy fallback schedule loaded'
+              : payload.fallbackSource === 'auto'
+                ? 'Auto-calculated times loaded'
+                : 'Legacy fallback schedule loaded'
           );
           setScheduleSourceMeta(
-            'Saving will publish a canonical prayer_times row for this date.'
+            payload.fallbackSource === 'auto'
+              ? 'Times are auto-calculated. Edit and save to create a correction for this date.'
+              : 'Saving will publish a canonical prayer_times row for this date.'
           );
           setNotice(
-            'Existing timings were loaded from the fallback source. Save to publish them into the canonical schedule.'
+            payload.fallbackSource === 'auto'
+              ? 'Auto-calculated beginning times are shown. Adjust the times below and save to create a manual correction.'
+              : 'Existing timings were loaded from the fallback source. Save to publish them into the canonical schedule.'
           );
         } else {
           setForm({
@@ -475,6 +518,7 @@ export default function PrayerTimesAdminScreen({
             'No prayer times exist for this date yet. Set the times below and save to create them.'
           );
         }
+        return { hasManualOverride: false };
       }
     } catch (e: any) {
       console.warn('load prayer times', e?.message ?? e);
@@ -482,6 +526,7 @@ export default function PrayerTimesAdminScreen({
       setCurrentRow(null);
       setScheduleSourceLabel('Unable to inspect the current schedule.');
       setScheduleSourceMeta(null);
+      return { hasManualOverride: false };
     } finally {
       setLoading(false);
     }
@@ -499,6 +544,66 @@ export default function PrayerTimesAdminScreen({
       setRefreshing(false);
     }
   }, [loadPrayerTimes]);
+
+  const [clearingCorrection, setClearingCorrection] = useState(false);
+
+  const performClearCorrection = useCallback(async () => {
+    if (!selectedMosque) return;
+    setClearingCorrection(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await deletePrayerTimesForDate(selectedMosque.mosqueId, dateIso);
+      await loadPrayerTimes();
+      setNotice(
+        `Removed the saved correction for ${dateIso}. This date now follows the iqamah schedule, calculation method and adjustments automatically.`
+      );
+    } catch (e: any) {
+      console.warn('clear prayer-times correction', e?.message ?? e);
+      setError(e?.message ? `Could not remove the correction: ${e.message}` : 'Could not remove the correction.');
+    } finally {
+      setClearingCorrection(false);
+    }
+  }, [dateIso, loadPrayerTimes, selectedMosque]);
+
+  const handleClearCorrection = useCallback(() => {
+    const message = `Remove the saved correction for ${dateIso}?\n\nAll five prayers on this date will go back to automatic times: beginning times from your calculation method and adjustments, iqamah from your iqamah schedules (or ELM jamaat). Other dates are not affected.`;
+    if (isWeb) {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(message)) void performClearCorrection();
+      return;
+    }
+    Alert.alert('Remove correction?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void performClearCorrection() },
+    ]);
+  }, [dateIso, isWeb, performClearCorrection]);
+
+  const handleSavePrayerSettings = async () => {
+    if (!selectedMosque) return;
+    setSavingSettings(true); setError(null); setNotice(null);
+    try {
+      const { error: saveError } = await supabase.rpc('update_mosque_prayer_settings', {
+        p_mosque_id: selectedMosque.mosqueId,
+        p_prayer_source: prayerSource,
+        p_prayer_calculation_method: calculationMethod,
+        p_prayer_school: prayerSchool,
+        p_prayer_time_adjustments: normalizePrayerTimeAdjustments(adjustments),
+      });
+      if (saveError) throw saveError;
+      setShowSettings(false);
+      const { hasManualOverride } = await loadPrayerTimes();
+      if (hasManualOverride) {
+        setNotice(
+          'Automatic settings saved. This date has a manually published correction — the new calculation basis and school will apply to dates without a saved correction. To apply the updated auto times to this date too, edit the times below and save.'
+        );
+      } else {
+        setNotice('Automatic settings saved. The times below now reflect your updated calculation basis and adjustments.');
+      }
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Unable to save automatic prayer-time settings.');
+    } finally { setSavingSettings(false); }
+  };
 
   const updateFormTime = useCallback(
     (prayer: keyof PrayerTimeForm, field: keyof TimePair, value: string | null) => {
@@ -534,6 +639,17 @@ export default function PrayerTimesAdminScreen({
     void loadImportHistory();
   }, [loadImportHistory]);
 
+  // Refetch whenever this screen regains focus (e.g. returning from
+  // iqamah-schedules after adding/editing a date-range iqamah time) so the
+  // single-date correction editor and "what followers see" summary reflect
+  // changes made elsewhere without needing a manual pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      void loadPrayerTimes();
+      void loadImportHistory();
+    }, [loadPrayerTimes, loadImportHistory])
+  );
+
   const openTimePicker = (prayer: keyof PrayerTimeForm, field: 'adhan' | 'iqama') => {
     if (Platform.OS === 'web') return;
     if (disableForNoMosque) return;
@@ -556,21 +672,43 @@ export default function PrayerTimesAdminScreen({
       return;
     }
 
+    const mosqueName = selectedMosque.name ?? 'this mosque';
+    const confirmMessage = `Save prayer times for ${mosqueName} on ${selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}?\n\nThis will update the times shown to all followers immediately.`;
+
+    if (isWeb) {
+      // eslint-disable-next-line no-alert
+      if (!window.confirm(confirmMessage)) return;
+      await doSave();
+    } else {
+      Alert.alert(
+        'Save prayer times?',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Save', style: 'default', onPress: doSave },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
+
+  const doSave = async () => {
+    if (!selectedMosque) return;
     const normalizedForm = normalizePrayerTimeForm(form);
     setForm(normalizedForm);
     setSaving(true);
 
     try {
-      const payload = mapFormToRow(normalizedForm, selectedDate);
+      const payload = mapFormToRow(normalizedForm, selectedDate, iqamaOverridden);
       await upsertPrayerTimes(selectedMosque.mosqueId, dateIso, payload, {
         sourceType: 'manual',
         generatedMethod: 'quick_edit',
         updatedBy: userId || null,
         overridesExist: true,
       });
-      setNotice('Prayer times saved successfully.');
+      setNotice(`Prayer times for ${selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} saved and published to followers.`);
       if (!isWeb) {
-        Alert.alert('Saved', 'Prayer times updated.');
+        Alert.alert('Saved', 'Prayer times updated and live for followers.');
       }
       await loadPrayerTimes();
     } catch (e: any) {
@@ -953,17 +1091,7 @@ export default function PrayerTimesAdminScreen({
           : 'Edit the daily adhan and iqama schedule.'
       }
       backHref={backRoute}
-      backLabel={backLabel}
-      activeTab={isMainAdminWeb ? undefined : 'prayerTimes'}
-      onGoPrayerTimes={isMainAdminWeb ? undefined : () => router.push(prayerTimesRoute as any)}
-      onGoStaffRota={isMainAdminWeb ? undefined : () => router.push(staffRotaRoute as any)}
-      mosqueName={selectedMosque?.name ?? null}
-      mosqueMeta={
-        selectedMosque
-          ? [selectedMosque.city, selectedMosque.country].filter(Boolean).join(', ') ||
-            'Prayer schedule editor'
-          : null
-      }
+      showBack={false}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -972,60 +1100,16 @@ export default function PrayerTimesAdminScreen({
         />
       }
     >
-      {showManualOverrideTools || !canManageImports ? (
-        <View style={[styles.workspaceGrid, isWeb ? styles.workspaceGridWeb : null]}>
-          <AppCard style={styles.utilityCard}>
-            <View style={styles.utilityHeader}>
-              <AppText variant="caption" color={tokens.color.text.secondary}>
-                Selected date
-              </AppText>
-              <AppText variant="title">Schedule date</AppText>
-            </View>
-            <DateSelector date={selectedDate} onChange={setSelectedDate} />
-          </AppCard>
-
-          <AppCard style={styles.statusCard}>
-            <View style={styles.utilityHeader}>
-              <AppText variant="caption" color={tokens.color.text.secondary}>
-                Published source
-              </AppText>
-              <AppText variant="title">Schedule status</AppText>
-            </View>
-            <AppText variant="body" style={styles.statusValue}>
-              {scheduleSourceLabel}
-            </AppText>
-            {scheduleSourceMeta ? (
-              <AppText variant="caption" color={tokens.color.text.secondary}>
-                {scheduleSourceMeta}
-              </AppText>
-            ) : null}
-            {currentRow?.source_type ? (
-              <View style={styles.sourceBadge}>
-                <AppText variant="caption" style={styles.sourceBadgeText}>
-                  {currentRow.source_type}
-                </AppText>
-              </View>
-            ) : null}
-          </AppCard>
-        </View>
-      ) : (
-        <AppCard subtle style={styles.compactManualCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
-            Manual override tools
-          </AppText>
-          <AppText variant="title" style={styles.mobileHintTitle}>
-            Hide the day-level editor until you need it
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary}>
-            Main Admin uploads can stay focused on file import. Open the manual workspace only when a single date needs a correction.
-          </AppText>
-          <AppButton
-            title="Open day override tools"
-            variant="ghost"
-            onPress={() => setShowManualOverrideTools(true)}
-          />
-        </AppCard>
-      )}
+      {activeSection !== 'menu' ? (
+        <Pressable
+          onPress={() => setActiveSection('menu')}
+          style={({ pressed }) => [styles.backToMenuRow, pressed && styles.pressed]}
+          accessibilityRole="button"
+        >
+          <Ionicons name="chevron-back" size={16} color={tokens.color.text.accent} />
+          <AppText variant="body" style={styles.backToMenuText}>Prayer Times menu</AppText>
+        </Pressable>
+      ) : null}
 
       {!selectedMosque && !mosques.length ? (
         <AdminBanner
@@ -1045,7 +1129,6 @@ export default function PrayerTimesAdminScreen({
           message="Main Admin timetable publishing is now mosque specific. Open a mosque workspace from the prayer-times hub or mosque directory before uploading a file."
         />
       ) : null}
-
       {isOnboardingEntry && selectedMosque ? (
         <AdminBanner
           tone="info"
@@ -1057,8 +1140,7 @@ export default function PrayerTimesAdminScreen({
           }
         />
       ) : null}
-
-      {notice ? (
+      {notice && activeSection !== 'menu' ? (
         <AdminBanner
           tone={publishingImport ? 'info' : notice.startsWith('Published') ? 'success' : 'info'}
           title={publishingImport ? 'Publishing timetable' : 'Prayer schedule'}
@@ -1067,7 +1149,188 @@ export default function PrayerTimesAdminScreen({
       ) : null}
       {error ? <AdminBanner tone="danger" title="Unable to continue" message={error} /> : null}
 
-      {canManageImports ? (
+      {activeSection === 'menu' ? (
+        <PrayerTimesMenu
+          canManageImports={canManageImports}
+          onSelect={setActiveSection}
+          onManageIqamahSchedules={() => router.push('/(admin)/iqamah-schedules' as any)}
+          calculationSummary={
+            prayerSource === 'elm'
+              ? 'East London Mosque (London Unified)'
+              : `Aladhan · Method ${calculationMethod} · ${prayerSchool === 1 ? 'Hanafi Asr' : 'Standard Asr'}`
+          }
+        />
+      ) : null}
+
+      {activeSection === 'today' ? (
+        showManualOverrideTools || !canManageImports ? (
+          <AppCard style={styles.utilityCard}>
+            <View style={styles.utilityHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <AppText variant="caption" color={tokens.color.text.secondary}>
+                  Single-date correction
+                </AppText>
+                <AppText variant="title">Choose a date to review</AppText>
+              </View>
+            </View>
+            <DateSelector date={selectedDate} onChange={setSelectedDate} />
+            {currentRow ? (
+              <View style={styles.sourceBadge}>
+                <AppText variant="caption" style={styles.sourceBadgeText}>
+                  {currentRow.source_type === 'manual' ? 'Saved manual correction' : 'Published timetable'}
+                  {scheduleSourceMeta ? ` · ${scheduleSourceMeta}` : ''}
+                  {' · schedule & adjustments paused for this date'}
+                </AppText>
+              </View>
+            ) : (
+              <View style={[styles.sourceBadge, styles.sourceBadgeMuted]}>
+                <AppText variant="caption" style={styles.sourceBadgeMutedText}>Automatic · follows iqamah schedule, calculation method and adjustments</AppText>
+              </View>
+            )}
+          </AppCard>
+        ) : (
+          <AppCard subtle style={styles.compactManualCard}>
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              Manual override tools
+            </AppText>
+            <AppText variant="title" style={styles.mobileHintTitle}>
+              Hide the day-level editor until you need it
+            </AppText>
+            <AppText variant="body" color={tokens.color.text.secondary}>
+              Main Admin uploads can stay focused on file import. Open the manual workspace only when a single date needs a correction.
+            </AppText>
+            <AppButton
+              title="Open day override tools"
+              variant="ghost"
+              onPress={() => setShowManualOverrideTools(true)}
+            />
+          </AppCard>
+        )
+      ) : null}
+
+      {activeSection === 'today' && selectedMosque && !loading && (form.fajr.adhan || form.dhuhr.adhan || form.asr.adhan || form.maghrib.adhan || form.isha.adhan) ? (
+        <AppCard style={styles.summaryCard}>
+          <View style={styles.utilityHeader}>
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              {dateIso === formatLocalDate(new Date()) ? 'What followers see today' : `What followers see on ${dateIso}`}
+            </AppText>
+            <AppText variant="title">Published times</AppText>
+          </View>
+          <View style={styles.summaryTable}>
+            <View style={styles.summaryHeaderRow}>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryPrayerCol}>Prayer</AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryValueCol}>Adhan</AppText>
+              <AppText variant="caption" color={tokens.color.text.secondary} style={styles.summaryValueCol}>Iqama</AppText>
+            </View>
+            {prayers.map((p) => (
+              <View key={p.key} style={styles.summaryRow}>
+                <AppText variant="body" style={[styles.summaryPrayer, styles.summaryPrayerCol]} numberOfLines={1}>
+                  {p.label}
+                </AppText>
+                <AppText variant="body" style={[styles.summaryAdhan, styles.summaryValueCol]} numberOfLines={1}>
+                  {form[p.key].adhan ?? '—'}
+                </AppText>
+                <AppText
+                  variant="body"
+                  color={form[p.key].iqama ? tokens.color.text.primary : tokens.color.text.secondary}
+                  style={styles.summaryValueCol}
+                  numberOfLines={1}
+                >
+                  {form[p.key].iqama ?? '—'}
+                </AppText>
+              </View>
+            ))}
+          </View>
+          {currentRow ? (
+            <View style={styles.sourceBadge}>
+              <AppText variant="caption" style={styles.sourceBadgeText}>
+                {currentRow.source_type === 'manual' ? 'Manual correction' : 'Published timetable'}
+              </AppText>
+            </View>
+          ) : (
+            <View style={[styles.sourceBadge, styles.sourceBadgeMuted]}>
+              <AppText variant="caption" style={styles.sourceBadgeMutedText}>Auto-calculated</AppText>
+            </View>
+          )}
+        </AppCard>
+      ) : null}
+
+      {activeSection === 'settings' && selectedMosque ? (
+        <AppCard style={styles.settingsCard}>
+          <Pressable
+            onPress={() => setShowSettings((prev) => !prev)}
+            style={styles.settingsToggleRow}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showSettings }}
+          >
+            <View style={{ flex: 1, gap: 2 }}>
+              <AppText variant="caption" color={tokens.color.text.secondary}>Automatic timetable</AppText>
+              <AppText variant="title">Calculation basis and adjustments</AppText>
+              {!showSettings && (
+                <AppText variant="caption" color={tokens.color.text.secondary}>
+                  {prayerSource === 'elm' ? 'East London Mosque (London Unified)' : `Aladhan · Method ${calculationMethod} · ${prayerSchool === 1 ? 'Hanafi Asr' : 'Standard Asr'}`}
+                  {PRAYER_ADJUSTMENT_KEYS.some((k) => adjustments[k] !== 0)
+                    ? ` · Adjustments: ${PRAYER_ADJUSTMENT_KEYS.filter((k) => adjustments[k] !== 0).map((k) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${adjustments[k] > 0 ? '+' : ''}${adjustments[k]}m`).join(', ')}`
+                    : ' · No adjustments'}
+                </AppText>
+              )}
+            </View>
+            <AppText variant="body" color={tokens.color.text.accent} style={{ paddingLeft: 8 }}>
+              {showSettings ? 'Done' : 'Edit'}
+            </AppText>
+          </Pressable>
+
+          {showSettings && (
+            <>
+              <AppText variant="body" color={tokens.color.text.secondary}>
+                Used only when there is no uploaded or manually entered beginning time. Congregation times remain mosque controlled.
+              </AppText>
+              <View style={styles.choiceRow}>
+                <AppButton title="Calculated by location" variant={prayerSource === 'aladhan' ? 'primary' : 'ghost'} onPress={() => setPrayerSource('aladhan')} />
+                <AppButton title="East London timetable" variant={prayerSource === 'elm' ? 'primary' : 'ghost'} onPress={() => setPrayerSource('elm')} />
+              </View>
+              {prayerSource === 'aladhan' ? (
+                <View style={styles.settingsGroup}>
+                  <AppText variant="caption" color={tokens.color.text.secondary}>Calculation method</AppText>
+                  <View style={styles.choiceRow}>
+                    {ALADHAN_METHODS.filter((method) => [2, 3, 4, 5, 13, 15].includes(method.id)).map((method) => (
+                      <AppButton key={method.id} title={method.label} variant={calculationMethod === method.id ? 'primary' : 'ghost'} onPress={() => setCalculationMethod(method.id)} />
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <AppText variant="caption" color={tokens.color.text.secondary}>Uses East London Mosque&apos;s published London Unified beginning times as the base.</AppText>
+              )}
+              <View style={styles.settingsGroup}>
+                <AppText variant="caption" color={tokens.color.text.secondary}>Asr school</AppText>
+                <View style={styles.choiceRow}>
+                  <AppButton title="Standard (Shafi)" variant={prayerSchool === 0 ? 'primary' : 'ghost'} onPress={() => setPrayerSchool(0)} />
+                  <AppButton title="Hanafi" variant={prayerSchool === 1 ? 'primary' : 'ghost'} onPress={() => setPrayerSchool(1)} />
+                </View>
+                <AppText variant="caption" color={tokens.color.text.secondary}>
+                  {prayerSchool === 1
+                    ? 'Hanafi Asr is typically 1–1.5 hours later than Standard. This is correct — it reflects the shadow-twice jurisprudence, not an error.'
+                    : 'Standard (Shafi/Maliki/Hanbali) Asr uses shadow-once calculation. Choose Hanafi if your mosque follows the Hanafi school.'}
+                </AppText>
+              </View>
+              <View style={styles.settingsGroup}>
+                <AppText variant="caption" color={tokens.color.text.secondary}>Fine-tune each beginning time (−30 to +30 min). Use this to account for local geographic differences.</AppText>
+                {PRAYER_ADJUSTMENT_KEYS.map((prayer) => (
+                  <View key={prayer} style={styles.adjustmentRow}>
+                    <AppText variant="body" style={styles.adjustmentLabel}>{prayer.charAt(0).toUpperCase() + prayer.slice(1)}</AppText>
+                    <AppButton title="−" variant="ghost" onPress={() => setAdjustments((current) => normalizePrayerTimeAdjustments({ ...current, [prayer]: current[prayer] - 1 }))} disabled={adjustments[prayer] <= -30} />
+                    <AppText variant="body" style={styles.adjustmentValue}>{adjustments[prayer] === 0 ? '—' : formatPrayerAdjustment(adjustments[prayer])}</AppText>
+                    <AppButton title="+" variant="ghost" onPress={() => setAdjustments((current) => normalizePrayerTimeAdjustments({ ...current, [prayer]: current[prayer] + 1 }))} disabled={adjustments[prayer] >= 30} />
+                  </View>
+                ))}
+              </View>
+              <AppButton title={savingSettings ? 'Saving settings…' : 'Save automatic settings'} onPress={handleSavePrayerSettings} disabled={savingSettings} />
+            </>
+          )}
+        </AppCard>
+      ) : null}
+
+      {activeSection === 'import' && canManageImports ? (
         <AppCard style={styles.importCard}>
           <View style={styles.importHeader}>
             <View style={styles.importCopy}>
@@ -1844,53 +2107,47 @@ export default function PrayerTimesAdminScreen({
             )}
           </AppCard>
         </AppCard>
-      ) : isWeb ? (
-        <AppCard subtle style={styles.mobileHintCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
-            Timetable publishing
-          </AppText>
-          <AppText variant="title" style={styles.mobileHintTitle}>
-            Main Admin owns timetable uploads
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary}>
-            Use this screen for local day-level corrections only. Bulk CSV imports, review, publish,
-            and rollback are now restricted to Main Admin so each mosque timetable is normalized
-            through one controlled pipeline.
-          </AppText>
-        </AppCard>
-      ) : (
-        <AppCard subtle style={styles.mobileHintCard}>
-          <AppText variant="caption" color={tokens.color.text.secondary}>
-            Bulk import
-          </AppText>
-          <AppText variant="title" style={styles.mobileHintTitle}>
-            Use the web portal for annual timetable uploads
-          </AppText>
-          <AppText variant="body" color={tokens.color.text.secondary}>
-            This mobile screen stays optimized for quick day edits and corrections.
-            Use the web workspace to import, validate, and publish full timetables.
-          </AppText>
-        </AppCard>
-      )}
+      ) : null}
 
+      {activeSection === 'today' ? (
       <AppCard subtle style={styles.manualSectionShell}>
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeader}>
             <AppText variant="caption" color={tokens.color.text.secondary}>
-              Quick edit
+              Edit this date
             </AppText>
             <AppText variant="title" style={styles.sectionTitle}>
-              Manual daily override
+              Adhan and iqama times for {dateIso}
             </AppText>
           </View>
           {canManageImports ? (
             <AppButton
-              title={showManualOverrideTools ? 'Hide day editor' : 'Open day editor'}
+              title={showManualOverrideTools ? 'Hide' : 'Edit'}
               variant="ghost"
               onPress={() => setShowManualOverrideTools((prev) => !prev)}
             />
           ) : null}
         </View>
+        {currentRow && !loading ? (
+          <View style={styles.correctionNotice}>
+            <AppText variant="body" style={styles.correctionNoticeTitle}>
+              {currentRow.source_type === 'manual'
+                ? 'This date has a saved manual correction'
+                : 'This date comes from a published timetable'}
+            </AppText>
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              {scheduleSourceMeta ? `${scheduleSourceMeta}. ` : ''}
+              Saved times take priority, so changes to your iqamah schedules, calculation method or
+              adjustments will not show on this date until the saved times are removed or edited.
+            </AppText>
+            <AppButton
+              title={clearingCorrection ? 'Removing…' : 'Remove saved times — use automatic'}
+              variant="ghost"
+              onPress={handleClearCorrection}
+              disabled={clearingCorrection || saving || disableForNoMosque}
+            />
+          </View>
+        ) : null}
         {showManualOverrideTools || !canManageImports ? (
           <>
             {loading ? (
@@ -1901,57 +2158,88 @@ export default function PrayerTimesAdminScreen({
                 </AppText>
               </View>
             ) : (
-              prayers.map((p) => (
-                <AppCard key={p.key} style={[styles.card, disableForNoMosque && styles.cardDisabled]}>
-                  <View style={styles.cardHeader}>
-                    <AppText variant="title">{p.label}</AppText>
-                    <AppText variant="caption" color={tokens.color.text.secondary}>
-                      Adjust one day at a time when the imported schedule needs a correction.
+              <AppCard style={[styles.editTable, disableForNoMosque && styles.cardDisabled]}>
+                <View style={styles.editTableHeaderRow}>
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={styles.editPrayerCol}>Prayer</AppText>
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={styles.editTimeCol}>Adhan</AppText>
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={styles.editTimeCol}>Iqama</AppText>
+                  <View style={styles.editOverrideCol} />
+                </View>
+                {prayers.map((p, index) => (
+                  <View key={p.key} style={[styles.editTableRow, index === prayers.length - 1 && styles.editTableRowLast]}>
+                    <AppText variant="body" style={[styles.editPrayerLabel, styles.editPrayerCol]} numberOfLines={1}>
+                      {p.label}
                     </AppText>
+                    <View style={styles.editTimeCol}>
+                      {isWeb ? (
+                        <WebTimeInput
+                          value={form[p.key].adhan}
+                          onChangeText={(value) => updateFormTime(p.key, 'adhan', value)}
+                          disabled={disableForNoMosque}
+                        />
+                      ) : (
+                        <TimeButton
+                          label={form[p.key].adhan}
+                          onPress={() => openTimePicker(p.key, 'adhan')}
+                          disabled={disableForNoMosque}
+                        />
+                      )}
+                    </View>
+                    <View style={styles.editTimeCol}>
+                      {iqamaOverridden[p.key] ? (
+                        isWeb ? (
+                          <WebTimeInput
+                            value={form[p.key].iqama}
+                            onChangeText={(value) => updateFormTime(p.key, 'iqama', value)}
+                            disabled={disableForNoMosque}
+                          />
+                        ) : (
+                          <TimeButton
+                            label={form[p.key].iqama}
+                            onPress={() => openTimePicker(p.key, 'iqama')}
+                            disabled={disableForNoMosque}
+                          />
+                        )
+                      ) : (
+                        <View style={styles.autoIqamaWrap}>
+                          <AppText variant="body" style={styles.autoIqamaTime} numberOfLines={1}>
+                            {form[p.key].iqama ?? '—'}
+                          </AppText>
+                          <AppText variant="caption" color={tokens.color.text.secondary}>auto</AppText>
+                        </View>
+                      )}
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={iqamaOverridden[p.key] ? `Use automatic iqama for ${p.label}` : `Override iqama for ${p.label} on this date`}
+                      onPress={() => setIqamaOverridden((prev) => ({ ...prev, [p.key]: !prev[p.key] }))}
+                      disabled={disableForNoMosque}
+                      style={[styles.editOverrideBtn, styles.editOverrideCol, iqamaOverridden[p.key] && styles.editOverrideBtnActive]}
+                    >
+                      <Ionicons
+                        name={iqamaOverridden[p.key] ? 'refresh-outline' : 'pencil-outline'}
+                        size={16}
+                        color={iqamaOverridden[p.key] ? '#B45309' : tokens.color.text.muted}
+                      />
+                    </Pressable>
                   </View>
-                  <View style={styles.row}>
-                    <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
-                      Adhan
-                    </AppText>
-                    {isWeb ? (
-                      <WebTimeInput
-                        value={form[p.key].adhan}
-                        onChangeText={(value) => updateFormTime(p.key, 'adhan', value)}
-                        disabled={disableForNoMosque}
-                      />
-                    ) : (
-                      <TimeButton
-                        label={form[p.key].adhan}
-                        onPress={() => openTimePicker(p.key, 'adhan')}
-                        disabled={disableForNoMosque}
-                      />
-                    )}
-                  </View>
-                  <View style={styles.row}>
-                    <AppText variant="body" color={tokens.color.text.secondary} style={styles.label}>
-                      Iqama
-                    </AppText>
-                    {isWeb ? (
-                      <WebTimeInput
-                        value={form[p.key].iqama}
-                        onChangeText={(value) => updateFormTime(p.key, 'iqama', value)}
-                        disabled={disableForNoMosque}
-                      />
-                    ) : (
-                      <TimeButton
-                        label={form[p.key].iqama}
-                        onPress={() => openTimePicker(p.key, 'iqama')}
-                        disabled={disableForNoMosque}
-                      />
-                    )}
-                  </View>
-                </AppCard>
-              ))
+                ))}
+                <View style={styles.editTableFootnote}>
+                  <Ionicons name="information-circle-outline" size={13} color={tokens.color.text.muted} />
+                  <AppText variant="caption" color={tokens.color.text.secondary} style={{ flex: 1 }}>
+                    Adhan times are always editable. “Auto” iqama times follow your iqamah schedule — tap{' '}
+                    <Ionicons name="pencil-outline" size={11} color={tokens.color.text.secondary} /> to fix one just for this date.
+                  </AppText>
+                </View>
+              </AppCard>
             )}
 
+            <AppText variant="caption" color={tokens.color.text.secondary}>
+              Saving overwrites the beginning and congregation times for {dateIso} only. Other dates in the published timetable are not affected.
+            </AppText>
             <View style={styles.actionRow}>
               <AppButton
-                title={saving ? 'Saving...' : 'Save Day Override'}
+                title={saving ? 'Saving...' : 'Save correction'}
                 onPress={handleSave}
                 disabled={saving || disableForNoMosque}
               />
@@ -1972,9 +2260,10 @@ export default function PrayerTimesAdminScreen({
           </AppText>
         )}
       </AppCard>
+      ) : null}
 
       {pickerState && pickerValue && Platform.OS === 'android' ? (
-        <DateTimePicker
+        <DateTimePicker themeVariant="light"
           value={pickerValue}
           mode="time"
           onChange={handleTimePicked}
@@ -2027,6 +2316,111 @@ export default function PrayerTimesAdminScreen({
         </Modal>
       ) : null}
     </AdminScreenShell>
+  );
+}
+
+type PrayerTimesMenuSection = 'today' | 'settings' | 'import';
+
+function PrayerTimesMenu({
+  canManageImports,
+  onSelect,
+  onManageIqamahSchedules,
+  calculationSummary,
+}: {
+  canManageImports: boolean;
+  onSelect: (section: PrayerTimesMenuSection) => void;
+  onManageIqamahSchedules: () => void;
+  calculationSummary: string;
+}) {
+  const router = useRouter();
+  const items: {
+    key: string;
+    title: string;
+    description: string;
+    icon: React.ComponentProps<typeof Ionicons>['name'];
+    iconBg: string;
+    iconColor: string;
+    onPress: () => void;
+  }[] = [
+    {
+      key: 'today',
+      title: 'View & correct a date',
+      description: 'See what followers see and fix a specific day if needed.',
+      icon: 'time-outline',
+      iconBg: '#EFF6FF',
+      iconColor: '#2563EB',
+      onPress: () => onSelect('today'),
+    },
+    {
+      key: 'iqamah',
+      title: 'Manage iqamah schedules',
+      description: 'Set congregation times for a date range per prayer.',
+      icon: 'calendar-outline',
+      iconBg: '#ECFDF5',
+      iconColor: '#059669',
+      onPress: onManageIqamahSchedules,
+    },
+    {
+      key: 'settings',
+      title: 'Calculation method',
+      description: calculationSummary,
+      icon: 'settings-outline',
+      iconBg: '#F5F3FF',
+      iconColor: '#7C3AED',
+      onPress: () => onSelect('settings'),
+    },
+    {
+      key: 'availability',
+      title: 'Prayer availability',
+      description: 'Mark prayers not offered here and add a reason for followers.',
+      icon: 'list-outline',
+      iconBg: '#FFF1F2',
+      iconColor: '#BE123C',
+      onPress: () => router.push('/(admin)/mosque-services' as any),
+    },
+  ];
+
+  if (canManageImports) {
+    items.push({
+      key: 'import',
+      title: 'Import timetable',
+      description: 'Upload, review, and publish a CSV timetable.',
+      icon: 'cloud-upload-outline',
+      iconBg: '#FFF7ED',
+      iconColor: '#C2410C',
+      onPress: () => onSelect('import'),
+    });
+  }
+
+  return (
+    <View style={styles.menuSectionCard}>
+      {items.map((item, index) => (
+        <React.Fragment key={item.key}>
+          <Pressable
+            onPress={item.onPress}
+            style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+            accessibilityRole="button"
+          >
+            <View style={[styles.menuIconWrap, { backgroundColor: item.iconBg }]}>
+              <Ionicons name={item.icon} size={20} color={item.iconColor} />
+            </View>
+            <View style={styles.menuRowText}>
+              <AppText variant="body" style={styles.menuRowTitle}>{item.title}</AppText>
+              <AppText
+                variant="caption"
+                color={tokens.color.text.secondary}
+                style={styles.menuRowDesc}
+                numberOfLines={1}
+              >
+                {item.description}
+              </AppText>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={tokens.color.text.muted} />
+          </Pressable>
+          {index < items.length - 1 && <View style={styles.menuDivider} />}
+        </React.Fragment>
+      ))}
+    </View>
   );
 }
 
@@ -2264,18 +2658,26 @@ function mapPublishedPrayerTimesRowToPreviewRow(row: PrayerTimesRow): PrayerSche
   };
 }
 
-function mapFormToRow(form: PrayerTimeForm, date: Date): Partial<PrayerTimesRow> {
+function mapFormToRow(
+  form: PrayerTimeForm,
+  date: Date,
+  iqamaOverridden: Partial<Record<keyof PrayerTimeForm, boolean>> = {}
+): Partial<PrayerTimesRow> {
+  // Iqama is only written when explicitly overridden for this date; leaving
+  // it null lets the iqamah schedule / ELM jamat keep resolving it live
+  // instead of silently freezing whatever was on screen at save time.
+  const iqama = (key: keyof PrayerTimeForm) => (iqamaOverridden[key] ? combine(date, form[key].iqama) : null);
   return {
     fajr_adhan_time: combine(date, form.fajr.adhan),
-    fajr_iqama_time: combine(date, form.fajr.iqama),
+    fajr_iqama_time: iqama('fajr'),
     dhuhr_adhan_time: combine(date, form.dhuhr.adhan),
-    dhuhr_iqama_time: combine(date, form.dhuhr.iqama),
+    dhuhr_iqama_time: iqama('dhuhr'),
     asr_adhan_time: combine(date, form.asr.adhan),
-    asr_iqama_time: combine(date, form.asr.iqama),
+    asr_iqama_time: iqama('asr'),
     maghrib_adhan_time: combine(date, form.maghrib.adhan),
-    maghrib_iqama_time: combine(date, form.maghrib.iqama),
+    maghrib_iqama_time: iqama('maghrib'),
     isha_adhan_time: combine(date, form.isha.adhan),
-    isha_iqama_time: combine(date, form.isha.iqama),
+    isha_iqama_time: iqama('isha'),
   };
 }
 
@@ -2289,7 +2691,7 @@ function toHm(val?: string | null) {
 
 function combine(day: Date, hm: string | null) {
   if (!hm) return null;
-  const [h, m] = hm.split(':').map((n) => parseInt(n, 10));
+  const [h, m] = hm.split(':').map((n: string) => parseInt(n, 10));
   const d = new Date(day);
   d.setHours(h, m, 0, 0);
   return d.toISOString();
@@ -2373,7 +2775,7 @@ function findInvalidPrayerTime(form: PrayerTimeForm) {
 function buildPickerValue(hm: string | null, baseDate: Date) {
   const d = new Date(baseDate);
   if (hm) {
-    const [h, m] = hm.split(':').map((n) => parseInt(n, 10));
+    const [h, m] = hm.split(':').map((n: string) => parseInt(n, 10));
     d.setHours(h, m, 0, 0);
   }
   return d;
@@ -2594,7 +2996,7 @@ function validateCoverageIntentSelection(
     return {
       valid: true,
       error: null as string | null,
-      warning: 'This preview already looks like a full year. Choose Full year instead if this should become the mosque’s canonical annual timetable.',
+      warning: "This preview already looks like a full year. Choose Full year instead if this should become the mosque's canonical annual timetable.",
     };
   }
 
@@ -2937,8 +3339,50 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     flex: 1,
   },
+  settingsCard: { gap: tokens.spacing.md, borderRadius: 18 },
+  settingsToggleRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  settingsGroup: { gap: 8 },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  adjustmentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  adjustmentLabel: { flex: 1, fontWeight: tokens.typography.weight.bold },
+  adjustmentValue: { width: 70, textAlign: 'center', fontWeight: tokens.typography.weight.extrabold },
+  correctionNotice: {
+    gap: 6,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFF7ED',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#FDBA74',
+    alignItems: 'flex-start',
+  },
+  correctionNoticeTitle: { fontWeight: tokens.typography.weight.bold, color: '#9A3412' },
+  summaryCard: { gap: 10, borderRadius: 16 },
+  summaryTable: { gap: 0 },
+  summaryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: tokens.color.border.subtle,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F1F5F9',
+  },
+  summaryPrayerCol: { flex: 1.1, minWidth: 0 },
+  summaryValueCol: { flex: 1, minWidth: 0, textAlign: 'right' },
+  summaryPrayer: { fontWeight: tokens.typography.weight.bold },
+  summaryAdhan: { fontWeight: tokens.typography.weight.extrabold, textAlign: 'right' },
+  sourceBadgeMuted: { backgroundColor: '#F1F5F9' },
+  sourceBadgeMutedText: { color: '#64748B', fontWeight: tokens.typography.weight.bold },
   compactManualCard: { gap: 8, borderRadius: 18 },
   utilityHeader: { gap: 2 },
+  utilityHeaderRow: { gap: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statusValue: { fontWeight: tokens.typography.weight.extrabold },
   sourceBadge: {
     alignSelf: 'flex-start',
@@ -3377,10 +3821,61 @@ const styles = StyleSheet.create({
   actionFeedback: { marginTop: 8 },
   loader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center' },
   card: { gap: tokens.spacing.xs, padding: tokens.spacing.sm, borderRadius: 16 },
+  editTable: { padding: 14, borderRadius: 16, gap: 0 },
+  editTableHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  editTableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EEF2F6' },
+  editTableRowLast: { borderBottomWidth: 0 },
+  editPrayerCol: { flex: 1, minWidth: 0 },
+  editPrayerLabel: { fontWeight: tokens.typography.weight.bold, fontSize: 15 },
+  editTimeCol: { width: 96, alignItems: 'center' },
+  editOverrideCol: { width: 34, alignItems: 'center' },
+  autoIqamaWrap: { alignItems: 'center' },
+  autoIqamaTime: { fontWeight: tokens.typography.weight.extrabold, fontSize: 15, color: tokens.color.text.secondary },
+  editOverrideBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F5F9' },
+  editOverrideBtnActive: { backgroundColor: '#FEF3C7' },
+  editTableFootnote: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+
   cardDisabled: { opacity: 0.6 },
   cardHeader: { gap: 2 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   label: { fontWeight: tokens.typography.weight.bold },
+  backToMenuRow: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+  },
+  backToMenuText: { color: tokens.color.text.accent, fontWeight: tokens.typography.weight.semibold },
+  menuSectionCard: {
+    borderRadius: tokens.radius.xl,
+    backgroundColor: tokens.color.bg.surface,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    overflow: 'hidden',
+    ...tokens.shadow.card,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    backgroundColor: tokens.color.bg.surface,
+  },
+  menuRowPressed: { backgroundColor: '#F8FAFC' },
+  menuIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: tokens.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  menuRowText: { flex: 1, gap: 2 },
+  menuRowTitle: { fontSize: 15, fontWeight: tokens.typography.weight.semibold, color: tokens.color.text.primary },
+  menuRowDesc: { fontSize: tokens.typography.size.xs, lineHeight: 16 },
+  menuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: tokens.color.border.subtle, marginLeft: 70 },
   timeBtn: {
     minWidth: 88,
     minHeight: 42,

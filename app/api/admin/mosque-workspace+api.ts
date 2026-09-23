@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'expo-router/server';
 import { fetchAllMosqueRows } from '../../../lib/api/admin/mosqueDirectory';
+import { requireCurrentAccountConsent } from '../../../lib/server/accountConsentAccess';
 
 type MosqueRow = {
   id: string;
@@ -16,6 +17,7 @@ type MosqueRow = {
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
   prayer_source?: string | null;
+  prayer_time_adjustments?: Record<string, number> | null;
   live_stream_enabled?: boolean | null;
   live_stream_provider?: string | null;
   live_stream_playback_url?: string | null;
@@ -25,6 +27,17 @@ type MosqueRow = {
   live_stream_stream_key?: string | null;
   live_stream_status_secret?: string | null;
   live_stream_listener_secret?: string | null;
+  description?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  postcode?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  website?: string | null;
+  management_info?: string | null;
+  services?: string[] | null;
+  prayers_not_offered?: string[] | null;
+  prayers_not_offered_reasons?: Record<string, string> | null;
   created_at?: string | null;
 };
 
@@ -93,6 +106,12 @@ export const GET: RequestHandler = async (request) => {
     return json({ error: 'Session is invalid or has expired.' }, 401);
   }
 
+  const consentAccess = await requireCurrentAccountConsent(
+    supabaseAdmin,
+    authData.user
+  );
+  if (!consentAccess.granted) return consentAccess.response;
+
   const { data: requesterProfile, error: requesterError } = await supabaseAdmin
     .from('users')
     .select('id, role')
@@ -105,7 +124,7 @@ export const GET: RequestHandler = async (request) => {
 
   let mosqueRes = await supabaseAdmin
     .from('mosques')
-    .select('id, name, city, country, time_zone, status, default_muezzin_user_id, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, prayer_source, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, created_at')
+    .select('id, name, city, country, time_zone, status, onboarding_status, default_muezzin_user_id, allow_multi_mosque_local_admins, lat, lng, prayer_calculation_method, prayer_school, prayer_source, prayer_time_adjustments, live_stream_enabled, live_stream_provider, live_stream_playback_url, live_stream_ingest_url, live_stream_mount_path, live_stream_username, live_stream_stream_key, live_stream_status_secret, live_stream_listener_secret, description, address_line1, address_line2, postcode, contact_phone, contact_email, website, management_info, services, prayers_not_offered, prayers_not_offered_reasons, created_at')
     .eq('id', mosqueId)
     .maybeSingle();
 

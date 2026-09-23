@@ -135,6 +135,8 @@ export const Modal: React.FC<{
 }> = ({ open, onClose, title, children }) => {
   const firstFocusRef = useRef<HTMLButtonElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -146,7 +148,7 @@ export const Modal: React.FC<{
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -171,7 +173,7 @@ export const Modal: React.FC<{
       window.removeEventListener('keydown', onKeyDown);
       prev?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

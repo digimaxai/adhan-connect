@@ -1,6 +1,5 @@
 import { supabase } from '../supabase';
 import { resolveApiUrls } from './apiBaseUrl';
-import { Platform } from 'react-native';
 
 export type AuthorizedLiveStreamAccess = {
   mosqueId: string;
@@ -23,8 +22,16 @@ type ListenerLocation = {
 
 const accessCache = new Map<string, CachedAccessEntry>();
 
-function cacheKey(mosqueId: string, streamId?: string | null) {
-  return `${mosqueId}:${streamId ?? ''}`;
+function cacheKey(
+  userId: string,
+  mosqueId: string,
+  streamId: string | null | undefined,
+  location: ListenerLocation
+) {
+  const locationKey = location
+    ? `${location.latitude}:${location.longitude}`
+    : 'no-location';
+  return `${userId}:${mosqueId}:${streamId ?? ''}:${locationKey}`;
 }
 
 function isAuthorizedLiveStreamAccess(value: unknown): value is AuthorizedLiveStreamAccess {
@@ -38,12 +45,15 @@ function isAuthorizedLiveStreamAccess(value: unknown): value is AuthorizedLiveSt
   );
 }
 
-async function getAccessToken() {
+async function getAccessSession() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError || !sessionData.session?.access_token) {
     throw new Error('Your session has expired. Refresh the app and sign in again.');
   }
-  return sessionData.session.access_token;
+  return {
+    accessToken: sessionData.session.access_token,
+    userId: sessionData.session.user.id,
+  };
 }
 
 export async function fetchAuthorizedLiveStreamPlayback(
@@ -51,7 +61,11 @@ export async function fetchAuthorizedLiveStreamPlayback(
   streamId?: string | null,
   location?: ListenerLocation
 ) {
-  const key = cacheKey(mosqueId, streamId);
+  // Authentication and the location-dependent cache key are checked before a
+  // cached playback grant is returned. This prevents a later user on the same
+  // device from inheriting another account's signed playback URL.
+  const { accessToken, userId } = await getAccessSession();
+  const key = cacheKey(userId, mosqueId, streamId, location ?? null);
   const cached = accessCache.get(key);
   if (cached && cached.expiresAtMs - Date.now() > 30_000) {
     return cached.payload;
@@ -62,26 +76,24 @@ export async function fetchAuthorizedLiveStreamPlayback(
     throw new Error('Could not resolve the live stream access endpoint.');
   }
 
-  const accessToken = await getAccessToken();
   let lastError: Error | null = null;
 
   for (const endpoint of endpoints) {
     try {
-      const url = new URL(endpoint);
-      url.searchParams.set('mosqueId', mosqueId);
-      if (streamId) {
-        url.searchParams.set('streamId', streamId);
-      }
-      if (location) {
-        url.searchParams.set('lat', String(location.latitude));
-        url.searchParams.set('lng', String(location.longitude));
-      }
-      url.searchParams.set('delivery', Platform.OS === 'web' ? 'redirect' : 'proxy');
-
-      const response = await fetch(url, {
+      const response = await fetch(endpoint, {
+        method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          mosqueId,
+          streamId: streamId ?? null,
+          // Keep the provider URL server-side on every platform. A redirect
+          // would reveal a reusable upstream URL outside the signed grant.
+          delivery: 'proxy',
+          location: location ?? null,
+        }),
       });
       const payload = await response.json().catch(() => null);
 

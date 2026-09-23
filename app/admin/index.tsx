@@ -51,6 +51,13 @@ const UsersActionIcon = () => (
   </svg>
 );
 
+const InboxActionIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="2.5" y="2.5" width="19" height="19" rx="3" stroke="#0d9488" strokeWidth="1.6" />
+    <path d="M2.5 14h5l2.5 3.5h4l2.5-3.5h5" stroke="#0d9488" strokeWidth="1.6" strokeLinejoin="round" />
+  </svg>
+);
+
 const AlertIcon = () => (
   <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
     <path d="M10 3L18.66 17.5H1.34L10 3z" stroke="#d97706" strokeWidth="1.6" strokeLinejoin="round" fill="#fef3c7" />
@@ -122,15 +129,16 @@ function AdminLanding() {
   const router = useRouter();
   const { isComfortable, isCompact, isPhone } = useAdminViewport();
 
-  const [mosques,         setMosques]         = useState<MosqueRow[]>([]);
-  const [userCount,       setUserCount]       = useState(0);
-  const [muezzinCount,    setMuezzinCount]    = useState(0);
-  const [localAdminCount, setLocalAdminCount] = useState(0);
-  const [liveStreams,     setLiveStreams]     = useState(0);
-  const [refreshing,      setRefreshing]      = useState(false);
-  const [refreshError,    setRefreshError]    = useState<string | null>(null);
-  const [lastUpdatedAt,   setLastUpdatedAt]   = useState<number | null>(null);
-  const [loading,        setLoading]         = useState(true);
+  const [mosques,          setMosques]          = useState<MosqueRow[]>([]);
+  const [userCount,        setUserCount]        = useState(0);
+  const [muezzinCount,     setMuezzinCount]     = useState(0);
+  const [localAdminCount,  setLocalAdminCount]  = useState(0);
+  const [liveStreams,      setLiveStreams]      = useState(0);
+  const [newRequestCount,  setNewRequestCount]  = useState(0);
+  const [refreshing,       setRefreshing]       = useState(false);
+  const [refreshError,     setRefreshError]     = useState<string | null>(null);
+  const [lastUpdatedAt,    setLastUpdatedAt]    = useState<number | null>(null);
+  const [loading,         setLoading]          = useState(true);
 
   // ── Data fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -144,7 +152,7 @@ function AdminLanding() {
       else setRefreshing(true);
 
       try {
-        const [mosquesRes, usersRes, muezzinsRes, adminsRes, streamsRes] = await Promise.all([
+        const [mosquesRes, usersRes, muezzinsRes, adminsRes, streamsRes, requestsRes] = await Promise.all([
           fetchAllMosqueRows<MosqueRow>(supabase, 'id, name, city, country, status, created_at', {
             orderBy: 'created_at',
             ascending: false,
@@ -153,6 +161,7 @@ function AdminLanding() {
           supabase.from('muezzins').select('id', { count: 'exact', head: true }).eq('is_active', true),
           supabase.from('mosque_admins').select('id', { count: 'exact', head: true }),
           supabase.from('streams').select('id', { count: 'exact', head: true }).eq('is_live', true),
+          supabase.from('mosque_add_requests').select('id', { count: 'exact', head: true }).eq('status', 'new'),
         ]);
 
         if (cancelled) return;
@@ -161,8 +170,9 @@ function AdminLanding() {
         if (!muezzinsRes.error) setMuezzinCount(muezzinsRes.count ?? 0);
         if (!adminsRes.error)   setLocalAdminCount(adminsRes.count ?? 0);
         if (!streamsRes.error)  setLiveStreams(streamsRes.count ?? 0);
+        if (!requestsRes.error) setNewRequestCount(requestsRes.count ?? 0);
 
-        const errorCount = [mosquesRes, usersRes, muezzinsRes, adminsRes, streamsRes].filter((res) => res.error).length;
+        const errorCount = [mosquesRes, usersRes, muezzinsRes, adminsRes, streamsRes, requestsRes].filter((res) => res.error).length;
         setRefreshError(
           errorCount === 0
             ? null
@@ -249,6 +259,13 @@ function AdminLanding() {
       keywords: ['users', 'permissions', 'roles'],
       onSelect: () => router.push('/admin/users' as any),
     },
+    {
+      key: 'dashboard-mosque-requests',
+      label: 'Review mosque requests',
+      description: 'Self-registrations, invites, and add-requests from listeners and mosque staff.',
+      keywords: ['requests', 'mosque', 'onboarding', 'invite', 'new', 'inbox'],
+      onSelect: () => router.push('/admin/mosque-requests' as any),
+    },
   ];
 
   const twoCol = isComfortable || isCompact || isPhone;
@@ -282,6 +299,31 @@ function AdminLanding() {
             </div>
           </div>
           <Link href="/admin/mosques?filter=pending" style={styles.attentionCta as any}>
+            Review now →
+          </Link>
+        </div>
+      ) : null}
+
+      {newRequestCount > 0 ? (
+        <div style={{ ...styles.attentionBanner, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }}>
+          <div style={{ ...styles.attentionAccent, backgroundColor: '#3b82f6' }} />
+          <div style={styles.attentionLeft}>
+            <div style={{ ...styles.attentionIconWrap, backgroundColor: '#dbeafe' }}>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <rect x="2" y="2" width="16" height="16" rx="3" stroke="#2563eb" strokeWidth="1.6" />
+                <path d="M2 10h4l2.5 3.5h3L14 10h4" stroke="#2563eb" strokeWidth="1.6" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div style={styles.attentionBody}>
+              <div style={{ ...styles.attentionTitle, color: '#1e3a5f' }}>
+                {newRequestCount} new mosque request{newRequestCount !== 1 ? 's' : ''} to review
+              </div>
+              <div style={styles.attentionSub}>
+                Self-registrations, listener invites, and add-requests awaiting your response.
+              </div>
+            </div>
+          </div>
+          <Link href="/admin/mosque-requests" style={{ ...styles.attentionCta as any, color: '#2563eb' }}>
             Review now →
           </Link>
         </div>
@@ -336,6 +378,13 @@ function AdminLanding() {
           detail="Accounts with active platform access"
           href="/admin/users"
           tone="info"
+        />
+        <AdminMetricCard
+          label="New requests"
+          value={loading ? '—' : newRequestCount}
+          detail="Self-registrations, invites and add-requests"
+          href="/admin/mosque-requests"
+          tone={newRequestCount > 0 ? 'warning' : 'success'}
         />
       </div>
 
@@ -455,6 +504,18 @@ function AdminLanding() {
 // ─── Static data ──────────────────────────────────────────────────────────────
 
 const quickActions = [
+  {
+    title: 'Mosque Requests',
+    icon: <InboxActionIcon />,
+    description: 'Review self-registrations from mosque staff, listener invites, and add-requests for new mosques.',
+    href: '/admin/mosque-requests',
+  },
+  {
+    title: 'Mosque Assistant',
+    icon: <MosqueIcon />,
+    description: 'Discover official websites, review mosque information, and convert prayer timetables.',
+    href: '/admin/mosque-assistant',
+  },
   {
     title: 'Mosques',
     icon: <MosqueIcon />,

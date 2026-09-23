@@ -1,8 +1,10 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { BackButton } from '@/components/ui/back-button';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -15,8 +17,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppText } from '@/components/ui/app-text';
+import { ContentAttachmentsEditor } from '@/components/admin/ContentAttachmentsEditor';
 import { tokens } from '@/theme/tokens';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
+import { httpsUrl } from '@/lib/serviceListings';
 import { supabase } from '@/lib/supabase';
 
 type Status = 'active' | 'paused' | 'ended';
@@ -39,11 +43,6 @@ function fmtDate(d: Date | null) {
   return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function fmtCents(cents: number | null) {
-  if (cents == null) return '';
-  return String(Math.round(cents / 100));
-}
-
 export default function AdminCampaignForm() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -52,8 +51,7 @@ export default function AdminCampaignForm() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [goalInput, setGoalInput] = useState('');
-  const [raisedCents, setRaisedCents] = useState<number | null>(null);
+  const [donationUrl, setDonationUrl] = useState('');
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [status, setStatus] = useState<Status>('active');
 
@@ -74,7 +72,7 @@ export default function AdminCampaignForm() {
     try {
       const { data, error: e } = await supabase
         .from('campaigns')
-        .select('id,mosque_id,title,description,goal_cents,raised_cents,end_at,status')
+        .select('id,mosque_id,title,description,donation_url,end_at,status')
         .eq('id', id)
         .eq('mosque_id', selectedMosque.mosqueId)
         .maybeSingle();
@@ -84,8 +82,7 @@ export default function AdminCampaignForm() {
       } else {
         setTitle(data.title ?? '');
         setDescription(data.description ?? '');
-        setGoalInput(fmtCents(data.goal_cents));
-        setRaisedCents(data.raised_cents ?? null);
+        setDonationUrl(data.donation_url ?? '');
         setEndDate(data.end_at ? new Date(data.end_at) : null);
         setStatus((data.status as Status) ?? 'active');
       }
@@ -101,20 +98,16 @@ export default function AdminCampaignForm() {
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
     if (!selectedMosque) { setError('No mosque selected.'); return; }
-    const goalCents = goalInput.trim()
-      ? Math.round(parseFloat(goalInput.replace(/[^0-9.]/g, '')) * 100)
-      : null;
-    if (goalInput.trim() && (!goalCents || isNaN(goalCents) || goalCents <= 0)) {
-      setError('Enter a valid goal amount (e.g. 5000).');
-      return;
-    }
+    const link = donationUrl.trim() ? httpsUrl(donationUrl) : null;
+    if (donationUrl.trim() && !link) { setError('Enter a valid HTTPS donation link.'); return; }
+    if (status === 'active' && !link) { setError('Add the mosque’s donation link before making this appeal active.'); return; }
     setSaving(true);
     setError(null);
     try {
       const payload: Record<string, any> = {
         title: title.trim(),
         description: description.trim() || null,
-        goal_cents: goalCents,
+        donation_url: link,
         end_at: endDate ? endDate.toISOString() : null,
         status,
       };
@@ -177,12 +170,6 @@ export default function AdminCampaignForm() {
     );
   };
 
-  const progressPct = (() => {
-    const goal = goalInput.trim() ? parseFloat(goalInput.replace(/[^0-9.]/g, '')) * 100 : null;
-    if (!goal || goal <= 0 || raisedCents == null) return null;
-    return Math.min(100, Math.round((raisedCents / goal) * 100));
-  })();
-
   if (loading) {
     return (
       <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
@@ -195,10 +182,8 @@ export default function AdminCampaignForm() {
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.navBar}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-          </Pressable>
-          <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New Campaign' : 'Edit Campaign'}</AppText>
+          <BackButton fallbackHref="/(admin)/events" />
+          <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New appeal' : 'Edit appeal'}</AppText>
           <View style={styles.navRight} />
         </View>
 
@@ -212,13 +197,13 @@ export default function AdminCampaignForm() {
 
           {/* Campaign name */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>CAMPAIGN NAME</AppText>
+            <AppText variant="caption" style={styles.sectionLabel}>APPEAL NAME</AppText>
             <View style={styles.fieldCard}>
               <TextInput
                 style={styles.input}
                 value={title}
                 onChangeText={setTitle}
-                placeholder="e.g. Masjid Roof Repair Fund"
+                placeholder="e.g. New community centre appeal"
                 placeholderTextColor={tokens.color.text.muted}
                 maxLength={120}
                 returnKeyType="next"
@@ -228,68 +213,39 @@ export default function AdminCampaignForm() {
 
           {/* Description */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>DESCRIPTION</AppText>
+            <AppText variant="caption" style={styles.sectionLabel}>WHY IT MATTERS</AppText>
             <View style={styles.fieldCard}>
               <TextInput
                 style={[styles.input, styles.multiline]}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Explain what the funds will be used for..."
+                placeholder="Tell followers what the money is for and why it matters now."
                 placeholderTextColor={tokens.color.text.muted}
                 multiline
-                numberOfLines={4}
-                maxLength={1000}
+                numberOfLines={6}
+                maxLength={4000}
                 textAlignVertical="top"
               />
             </View>
+            <AppText variant="caption" color={tokens.color.text.muted} style={styles.charCount}>
+              {description.length} / 4000
+            </AppText>
           </View>
 
-          {/* Goal */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>FUNDRAISING GOAL</AppText>
-            <View style={styles.fieldCard}>
-              <View style={styles.row}>
-                <View style={styles.currencyBadge}>
-                  <AppText style={styles.currencySymbol}>£</AppText>
-                </View>
-                <TextInput
-                  style={[styles.input, { flex: 1, paddingLeft: 0 }]}
-                  value={goalInput}
-                  onChangeText={setGoalInput}
-                  placeholder="0"
-                  placeholderTextColor={tokens.color.text.muted}
-                  keyboardType="decimal-pad"
-                  maxLength={12}
-                  returnKeyType="next"
-                />
-              </View>
-            </View>
+            <AppText variant="caption" style={styles.sectionLabel}>DONATION PAGE LINK</AppText>
+            <TextInput accessibilityLabel="Mosque donation link" style={styles.input} value={donationUrl} onChangeText={setDonationUrl} placeholder="https://…" autoCapitalize="none" keyboardType="url" maxLength={2048} />
+            <AppText variant="caption">Followers donate on this page (Stripe, JustGiving, PayPal, your website…). Amounts, receipts and Gift Aid stay with your provider — no money passes through the app.</AppText>
+            {httpsUrl(donationUrl) ? (
+              <Pressable onPress={() => Linking.openURL(httpsUrl(donationUrl)!).catch(() => undefined)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 }}>
+                <Ionicons name="open-outline" size={14} color="#155F4E" />
+                <AppText style={{ color: '#155F4E', fontWeight: '800' }}>Test link · opens {new URL(httpsUrl(donationUrl)!).hostname}</AppText>
+              </Pressable>
+            ) : donationUrl.trim() ? (
+              <AppText variant="caption" color={tokens.color.status.danger}>Enter a full https:// link.</AppText>
+            ) : null}
+            {!isNew && <Pressable onPress={() => router.push({ pathname: '/(admin)/campaign-preview/[id]', params: { id } } as any)}><AppText style={{ color: '#155F4E', paddingVertical: 12 }}>Preview how followers see it →</AppText></Pressable>}
           </View>
-
-          {/* Progress — edit mode only */}
-          {!isNew && raisedCents != null && (
-            <View style={styles.section}>
-              <AppText variant="caption" style={styles.sectionLabel}>CURRENT PROGRESS</AppText>
-              <View style={styles.progressCard}>
-                <View style={styles.progressRow}>
-                  <AppText variant="body" style={styles.progressRaised}>
-                    £{(raisedCents / 100).toLocaleString('en-GB')} raised
-                  </AppText>
-                  {progressPct != null && (
-                    <AppText variant="caption" style={styles.progressPct}>{progressPct}%</AppText>
-                  )}
-                </View>
-                {progressPct != null && (
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${progressPct}%` as any }]} />
-                  </View>
-                )}
-                <AppText variant="caption" color={tokens.color.text.muted}>
-                  Raised amount is updated from donation records.
-                </AppText>
-              </View>
-            </View>
-          )}
 
           {/* End date */}
           <View style={styles.section}>
@@ -316,7 +272,7 @@ export default function AdminCampaignForm() {
 
           {Platform.OS === 'ios' && showEndPicker && (
             <View style={styles.inlinePicker}>
-              <DateTimePicker
+              <DateTimePicker themeVariant="light"
                 value={endDate ?? new Date()}
                 mode="date"
                 display="spinner"
@@ -328,7 +284,7 @@ export default function AdminCampaignForm() {
             </View>
           )}
           {Platform.OS === 'android' && showEndPicker && (
-            <DateTimePicker
+            <DateTimePicker themeVariant="light"
               value={endDate ?? new Date()}
               mode="date"
               onChange={(_, d) => { setShowEndPicker(false); if (d) setEndDate(d); }}
@@ -362,6 +318,22 @@ export default function AdminCampaignForm() {
             </View>
           </View>
 
+          {/* Cover image & attachments — kept last so the core fields above stay quick to reach */}
+          {!isNew && selectedMosque ? (
+            <ContentAttachmentsEditor mosqueId={selectedMosque.mosqueId} contentType="campaign" contentId={id!} />
+          ) : (
+            <View style={styles.section}>
+              <AppText variant="caption" style={styles.sectionLabel}>COVER IMAGE</AppText>
+              <View style={styles.fieldCard}>
+                <View style={styles.row}>
+                  <AppText variant="body" color={tokens.color.text.muted} style={styles.rowLabel}>
+                    Save the campaign to add a cover image and attachments.
+                  </AppText>
+                </View>
+              </View>
+            </View>
+          )}
+
           {/* Save */}
           <Pressable
             onPress={handleSave}
@@ -370,7 +342,7 @@ export default function AdminCampaignForm() {
           >
             {saving
               ? <ActivityIndicator color="#fff" />
-              : <AppText style={styles.saveBtnText}>{isNew ? 'Launch Campaign' : 'Save Changes'}</AppText>
+              : <AppText style={styles.saveBtnText}>{isNew ? 'Publish appeal' : 'Save changes'}</AppText>
             }
           </Pressable>
 
@@ -449,8 +421,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontWeight: tokens.typography.weight.medium,
   },
-  multiline: { minHeight: 96, paddingTop: 14 },
+  multiline: { minHeight: 140, paddingTop: 14 },
   placeholder: { color: tokens.color.text.muted },
+  charCount: { textAlign: 'right', paddingRight: 4 },
 
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   rowLabel: { flex: 1, fontSize: 15, fontWeight: tokens.typography.weight.medium, color: tokens.color.text.primary },

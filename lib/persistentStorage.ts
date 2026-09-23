@@ -8,6 +8,7 @@ type StorageLike = {
 
 let cachedFileStore: Record<string, string> | null = null;
 let fileStoreLoadPromise: Promise<Record<string, string>> | null = null;
+let fileStoreMutationQueue: Promise<void> = Promise.resolve();
 
 function storageFilePath() {
   return FileSystem.documentDirectory
@@ -51,6 +52,20 @@ async function writeFileStore(data: Record<string, string>) {
   await FileSystem.writeAsStringAsync(storageFile, JSON.stringify(data));
 }
 
+function mutateFileStore(mutation: (data: Record<string, string>) => void) {
+  const operation = fileStoreMutationQueue.then(async () => {
+    const current = await readFileStore();
+    const next = { ...current };
+    mutation(next);
+    await writeFileStore(next);
+  });
+
+  // A failed filesystem write must reject its own caller, but must not poison
+  // every later workspace/preference mutation in the session.
+  fileStoreMutationQueue = operation.catch(() => undefined);
+  return operation;
+}
+
 function createFileStorage(): StorageLike {
   return {
     async getItem(key) {
@@ -58,14 +73,14 @@ function createFileStorage(): StorageLike {
       return data[key] ?? null;
     },
     async setItem(key, value) {
-      const data = await readFileStore();
-      data[key] = value;
-      await writeFileStore(data);
+      await mutateFileStore((data) => {
+        data[key] = value;
+      });
     },
     async removeItem(key) {
-      const data = await readFileStore();
-      delete data[key];
-      await writeFileStore(data);
+      await mutateFileStore((data) => {
+        delete data[key];
+      });
     },
   };
 }

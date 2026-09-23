@@ -3,6 +3,7 @@ import type { RequestHandler } from 'expo-router/server';
 import { computeLiveKitRoomName, createPublisherToken, getLiveKitWssUrl, isLiveKitConfigured } from '../../../lib/server/livekitRoom';
 import { resolveMuezzinMosquesForUser } from '../../../lib/server/muezzinAccess';
 import { isFreshLiveStream } from '../../../lib/liveStreamFreshness';
+import { requireCurrentAccountConsent } from '../../../lib/server/accountConsentAccess';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -35,6 +36,13 @@ export const POST: RequestHandler = async (request) => {
   if (authError || !authData.user) {
     return json({ error: 'Session is invalid or has expired.' }, 401);
   }
+
+  const consentAccess = await requireCurrentAccountConsent(
+    supabaseAdmin,
+    authData.user
+  );
+  if (!consentAccess.granted) return consentAccess.response;
+
   const userId = authData.user.id;
 
   let body: { mosqueId?: string; prayer?: string; scheduledAt?: string };

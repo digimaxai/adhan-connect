@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { summarizeMosqueLiveBroadcastConfig } from '../liveStreamProviders';
+import { isLiveKitConfigured } from './livekitRoom';
 import type {
   BroadcastOnboardingStage,
   BroadcastReadinessAuditEvent,
@@ -98,7 +99,7 @@ function isTransactionalForMosque(modeValue: string | undefined, idsValue: strin
   if (mode !== 'allowlist') return false;
   return (idsValue ?? '')
     .split(',')
-    .map((value) => value.trim().toLowerCase())
+    .map((value: string) => value.trim().toLowerCase())
     .filter(Boolean)
     .includes(mosqueId.toLowerCase());
 }
@@ -213,11 +214,7 @@ export async function loadBroadcastReadiness(
   const profileReady = localDate.validTimeZone;
   const liveKitServerReady =
     config.provider !== 'livekit' ||
-    !!(
-      process.env.LIVEKIT_URL?.trim() &&
-      process.env.LIVEKIT_API_KEY?.trim() &&
-      process.env.LIVEKIT_API_SECRET?.trim()
-    );
+    isLiveKitConfigured();
   const prayerSource = (mosque.prayer_source ?? 'aladhan').trim().toLowerCase();
   const automaticPrayerSourceReady =
     prayerSource === 'elm' || (prayerSource === 'aladhan' && mosque.lat != null && mosque.lng != null);

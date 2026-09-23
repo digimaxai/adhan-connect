@@ -5,15 +5,10 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../lib/auth';
 import {
-  crowdState,
   formatJumuahTime,
   isFridayToday,
-  JumuahIntent,
   JumuahSlot,
-  JumuahSummary,
   nextFridayDate,
-  summaryFromRows,
-  intentsFromRows,
 } from '../../../lib/jumuah';
 import { supabase } from '../../../lib/supabase';
 
@@ -44,30 +39,6 @@ function fridayDisplayLabel() {
   });
 }
 
-function applyIntentDeltas(
-  summary: Record<string, JumuahSummary>,
-  before: Record<string, number>,
-  after: Record<string, number>
-) {
-  const next = { ...summary };
-  const changedSlotIds = new Set([...Object.keys(before), ...Object.keys(after)]);
-
-  changedSlotIds.forEach((slotId) => {
-    const oldSize = before[slotId] ?? 0;
-    const newSize = after[slotId] ?? 0;
-    if (oldSize === newSize) return;
-
-    const current = next[slotId] ?? { slot_id: slotId, attendee_count: 0, household_count: 0 };
-    next[slotId] = {
-      ...current,
-      attendee_count: Math.max(0, (current.attendee_count ?? 0) + newSize - oldSize),
-      household_count: Math.max(0, (current.household_count ?? 0) + (newSize ? 1 : 0) - (oldSize ? 1 : 0)),
-    };
-  });
-
-  return next;
-}
-
 export default function JumuahDetailScreen() {
   const { id, name: nameParam } = useLocalSearchParams<{ id: string; name?: string }>();
   const router = useRouter();
@@ -83,8 +54,8 @@ export default function JumuahDetailScreen() {
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [slots, setSlots] = useState<JumuahSlot[]>([]);
   const [structuredSlotCount, setStructuredSlotCount] = useState(0);
-  const [summary, setSummary] = useState<Record<string, JumuahSummary>>({});
-  const [intents, setIntents] = useState<Record<string, number>>({});
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [selectedPartySize, setSelectedPartySize] = useState(0);
   const [loading, setLoading] = useState(true);
   const [savingSlotId, setSavingSlotId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,38 +104,26 @@ export default function JumuahDetailScreen() {
         const structuredSlots = Array.isArray(slotRows) ? (slotRows as JumuahSlot[]) : [];
         const displaySlots = structuredSlots;
 
-        let summaryMap: Record<string, JumuahSummary> = {};
-        let intentMap: Record<string, number> = {};
+        let mySlotId: string | null = null;
+        let myPartySize = 0;
 
-        if (structuredSlots.length) {
-          const slotIds = structuredSlots.map((slot) => slot.id);
+        if (structuredSlots.length && userId) {
           const fridayDate = nextFridayDate();
-          const [summaryRes, intentRes] = await Promise.all([
-            supabase
-              .from('jumuah_slot_attendance_summary')
-              .select('slot_id,attendee_count,household_count')
-              .eq('friday_date', fridayDate)
-              .in('slot_id', slotIds),
-            userId
-              ? supabase
-                  .from('jumuah_attendance_intents')
-                  .select('slot_id,party_size')
-                  .eq('mosque_id', base.id)
-                  .eq('user_id', userId)
-                  .eq('friday_date', fridayDate)
-                  .in('slot_id', slotIds)
-              : Promise.resolve({ data: [] as JumuahIntent[] }),
-          ]);
-          summaryMap = summaryFromRows(summaryRes.data as JumuahSummary[]);
-          intentMap = intentsFromRows(intentRes.data as JumuahIntent[]);
+          const { data: mine, error: mineError } = await supabase.rpc('get_jumuah_attendance', {
+            p_mosque_id: base.id,
+            p_friday_date: fridayDate,
+          });
+          if (mineError) throw mineError;
+          mySlotId = (mine as { slot_id: string | null; party_size: number } | null)?.slot_id ?? null;
+          myPartySize = (mine as { slot_id: string | null; party_size: number } | null)?.party_size ?? 0;
         }
 
         if (!cancelled) {
           setMosque(base);
           setSlots(displaySlots);
           setStructuredSlotCount(structuredSlots.length);
-          setSummary(summaryMap);
-          setIntents(intentMap);
+          setSelectedSlotId(mySlotId);
+          setSelectedPartySize(myPartySize);
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -172,8 +131,8 @@ export default function JumuahDetailScreen() {
           setMosque(null);
           setSlots([]);
           setStructuredSlotCount(0);
-          setSummary({});
-          setIntents({});
+          setSelectedSlotId(null);
+          setSelectedPartySize(0);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -197,53 +156,25 @@ export default function JumuahDetailScreen() {
       return;
     }
 
-    const before = intents;
-    const previousForSlot = before[slot.id] ?? 0;
-    const currentCount = summary[slot.id]?.attendee_count ?? 0;
-
-    if (partySize && slot.capacity && currentCount - previousForSlot + partySize > slot.capacity) {
-      Alert.alert('This time is full', 'Please choose another Jumuah time if one is available.');
-      return;
-    }
-
-    const after: Record<string, number> = {};
-    if (partySize) after[slot.id] = partySize;
-    else {
-      Object.entries(before).forEach(([slotId, size]) => {
-        if (slotId !== slot.id) after[slotId] = size;
-      });
-    }
+    const beforeSlotId = selectedSlotId;
+    const beforePartySize = selectedPartySize;
 
     setSavingSlotId(slot.id);
-    setIntents(after);
-    setSummary((prev) => applyIntentDeltas(prev, before, after));
+    setSelectedSlotId(partySize ? slot.id : null);
+    setSelectedPartySize(partySize ?? 0);
 
     try {
       const fridayDate = nextFridayDate();
-      if (partySize) {
-        const { error: upsertError } = await supabase.from('jumuah_attendance_intents').upsert(
-          {
-            mosque_id: mosque.id,
-            slot_id: slot.id,
-            user_id: userId,
-            friday_date: fridayDate,
-            party_size: partySize,
-          },
-          { onConflict: 'mosque_id,user_id,friday_date' }
-        );
-        if (upsertError) throw upsertError;
-      } else {
-        const { error: deleteError } = await supabase
-          .from('jumuah_attendance_intents')
-          .delete()
-          .eq('slot_id', slot.id)
-          .eq('user_id', userId)
-          .eq('friday_date', fridayDate);
-        if (deleteError) throw deleteError;
-      }
+      const { error: rpcError } = await supabase.rpc('set_jumuah_attendance', {
+        p_mosque_id: mosque.id,
+        p_slot_id: slot.id,
+        p_friday_date: fridayDate,
+        p_party_size: partySize ?? 0,
+      });
+      if (rpcError) throw rpcError;
     } catch (err: any) {
-      setIntents(before);
-      setSummary((prev) => applyIntentDeltas(prev, after, before));
+      setSelectedSlotId(beforeSlotId);
+      setSelectedPartySize(beforePartySize);
       Alert.alert('Could not save your plan', err?.message ?? 'Please try again.');
     } finally {
       setSavingSlotId(null);
@@ -297,11 +228,7 @@ export default function JumuahDetailScreen() {
 
                 {slots.map((slot, index) => {
                   const isLegacy = slot.id.startsWith('legacy-');
-                  const count = summary[slot.id]?.attendee_count ?? 0;
-                  const selectedParty = intents[slot.id] ?? 0;
-                  const crowd = crowdState(count, slot.capacity);
-                  const remaining = slot.capacity ? Math.max(0, slot.capacity - count) : null;
-                  const progress = slot.capacity ? Math.min(100, Math.round((count / slot.capacity) * 100)) : 0;
+                  const selectedParty = selectedSlotId === slot.id ? selectedPartySize : 0;
 
                   return (
                     <View key={slot.id} style={[styles.slotRow, index === slots.length - 1 && styles.lastSlotRow]}>
@@ -314,24 +241,6 @@ export default function JumuahDetailScreen() {
                         <View style={styles.slotBody}>
                           <View style={styles.slotTitleRow}>
                             <Text style={styles.slotTitle} numberOfLines={1}>{slot.label ?? "Jumu'ah"}</Text>
-                            {!isLegacy ? (
-                              <View
-                                style={[
-                                  styles.crowdPill,
-                                  crowd.tone === 'danger'
-                                    ? styles.crowdDanger
-                                    : crowd.tone === 'warning'
-                                    ? styles.crowdWarning
-                                    : crowd.tone === 'busy'
-                                    ? styles.crowdBusy
-                                    : crowd.tone === 'calm'
-                                    ? styles.crowdCalm
-                                    : styles.crowdNeutral,
-                                ]}
-                              >
-                                <Text style={styles.crowdText}>{crowd.label}</Text>
-                              </View>
-                            ) : null}
                           </View>
 
                           {[slot.venue, slot.language, slot.imam].filter(Boolean).length ? (
@@ -341,29 +250,9 @@ export default function JumuahDetailScreen() {
 
                           {!isLegacy ? (
                             <>
-                              <View style={styles.capacityRow}>
-                                <Text style={styles.capacityText}>
-                                  {count} planning{slot.capacity ? ` / ${slot.capacity} capacity` : ''}
-                                </Text>
-                                {remaining !== null ? <Text style={styles.capacityText}>{remaining} spaces left</Text> : null}
-                              </View>
-                              {slot.capacity ? (
-                                <View style={styles.progressTrack}>
-                                  <View
-                                    style={[
-                                      styles.progressFill,
-                                      crowd.tone === 'danger' && styles.progressDanger,
-                                      { width: `${progress}%` },
-                                    ]}
-                                  />
-                                </View>
-                              ) : null}
-
                               <View style={styles.partyRow}>
                                 {PARTY_SIZES.map((size) => {
-                                  const projectedCount = count - selectedParty + size;
-                                  const overCapacity = !!slot.capacity && projectedCount > slot.capacity && selectedParty !== size;
-                                  const disabled = savingSlotId === slot.id || overCapacity;
+                                  const disabled = savingSlotId === slot.id;
                                   return (
                                     <Pressable
                                       key={size}
@@ -409,7 +298,7 @@ export default function JumuahDetailScreen() {
             {hasStructuredSlots ? (
               <View style={styles.infoBox}>
                 <Ionicons name="information-circle-outline" size={18} color="#0369A1" />
-                <Text style={styles.infoText}>This helps the mosque estimate crowding. It does not reserve a seat.</Text>
+                <Text style={styles.infoText}>This helps the mosque plan for the week. It does not reserve a seat.</Text>
               </View>
             ) : null}
           </>
@@ -467,18 +356,6 @@ const styles = StyleSheet.create({
   slotTitle: { color: '#0F172A', fontSize: 15, fontWeight: '900', flex: 1 },
   meta: { color: '#475569', fontSize: 12 },
   notes: { color: '#475569', fontSize: 12, lineHeight: 17 },
-  crowdPill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
-  crowdText: { color: '#0F172A', fontSize: 11, fontWeight: '900' },
-  crowdNeutral: { backgroundColor: '#F1F5F9' },
-  crowdCalm: { backgroundColor: '#DCFCE7' },
-  crowdBusy: { backgroundColor: '#FEF3C7' },
-  crowdWarning: { backgroundColor: '#FED7AA' },
-  crowdDanger: { backgroundColor: '#FECACA' },
-  capacityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  capacityText: { color: '#64748B', fontSize: 12, fontWeight: '700' },
-  progressTrack: { height: 7, borderRadius: 999, backgroundColor: '#E2E8F0', overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 999, backgroundColor: '#0EA5E9' },
-  progressDanger: { backgroundColor: '#DC2626' },
   partyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   partyChip: {
     minWidth: 48,

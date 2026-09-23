@@ -1,4 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { BackButton } from '@/components/ui/back-button';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -16,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppText } from '@/components/ui/app-text';
+import { ContentAttachmentsEditor } from '@/components/admin/ContentAttachmentsEditor';
 import { tokens } from '@/theme/tokens';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { supabase } from '@/lib/supabase';
@@ -98,8 +100,8 @@ export default function AdminEventForm() {
     if (!title.trim()) { setError('Title is required.'); return; }
     if (!selectedMosque) { setError('No mosque selected.'); return; }
     if (!dateTime) { setError('Date and time are required.'); return; }
-    const capacityValue = capacity.trim() ? parseInt(capacity.trim(), 10) : null;
-    if (capacityValue != null && (!Number.isFinite(capacityValue) || capacityValue <= 0)) {
+    const capacityValue = capacity.trim() ? Number(capacity.trim()) : null;
+    if (capacityValue != null && (!Number.isSafeInteger(capacityValue) || capacityValue <= 0)) {
       setError('Capacity must be a whole number.');
       return;
     }
@@ -205,9 +207,7 @@ export default function AdminEventForm() {
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.navBar}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-          </Pressable>
+          <BackButton fallbackHref="/(admin)/events" />
           <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New Event' : 'Edit Event'}</AppText>
           <View style={styles.navRight} />
         </View>
@@ -247,11 +247,14 @@ export default function AdminEventForm() {
                 placeholder="Add details about the event..."
                 placeholderTextColor={tokens.color.text.muted}
                 multiline
-                numberOfLines={4}
-                maxLength={1000}
+                numberOfLines={6}
+                maxLength={4000}
                 textAlignVertical="top"
               />
             </View>
+            <AppText variant="caption" color={tokens.color.text.muted} style={styles.charCount}>
+              {description.length} / 4000
+            </AppText>
           </View>
 
           {/* Date & Time */}
@@ -288,7 +291,7 @@ export default function AdminEventForm() {
 
           {Platform.OS === 'ios' && showDatePicker && (
             <View style={styles.inlinePicker}>
-              <DateTimePicker
+              <DateTimePicker themeVariant="light"
                 value={dateTime ?? new Date()}
                 mode={pickerMode}
                 display="spinner"
@@ -300,10 +303,10 @@ export default function AdminEventForm() {
             </View>
           )}
           {Platform.OS === 'android' && showDatePicker && (
-            <DateTimePicker value={dateTime ?? new Date()} mode="date" onChange={onPickerChange} />
+            <DateTimePicker themeVariant="light" value={dateTime ?? new Date()} mode="date" onChange={onPickerChange} />
           )}
           {Platform.OS === 'android' && showTimePicker && (
-            <DateTimePicker value={dateTime ?? new Date()} mode="time" onChange={onPickerChange} />
+            <DateTimePicker themeVariant="light" value={dateTime ?? new Date()} mode="time" onChange={onPickerChange} />
           )}
 
           {/* Location & Capacity */}
@@ -380,6 +383,22 @@ export default function AdminEventForm() {
               })}
             </View>
           </View>
+
+          {/* Cover image & attachments — kept last so the core fields above stay quick to reach */}
+          {!isNew && selectedMosque ? (
+            <ContentAttachmentsEditor mosqueId={selectedMosque.mosqueId} contentType="event" contentId={id!} />
+          ) : (
+            <View style={styles.section}>
+              <AppText variant="caption" style={styles.sectionLabel}>COVER IMAGE</AppText>
+              <View style={styles.fieldCard}>
+                <View style={styles.row}>
+                  <AppText variant="body" color={tokens.color.text.muted} style={styles.rowLabel}>
+                    Save the event to add a cover image and attachments.
+                  </AppText>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Save */}
           <Pressable
@@ -468,9 +487,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontWeight: tokens.typography.weight.medium,
   },
-  multiline: { minHeight: 96, paddingTop: 14 },
+  multiline: { minHeight: 140, paddingTop: 14 },
   rowInput: { flex: 1, paddingLeft: 10, paddingRight: 16, paddingVertical: 14 },
   placeholder: { color: tokens.color.text.muted },
+  charCount: { textAlign: 'right', paddingRight: 4 },
 
   row: {
     flexDirection: 'row',

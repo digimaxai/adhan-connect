@@ -1,1 +1,1 @@
-export { default } from '../../campaign/[id]';
+export { default } from '../../../screens/user/campaign/[id]';

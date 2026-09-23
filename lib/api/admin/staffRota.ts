@@ -1,6 +1,5 @@
 import { PrayerName } from '../../adhans';
-import { normalizePrayerTimes } from '../prayerTimesUnified';
-import { getPrayerTimesByDate } from './prayerTimes';
+import { getDailyPrayerTimes } from '../prayerTimesUnified';
 import { supabase } from '../../supabase';
 import { insertAppNotifications } from '../appNotifications';
 import { resolveApiUrl, supportsServerApi } from '../apiBaseUrl';
@@ -385,8 +384,11 @@ async function saveStaffRotaForDateViaServer(
 
 async function loadPrayerTimesSlotMap(mosqueId: string, date: Date) {
   try {
-    const row = await getPrayerTimesByDate(mosqueId, formatLocalDate(date));
-    const normalized = normalizePrayerTimes(row as any);
+    // getDailyPrayerTimes resolves iqama (mosque_iqamah_schedules, then ELM
+    // jamat) for any prayer whose canonical prayer_times row has it null,
+    // instead of the raw row's fields only — so rota rows seed with the
+    // same resolved iqama the listener/admin "Published times" view shows.
+    const normalized = await getDailyPrayerTimes(mosqueId, date);
     if (!normalized) return null;
     const map: StaffRotaForDay = {};
     PRAYERS.forEach((p) => {

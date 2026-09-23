@@ -58,6 +58,12 @@ const USER_TABLE_COLUMNS = [
   { key: 'actions', label: '', width: '80px' },
 ];
 
+function logAdminAction(details: Record<string, unknown>) {
+  if (__DEV__) {
+    console.log('[ADMIN_ACTION]', details);
+  }
+}
+
 function normalizeDisplayedGlobalRole(role: UserRole): DisplayGlobalRole {
   return role === 'main_admin' ? 'main_admin' : 'user';
 }
@@ -385,7 +391,7 @@ function UsersShell() {
       if (error) {
         notifyError('Role update failed.', error.message);
       } else {
-        console.log('[ADMIN_ACTION]', {
+        logAdminAction({
           action: 'set_user_role',
           user_id: userId,
           from_role: prev,
@@ -412,7 +418,7 @@ function UsersShell() {
       if (error) {
         notifyError('Role update failed.', error.message);
       } else {
-        console.log('[ADMIN_ACTION]', {
+        logAdminAction({
           action: 'set_user_role',
           user_id: userId,
           from_role: prev,
@@ -455,7 +461,7 @@ function UsersShell() {
     setSaving(true);
     try {
       await assignLocalAdminMembership({ userId, mosqueId });
-      console.log('[ADMIN_ACTION]', {
+      logAdminAction({
         action: 'assign_local_admin',
         user_id: userId,
         mosque_id: mosqueId,
@@ -482,7 +488,7 @@ function UsersShell() {
     setSaving(true);
     try {
       await removeLocalAdminMembership({ userId, mosqueId });
-      console.log('[ADMIN_ACTION]', {
+      logAdminAction({
         action: 'remove_local_admin',
         user_id: userId,
         mosque_id: mosqueId,
@@ -513,7 +519,7 @@ function UsersShell() {
     setSaving(true);
     try {
       await assignMuezzinMembership({ userId, mosqueId });
-      console.log('[ADMIN_ACTION]', {
+      logAdminAction({
         action: 'assign_muezzin',
         user_id: userId,
         mosque_id: mosqueId,
@@ -540,7 +546,7 @@ function UsersShell() {
     setSaving(true);
     try {
       await removeMuezzinMembership({ userId, mosqueId });
-      console.log('[ADMIN_ACTION]', {
+      logAdminAction({
         action: 'remove_muezzin',
         user_id: userId,
         mosque_id: mosqueId,

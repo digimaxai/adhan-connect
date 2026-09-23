@@ -5,6 +5,10 @@ import {
   type MosqueLiveBroadcastConfig,
 } from '../liveStreamProviders';
 import { isLiveKitConfigured } from './livekitRoom';
+import {
+  fetchAllowedLiveStreamUpstream,
+  prepareContinuousPlaybackBody,
+} from './liveStreamUpstreamPolicy';
 
 const PROBE_TIMEOUT_MS = 3000;
 
@@ -21,29 +25,43 @@ async function probeHttpUrl(
   url: string,
   target: 'playback' | 'ingest'
 ): Promise<{ status: number | null; ok: boolean; authRequired: boolean; message: string }> {
-  const methods: RequestInit['method'][] = ['HEAD', 'GET'];
+  const methods: ('HEAD' | 'GET')[] =
+    target === 'playback' ? ['GET'] : ['HEAD', 'GET'];
   let lastStatus: number | null = null;
   let lastMessage = 'Endpoint did not respond.';
 
   for (const method of methods) {
     const { signal, cleanup } = withTimeoutSignal(PROBE_TIMEOUT_MS);
     try {
-      const response = await fetch(url, {
+      const { response } = await fetchAllowedLiveStreamUpstream(url, {
         method,
-        redirect: 'follow',
         signal,
+        rejectHls: target === 'playback',
         headers:
           method === 'GET'
             ? {
-                Accept: target === 'playback' ? 'audio/*,application/vnd.apple.mpegurl,*/*' : '*/*',
-                Range: 'bytes=0-0',
+                Accept:
+                  target === 'playback'
+                    ? 'audio/aac,audio/aacp,audio/mpeg,audio/ogg,application/ogg,application/octet-stream'
+                    : '*/*',
+                ...(target === 'ingest' ? { Range: 'bytes=0-0' } : {}),
               }
             : undefined,
       });
-      cleanup();
       lastStatus = response.status;
 
-      if (response.status >= 200 && response.status < 400) {
+      const successfulStatus =
+        target === 'playback'
+          ? response.status === 200
+          : response.status >= 200 && response.status < 400;
+      if (successfulStatus) {
+        if (target === 'playback') {
+          const body = await prepareContinuousPlaybackBody(response, method);
+          await body?.cancel().catch(() => {});
+        } else {
+          await response.body?.cancel().catch(() => {});
+        }
+        cleanup();
         return {
           status: response.status,
           ok: true,
@@ -53,6 +71,8 @@ async function probeHttpUrl(
       }
 
       if (target === 'ingest' && (response.status === 401 || response.status === 403)) {
+        await response.body?.cancel().catch(() => {});
+        cleanup();
         return {
           status: response.status,
           ok: false,
@@ -62,10 +82,14 @@ async function probeHttpUrl(
       }
 
       if ([400, 405].includes(response.status) && method === 'HEAD') {
+        await response.body?.cancel().catch(() => {});
+        cleanup();
         lastMessage = 'HEAD probe not supported; retrying with GET.';
         continue;
       }
 
+      await response.body?.cancel().catch(() => {});
+      cleanup();
       lastMessage = `Endpoint returned HTTP ${response.status}.`;
     } catch (error) {
       cleanup();

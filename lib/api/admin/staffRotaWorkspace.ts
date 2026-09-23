@@ -44,7 +44,7 @@ function mapRotaRows(rows: StaffRotaWorkspacePayload['rotaRows']): StaffRotaForD
 }
 
 function parseDateIso(dateIso: string) {
-  const [year, month, day] = dateIso.split('-').map((value) => Number.parseInt(value, 10));
+  const [year, month, day] = dateIso.split('-').map((value: string) => Number.parseInt(value, 10));
   return new Date(year, (month || 1) - 1, day || 1);
 }
 

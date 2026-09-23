@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { requireCurrentAccountConsent } from './accountConsentAccess';
 
 type JsonResponse = { response: Response };
 
@@ -49,6 +50,14 @@ export async function requireAdminAccess(
   const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
   if (authError || !authData.user) {
     return { response: json({ error: 'Session is invalid or has expired.' }, 401) };
+  }
+
+  const consentAccess = await requireCurrentAccountConsent(
+    supabaseAdmin,
+    authData.user
+  );
+  if (!consentAccess.granted) {
+    return { response: consentAccess.response };
   }
 
   const userId = authData.user.id;

@@ -26,6 +26,18 @@ export const tokens = {
       danger: '#EF4444',
       info: '#0097F7',
     },
+    reading: {
+      accent: '#4F765B',
+      surface: '#F1F6EF',
+      border: '#DCE8D8',
+      text: '#203126',
+      muted: '#627466',
+      iconBg: '#E3EEE0',
+      arabicSurface: '#FAFBF7',
+      selected: '#DCEAD9',
+      selectedBorder: '#AFC6B3',
+      selectedText: '#31533D',
+    },
   },
   spacing: {
     xxs: 4,
@@ -58,6 +70,13 @@ export const tokens = {
       semibold: '600',
       bold: '700',
       extrabold: '800',
+    },
+    reading: {
+      arabicFontFamily: 'AmiriQuran_400Regular',
+      arabicSize: 25,
+      arabicLineHeight: 46,
+      translationSize: 15,
+      translationLineHeight: 24,
     },
   },
   icon: {

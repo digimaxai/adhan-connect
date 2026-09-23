@@ -56,6 +56,19 @@ export default function MyRotaScreen() {
   const [requestReason, setRequestReason] = useState('');
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
+  const nextDuty = useMemo(() => {
+    if (!entries.length) return null;
+    const now = new Date();
+    const sorted = [...entries].sort((a, b) => {
+      const aDate = new Date(a.date ?? '');
+      const bDate = new Date(b.date ?? '');
+      return aDate.getTime() - bDate.getTime();
+    });
+    return sorted.find((e) => new Date(e.date ?? '') >= now) ?? sorted[sorted.length - 1] ?? null;
+  }, [entries]);
+
+  const totalActionItems = useMemo(() => myRequests.length + openRequests.length, [myRequests, openRequests]);
+
   const loadRota = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -212,6 +225,29 @@ export default function MyRotaScreen() {
         {error ? <Banner tone="danger" title="Unable to continue" message={error} /> : null}
         {notice ? <Banner tone="success" title="Updated" message={notice} /> : null}
 
+        {!loading && (
+          <View style={styles.summaryBanner}>
+            {nextDuty ? (
+              <View>
+                <Text style={styles.summaryBannerLabel}>Next Duty</Text>
+                <Text style={styles.summaryBannerValue}>
+                  {prayerLabel(nextDuty.prayer_name ?? 'Prayer')} • {new Date(nextDuty.date ?? '').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </Text>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.summaryBannerLabel}>No Upcoming Duties</Text>
+                <Text style={styles.summaryBannerValue}>Check back soon</Text>
+              </View>
+            )}
+            {totalActionItems > 0 && (
+              <View style={styles.actionBadge}>
+                <Text style={styles.actionBadgeText}>{totalActionItems}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {loading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color="#0EA5E9" />
@@ -255,7 +291,7 @@ export default function MyRotaScreen() {
                           <Text style={styles.prayerTitle}>{prayerLabel(prayer)}</Text>
                           {request ? <Text style={styles.badge}>{requestStatusLabel(request.status)}</Text> : null}
                           <Text style={styles.assignee}>{resolveAssigneeName(entry, profileNames, userId)}</Text>
-                          <Text style={styles.timeText}>{adhanTime ? `Adhan ${adhanTime}` : 'Adhan time unavailable'}</Text>
+                          <Text style={[styles.timeText, !adhanTime && styles.timePending]}>{adhanTime ? `Adhan ${adhanTime}` : 'Adhan time pending'}</Text>
                           {iqamaTime ? <Text style={styles.metaText}>{`Iqamah ${iqamaTime}`}</Text> : null}
                           {entry.notes ? <Text style={styles.metaText}>{entry.notes}</Text> : null}
                         </Pressable>
@@ -395,6 +431,7 @@ function ActionRow({
   busy: boolean;
   secondary?: boolean;
 }) {
+  const buttonIcon = secondary ? 'close-circle' : 'add-circle';
   return (
     <View style={styles.row}>
       <View style={{ flex: 1 }}>
@@ -402,7 +439,14 @@ function ActionRow({
         <Text style={styles.rowSubtitle}>{subtitle}</Text>
       </View>
       <Pressable style={secondary ? styles.rowSecondaryButton : styles.rowPrimaryButton} disabled={busy} onPress={onPress}>
-        <Text style={secondary ? styles.rowSecondaryText : styles.rowPrimaryText}>{buttonLabel}</Text>
+        {busy ? (
+          <ActivityIndicator size="small" color={secondary ? '#0F172A' : '#FFFFFF'} />
+        ) : (
+          <View style={styles.rowButtonContent}>
+            <Ionicons name={buttonIcon} size={16} color={secondary ? '#0F172A' : '#FFFFFF'} style={{ marginRight: 4 }} />
+            <Text style={secondary ? styles.rowSecondaryText : styles.rowPrimaryText}>{buttonLabel}</Text>
+          </View>
+        )}
       </Pressable>
     </View>
   );
@@ -440,7 +484,13 @@ const styles = StyleSheet.create({
   badge: { alignSelf: 'flex-start', backgroundColor: '#FEF3C7', color: '#92400E', fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, overflow: 'hidden', textTransform: 'capitalize', marginTop: 6 },
   assignee: { marginTop: 12, fontSize: 14, fontWeight: '700', color: '#0F172A' },
   timeText: { marginTop: 8, fontSize: 13, fontWeight: '700', color: '#0369A1' },
+  timePending: { color: '#F59E0B' },
   metaText: { marginTop: 4, fontSize: 12, color: '#64748B' },
+  summaryBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F0F9FF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#BFDBFE' },
+  summaryBannerLabel: { fontSize: 12, fontWeight: '600', color: '#0369A1', textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryBannerValue: { fontSize: 16, fontWeight: '800', color: '#0F172A', marginTop: 4 },
+  actionBadge: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
+  actionBadgeText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
   sectionCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16, borderWidth: 1, borderColor: '#E2E8F0', gap: 10 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionHeaderTitle: { fontSize: 17, fontWeight: '800', color: '#0F172A' },
@@ -448,10 +498,11 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E2E8F0' },
   rowTitle: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
   rowSubtitle: { marginTop: 4, fontSize: 12, color: '#64748B' },
-  rowPrimaryButton: { backgroundColor: '#0EA5E9', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  rowPrimaryButton: { backgroundColor: '#0EA5E9', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, minHeight: 40, alignItems: 'center', justifyContent: 'center' },
   rowPrimaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
-  rowSecondaryButton: { backgroundColor: '#F8FAFC', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#CBD5E1' },
-  rowSecondaryText: { color: '#0F172A', fontWeight: '800', fontSize: 13 },
+  rowSecondaryButton: { backgroundColor: '#FEF3C7', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FCD34D' },
+  rowSecondaryText: { color: '#92400E', fontWeight: '800', fontSize: 13 },
+  rowButtonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   summaryCard: { gap: 8, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E2E8F0' },
   summaryTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },

@@ -1,24 +1,48 @@
-import { Redirect, Stack, usePathname, useRootNavigationState, useSegments } from 'expo-router';
+import {
+  AmiriQuran_400Regular,
+  useFonts,
+} from '@expo-google-fonts/amiri-quran';
+import { Redirect, Stack, router, usePathname, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { NotificationRuntime } from '../../components/NotificationRuntime';
 import { AuthProvider, useAuth } from '../auth';
+import { hasCurrentAccountConsent } from '../accountConsent';
+import {
+  isSocialAuthCompletionPending,
+  subscribeSocialAuthCompletion,
+} from '../authFlowState';
+import {
+  isGuestBrowsingEnabled,
+  isGuestPublicRoute,
+  setGuestBrowsingEnabled,
+  subscribeGuestBrowsing,
+} from '../guestAccess';
 import { useRoleFlags } from '../roles';
 import { getPreferredStaffEntry, subscribePreferredStaffEntry, type StaffEntryMode } from '../roleEntryPreferences';
 import { isRoleEntrySelectionRequired, subscribeRoleEntrySelectionRequirement } from '../roleEntrySession';
 import { resolveRoleEntryTarget, resolveRouteTargetHref } from '../roleRouting';
 
-const DEBUG_ROOT_NAV = process.env.EXPO_PUBLIC_DEBUG_ROOT_NAV === '1';
+const DEBUG_ROOT_NAV = __DEV__ && process.env.EXPO_PUBLIC_DEBUG_ROOT_NAV === '1';
 
 function RootNavigator() {
-  const { session, loading } = useAuth();
-  const roles = useRoleFlags();
+  const { session, loading, signOut } = useAuth();
   const segments = useSegments() as string[];
   const pathname = usePathname();
-  const navigationState = useRootNavigationState();
   const [preferredEntry, setPreferredEntry] = useState<StaffEntryMode | null>(null);
   const [preferredEntryLoaded, setPreferredEntryLoaded] = useState(false);
   const [roleSelectionRequired, setRoleSelectionRequired] = useState(false);
   const [roleSelectionLoaded, setRoleSelectionLoaded] = useState(false);
+  const [workspaceStateAccessToken, setWorkspaceStateAccessToken] =
+    useState<string | null>(null);
+  const [guestBrowsing, setGuestBrowsing] = useState(false);
+  const [guestBrowsingLoaded, setGuestBrowsingLoaded] = useState(false);
+  const [socialAuthPending, setSocialAuthPending] = useState(() =>
+    isSocialAuthCompletionPending()
+  );
+  const [accessRetryKey, setAccessRetryKey] = useState(0);
+  const [signingOutAfterAccessError, setSigningOutAfterAccessError] =
+    useState(false);
 
   const inAuthFlow =
     pathname === '/sign-in' ||
@@ -28,31 +52,163 @@ function RootNavigator() {
     pathname === '/new-password';
   const inRoleEntry = pathname === '/role-entry' || segments[0] === 'role-entry';
   const inRecoveryFlow = pathname === '/callback' || pathname === '/new-password';
-  const targetStack = roles.hasDualStaffAccess && roleSelectionRequired ? '/role-entry' : resolveRoleEntryTarget(roles, preferredEntry);
+  const inAccountConsentFlow = pathname === '/complete-account';
+  const inAccountRights = pathname === '/account';
+  const inLegacyAccountPath = pathname === '/settings/account';
+  const requiresAccountConsent =
+    !!session?.user && !hasCurrentAccountConsent(session.user);
+  const roles = useRoleFlags({
+    enabled: Boolean(session?.user) && !requiresAccountConsent,
+    refreshKey: accessRetryKey,
+  });
+  const roleResolutionSettled =
+    !!session?.user &&
+    !requiresAccountConsent &&
+    roles.ready &&
+    roles.resolvedUserId === session.user.id;
+  const roleAccessReady = roleResolutionSettled && !roles.error;
+  const targetStack =
+    roles.hasMultipleWorkspaceAccess && roleSelectionRequired
+      ? '/role-entry'
+      : resolveRoleEntryTarget(roles, preferredEntry);
   const targetHref = resolveRouteTargetHref(targetStack);
-  const targetIsGroupedRoot = /^\/\(.+\)$/.test(targetStack);
-  const isAtGroupedRootIndex = pathname === '/' && segments.length === 0;
-  const targetWorkspaceRoot =
-    targetStack === '/listener-home'
-      ? '/(user)'
-      : targetStack === '/admin'
-        ? '/admin'
-        : targetIsGroupedRoot
-          ? targetStack
-          : null;
   const debugSignatureRef = useRef<string | null>(null);
+  const needsWorkspaceState =
+    roleAccessReady && roles.hasMultipleWorkspaceAccess;
+  const workspaceStateReady =
+    !needsWorkspaceState ||
+    (preferredEntryLoaded &&
+      roleSelectionLoaded &&
+      workspaceStateAccessToken === session?.access_token);
+  // Stable "already bootstrapped for this user" state. When Supabase refreshes
+  // the JWT on tab focus, session.access_token changes → useRoleFlags briefly
+  // sets loading:true → roleResolutionSettled, workspaceStateReady, and all
+  // role flags (isMainAdmin etc.) flip to false → isBootstrapping would flip to
+  // true and Stack.Protected guards would drop, actively navigating away from
+  // admin/muezzin screens. Once we have successfully bootstrapped for a given
+  // user we keep confirmed copies so token refreshes are transparent.
+  const sessionUserId = session?.user?.id ?? null;
+  const [confirmedUserId, setConfirmedUserId] = useState<string | null>(null);
+  const [confirmedRoleSettled, setConfirmedRoleSettled] = useState(false);
+  const [confirmedWorkspaceReady, setConfirmedWorkspaceReady] = useState(false);
+  const [confirmedIsMainAdmin, setConfirmedIsMainAdmin] = useState(false);
+  const [confirmedIsAdmin, setConfirmedIsAdmin] = useState(false);
+  const [confirmedIsMuezzin, setConfirmedIsMuezzin] = useState(false);
+  const [confirmedHasMultipleWorkspaceAccess, setConfirmedHasMultipleWorkspaceAccess] = useState(false);
+
+  useEffect(() => {
+    if (!sessionUserId) {
+      setConfirmedUserId(null);
+      setConfirmedRoleSettled(false);
+      setConfirmedWorkspaceReady(false);
+      setConfirmedIsMainAdmin(false);
+      setConfirmedIsAdmin(false);
+      setConfirmedIsMuezzin(false);
+      setConfirmedHasMultipleWorkspaceAccess(false);
+      return;
+    }
+    if (sessionUserId !== confirmedUserId) {
+      setConfirmedUserId(sessionUserId);
+      setConfirmedRoleSettled(false);
+      setConfirmedWorkspaceReady(false);
+      setConfirmedIsMainAdmin(false);
+      setConfirmedIsAdmin(false);
+      setConfirmedIsMuezzin(false);
+      setConfirmedHasMultipleWorkspaceAccess(false);
+      return;
+    }
+    if (roleResolutionSettled) {
+      setConfirmedRoleSettled(true);
+      setConfirmedIsMainAdmin(roles.isMainAdmin);
+      setConfirmedIsAdmin(roles.isAdmin);
+      setConfirmedIsMuezzin(roles.isMuezzin);
+      setConfirmedHasMultipleWorkspaceAccess(roles.hasMultipleWorkspaceAccess);
+    }
+    if (workspaceStateReady) setConfirmedWorkspaceReady(true);
+  }, [
+    sessionUserId,
+    roleResolutionSettled,
+    workspaceStateReady,
+    confirmedUserId,
+    roles.isMainAdmin,
+    roles.isAdmin,
+    roles.isMuezzin,
+    roles.hasMultipleWorkspaceAccess,
+  ]);
+
+  // During a token-refresh re-check (loading:true, same user), use confirmed
+  // values so Stack.Protected guards and isBootstrapping stay stable.
+  const isRecheck = roles.loading && confirmedRoleSettled && sessionUserId === confirmedUserId;
+  const effectiveRoleSettled = confirmedRoleSettled || roleResolutionSettled;
+  const effectiveWorkspaceReady = confirmedWorkspaceReady || workspaceStateReady;
+  const effectiveIsMainAdmin = isRecheck ? confirmedIsMainAdmin : roles.isMainAdmin;
+  const effectiveIsAdmin = isRecheck ? confirmedIsAdmin : roles.isAdmin;
+  const effectiveIsMuezzin = isRecheck ? confirmedIsMuezzin : roles.isMuezzin;
+  const effectiveHasMultipleWorkspaceAccess = isRecheck ? confirmedHasMultipleWorkspaceAccess : roles.hasMultipleWorkspaceAccess;
+  const effectiveRoleAccessReady = effectiveRoleSettled && !roles.error;
+
   const isBootstrapping =
-    loading || roles.loading || !navigationState?.key || !preferredEntryLoaded || !roleSelectionLoaded;
+    loading ||
+    !guestBrowsingLoaded ||
+    (!inRecoveryFlow &&
+      !!session?.user &&
+      !requiresAccountConsent &&
+      !effectiveRoleSettled) ||
+    (!inRecoveryFlow && !effectiveWorkspaceReady);
+
+  useEffect(() => {
+    let cancelled = false;
+    void isGuestBrowsingEnabled().then((enabled) => {
+      if (cancelled) return;
+      // TESTING: Disable guest access - force authentication
+      setGuestBrowsing(false);
+      setGuestBrowsingLoaded(true);
+    });
+    const unsubscribe = subscribeGuestBrowsing((enabled) => {
+      // TESTING: Disable guest access - force authentication
+      setGuestBrowsing(false);
+      setGuestBrowsingLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(
+    () => subscribeSocialAuthCompletion(setSocialAuthPending),
+    []
+  );
+
+  useEffect(() => {
+    if (!session?.user?.id || !guestBrowsing) return;
+    // An authenticated session always replaces the limited guest state.
+    void setGuestBrowsingEnabled(false);
+  }, [guestBrowsing, session?.user?.id]);
 
   useEffect(() => {
     let cancelled = false;
     const userId = session?.user?.id ?? null;
 
-    if (!userId || roles.loading || !roles.hasDualStaffAccess) {
+    const accessToken = session?.access_token ?? null;
+
+    if (!userId || !roleAccessReady) {
+      setPreferredEntry(null);
+      setPreferredEntryLoaded(false);
+      setRoleSelectionRequired(false);
+      setRoleSelectionLoaded(false);
+      setWorkspaceStateAccessToken(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!roles.hasMultipleWorkspaceAccess) {
       setPreferredEntry(null);
       setPreferredEntryLoaded(true);
       setRoleSelectionRequired(false);
       setRoleSelectionLoaded(true);
+      setWorkspaceStateAccessToken(accessToken);
       return () => {
         cancelled = true;
       };
@@ -60,6 +216,7 @@ function RootNavigator() {
 
     setPreferredEntryLoaded(false);
     setRoleSelectionLoaded(false);
+    setWorkspaceStateAccessToken(null);
 
     async function loadEntryState() {
       const [next, requiresSelection] = await Promise.all([
@@ -71,6 +228,7 @@ function RootNavigator() {
         setPreferredEntryLoaded(true);
         setRoleSelectionRequired(requiresSelection);
         setRoleSelectionLoaded(true);
+        setWorkspaceStateAccessToken(accessToken);
       }
     }
 
@@ -78,7 +236,12 @@ function RootNavigator() {
     return () => {
       cancelled = true;
     };
-  }, [session?.user?.id, roles.loading, roles.hasDualStaffAccess]);
+  }, [
+    roleAccessReady,
+    roles.hasMultipleWorkspaceAccess,
+    session?.access_token,
+    session?.user?.id,
+  ]);
 
   useEffect(() => {
     const activeUserId = session?.user?.id ?? null;
@@ -147,49 +310,168 @@ function RootNavigator() {
   ]);
 
   const currentRoot = `/${segments[0] ?? ''}`;
-  if (!isBootstrapping && !session && !inAuthFlow) {
+  if (isBootstrapping) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#0EA5E9" />
+      </View>
+    );
+  }
+
+  if (!isBootstrapping && !session && guestBrowsing && pathname === '/') {
+    return <Redirect href={'/(user)/listener-home' as any} />;
+  }
+  const guestCanViewCurrentRoute = guestBrowsing && isGuestPublicRoute(pathname);
+  if (!isBootstrapping && !session && !inAuthFlow && !guestCanViewCurrentRoute) {
     if (DEBUG_ROOT_NAV) {
       console.log('[RootNavigator] redirect sign-in', { pathname, segments });
     }
-    return <Redirect href={'/sign-in' as any} />;
+    return (
+      <Redirect
+        href={{
+          pathname: '/sign-in',
+          params: guestBrowsing ? { reason: 'required' } : undefined,
+        } as any}
+      />
+    );
+  }
+  if (!isBootstrapping && session && inLegacyAccountPath) {
+    return <Redirect href={'/account' as any} />;
+  }
+  if (
+    !isBootstrapping &&
+    session &&
+    requiresAccountConsent &&
+    !inRecoveryFlow &&
+    !inAccountConsentFlow &&
+    !inAccountRights
+  ) {
+    return <Redirect href={'/complete-account' as any} />;
   }
 
-  const isAtTarget =
-    targetStack === '/role-entry'
-      ? inRoleEntry
-      : (targetStack === '/(muezzin)' && pathname === '/muezzin-home') ||
-        (targetStack === '/(admin)' && pathname === '/admin-home') ||
-        pathname === targetStack ||
-        currentRoot === targetStack ||
-        (targetWorkspaceRoot !== null && currentRoot === targetWorkspaceRoot) ||
-        (targetIsGroupedRoot && isAtGroupedRootIndex);
-
-  if (!isBootstrapping && session && !inRecoveryFlow && !isAtTarget) {
-    if (!(inRoleEntry && roles.hasDualStaffAccess)) {
-      if (DEBUG_ROOT_NAV) {
-        console.log('[RootNavigator] redirect target', {
-          pathname,
-          segments,
-          currentRoot,
-          targetStack,
-          targetHref,
-          isAtGroupedRootIndex,
-        });
+  if (
+    session &&
+    !requiresAccountConsent &&
+    roles.error &&
+    !inRecoveryFlow &&
+    !inAccountRights
+  ) {
+    const leaveAccount = async () => {
+      setSigningOutAfterAccessError(true);
+      try {
+        await signOut();
+        await setGuestBrowsingEnabled(true);
+        router.replace('/listener-home' as any);
+      } catch {
+        router.replace('/sign-in' as any);
+      } finally {
+        setSigningOutAfterAccessError(false);
       }
-      return <Redirect href={targetHref as any} />;
-    }
+    };
+
+    return (
+      <View style={styles.accessErrorScreen}>
+        <View style={styles.accessErrorCard}>
+          <Text style={styles.accessErrorTitle}>Account access unavailable</Text>
+          <Text style={styles.accessErrorBody}>
+            We could not safely verify this account&apos;s current access. No
+            personalised or staff workspace has been opened.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setAccessRetryKey((current) => current + 1)}
+            style={styles.primaryAction}
+          >
+            <Text style={styles.primaryActionText}>Try again</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.replace('/account' as any)}
+            style={styles.secondaryAction}
+          >
+            <Text style={styles.secondaryActionText}>Account &amp; data options</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={signingOutAfterAccessError}
+            onPress={() => {
+              void leaveAccount();
+            }}
+            style={styles.secondaryAction}
+          >
+            <Text style={styles.dangerActionText}>
+              {signingOutAfterAccessError ? 'Signing out…' : 'Sign out'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
   }
+
+  const shouldResolveEntryRoute =
+    session &&
+    !requiresAccountConsent &&
+    !inRecoveryFlow &&
+    !inAccountRights &&
+    !socialAuthPending &&
+    (pathname === '/' ||
+      pathname === '/auth-complete' ||
+      inAuthFlow ||
+      inAccountConsentFlow ||
+      (inRoleEntry && !roles.hasMultipleWorkspaceAccess));
+  if (
+    shouldResolveEntryRoute &&
+    !(inRoleEntry && roles.hasMultipleWorkspaceAccess)
+  ) {
+    if (DEBUG_ROOT_NAV) {
+      console.log('[RootNavigator] redirect target', {
+        pathname,
+        segments,
+        currentRoot,
+        targetStack,
+        targetHref,
+      });
+    }
+    return <Redirect href={targetHref as any} />;
+  }
+
+  const canBrowseUserStack =
+    (!session && guestBrowsing) || effectiveRoleAccessReady;
 
   return (
-    <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(auth)" />
+      <Stack.Protected guard={canBrowseUserStack}>
         <Stack.Screen name="(user)" />
+      </Stack.Protected>
+      <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsAdmin}>
         <Stack.Screen name="(admin)" />
+      </Stack.Protected>
+      <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsMainAdmin}>
         <Stack.Screen name="admin" />
-        <Stack.Screen name="admin-home" />
+      </Stack.Protected>
+      <Stack.Protected guard={Boolean(session)}>
+        <Stack.Screen name="account" />
+        <Stack.Screen name="auth-complete" />
+        <Stack.Screen name="complete-account" />
+      </Stack.Protected>
+      <Stack.Protected guard={effectiveRoleAccessReady && effectiveIsMuezzin}>
         <Stack.Screen name="(muezzin)" />
+        <Stack.Screen name="muezzin/live-broadcast" />
+        <Stack.Screen
+          name="broadcast/[id]"
+          options={{
+            title: 'Adhan broadcast',
+            presentation: 'modal',
+          }}
+        />
+      </Stack.Protected>
+      <Stack.Protected
+        guard={effectiveRoleAccessReady && effectiveHasMultipleWorkspaceAccess}
+      >
         <Stack.Screen name="role-entry" />
+      </Stack.Protected>
+      <Stack.Protected guard={effectiveRoleAccessReady}>
         <Stack.Screen
           name="modal"
           options={{
@@ -198,35 +480,96 @@ function RootNavigator() {
             title: 'Quick Action',
           }}
         />
-        <Stack.Screen
-          name="broadcast/[id]"
-          options={{
-            title: 'Adhan broadcast',
-            presentation: 'modal',
-          }}
-        />
-      </Stack>
-      {isBootstrapping ? (
-        <View
-          pointerEvents="none"
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(255,255,255,0.92)',
-          }}
-        >
-          <ActivityIndicator size="large" color="#0EA5E9" />
-        </View>
-      ) : null}
-    </View>
+      </Stack.Protected>
+    </Stack>
   );
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({ AmiriQuran_400Regular });
+
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#0EA5E9" />
+      </View>
+    );
+  }
+
   return (
     <AuthProvider>
+      <NotificationRuntime />
       <RootNavigator />
     </AuthProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingScreen: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  accessErrorScreen: {
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  accessErrorCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    borderWidth: 1,
+    maxWidth: 460,
+    padding: 24,
+    width: '100%',
+  },
+  accessErrorTitle: {
+    color: '#0F172A',
+    fontSize: 21,
+    fontWeight: '800',
+  },
+  accessErrorBody: {
+    color: '#475569',
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 18,
+    marginTop: 8,
+  },
+  primaryAction: {
+    alignItems: 'center',
+    backgroundColor: '#0EA5E9',
+    borderRadius: 12,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  primaryActionText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  secondaryAction: {
+    alignItems: 'center',
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    marginTop: 10,
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  secondaryActionText: {
+    color: '#334155',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dangerActionText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});

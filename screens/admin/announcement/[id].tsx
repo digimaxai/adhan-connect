@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { BackButton } from '@/components/ui/back-button';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppText } from '@/components/ui/app-text';
+import { ContentAttachmentsEditor } from '@/components/admin/ContentAttachmentsEditor';
 import { tokens } from '@/theme/tokens';
 import { useAdminMosque } from '@/lib/hooks/useAdminMosque';
 import { supabase } from '@/lib/supabase';
@@ -40,6 +42,9 @@ export default function AdminAnnouncementForm() {
   const isNew = !id || id === 'new';
 
   const [title, setTitle] = useState('');
+  const [relatedServiceId, setRelatedServiceId] = useState<string | null>(null);
+  const [services, setServices] = useState<{id:string;title:string;status:string}[]>([]);
+  useEffect(() => { if (!selectedMosque) return; let alive = true; supabase.from('mosque_service_listings').select('id,title,status').eq('mosque_id', selectedMosque.mosqueId).neq('status', 'archived').then(({data}) => { if (alive) setServices(data || []); }); return () => { alive = false; }; }, [selectedMosque]);
   const [body, setBody] = useState('');
   const [status, setStatus] = useState<Status>('published');
   const [isUrgent, setIsUrgent] = useState(false);
@@ -61,7 +66,7 @@ export default function AdminAnnouncementForm() {
     try {
       const { data, error: e } = await supabase
         .from('announcements')
-        .select('id,mosque_id,title,summary,status,is_urgent,is_pinned')
+        .select('id,mosque_id,title,summary,status,is_urgent,is_pinned,related_service_id')
         .eq('id', id)
         .eq('mosque_id', selectedMosque.mosqueId)
         .maybeSingle();
@@ -69,6 +74,7 @@ export default function AdminAnnouncementForm() {
       if (!data) {
         setError('Notice not found for the selected mosque.');
       } else {
+        setRelatedServiceId(data.related_service_id ?? null);
         setTitle(data.title ?? '');
         setBody(data.summary ?? '');
         setStatus((data.status as Status) ?? 'published');
@@ -87,10 +93,12 @@ export default function AdminAnnouncementForm() {
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required.'); return; }
     if (!selectedMosque) { setError('No mosque selected.'); return; }
+    if (status === 'published' && relatedServiceId && !services.some(s => s.id === relatedServiceId && s.status === 'published')) { setError('Publish the linked service first, or save this notice as a draft.'); return; }
     setSaving(true);
     setError(null);
     try {
       const payload: Record<string, any> = {
+        related_service_id: relatedServiceId,
         title: title.trim(),
         summary: body.trim() || null,
         status,
@@ -168,9 +176,7 @@ export default function AdminAnnouncementForm() {
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.navBar}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-          </Pressable>
+          <BackButton fallbackHref="/(admin)/events" />
           <AppText variant="sectionTitle" style={styles.navTitle}>{isNew ? 'New Notice' : 'Edit Notice'}</AppText>
           <View style={styles.navRight} />
         </View>
@@ -262,6 +268,11 @@ export default function AdminAnnouncementForm() {
             </View>
           </View>
 
+          <View style={styles.section}>
+            <AppText variant="caption" style={styles.sectionLabel}>LINK TO A SERVICE (OPTIONAL)</AppText>
+            <AppText variant="caption">Publish the service before publishing its announcement.</AppText>
+            {[{id:'',title:'No linked service',status:''},...services].map(service => <Pressable key={service.id} onPress={() => setRelatedServiceId(service.id || null)} style={{ padding: 12, backgroundColor: relatedServiceId === (service.id || null) ? '#E0F2E9' : '#FFFFFF', borderRadius: 8 }}><AppText>{service.title}{service.status ? ` · ${service.status}` : ''}</AppText></Pressable>)}
+          </View>
           {/* Visibility */}
           <View style={styles.section}>
             <AppText variant="caption" style={styles.sectionLabel}>VISIBILITY</AppText>
@@ -289,6 +300,22 @@ export default function AdminAnnouncementForm() {
               })}
             </View>
           </View>
+
+          {/* Cover image & attachments — kept last so the core fields above stay quick to reach */}
+          {!isNew && selectedMosque ? (
+            <ContentAttachmentsEditor mosqueId={selectedMosque.mosqueId} contentType="announcement" contentId={id!} />
+          ) : (
+            <View style={styles.section}>
+              <AppText variant="caption" style={styles.sectionLabel}>COVER IMAGE</AppText>
+              <View style={styles.fieldCard}>
+                <View style={styles.row}>
+                  <AppText variant="body" color={tokens.color.text.muted} style={styles.rowLabel}>
+                    Save the notice to add a cover image and attachments.
+                  </AppText>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Save */}
           <Pressable
@@ -379,6 +406,9 @@ const styles = StyleSheet.create({
     fontWeight: tokens.typography.weight.medium,
   },
   multiline: { minHeight: 120, paddingTop: 14 },
+
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  rowLabel: { flex: 1, fontSize: 15, fontWeight: tokens.typography.weight.medium, color: tokens.color.text.primary },
 
   switchRow: {
     flexDirection: 'row',

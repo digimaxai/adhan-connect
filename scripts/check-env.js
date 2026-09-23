@@ -10,14 +10,13 @@ const report = required.map((key) => {
     key,
     present: !!value,
     length: value ? value.length : 0,
-    preview: value ? `${value.slice(0, 8)}…` : null,
   };
 });
 
 console.log('Env sanity check:');
 report.forEach((item) => {
   console.log(
-    `${item.key}: ${item.present ? 'SET' : 'MISSING'}${item.present ? ` (len=${item.length}, preview=${item.preview})` : ''}`
+    `${item.key}: ${item.present ? 'SET' : 'MISSING'}${item.present ? ` (len=${item.length})` : ''}`
   );
 });
 

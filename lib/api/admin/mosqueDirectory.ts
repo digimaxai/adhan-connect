@@ -4,6 +4,7 @@ type FetchAllMosqueRowsOptions = {
   orderBy?: string;
   ascending?: boolean;
   pageSize?: number;
+  signal?: AbortSignal;
 };
 
 type FetchAllMosqueRowsResult<T> = {
@@ -22,11 +23,15 @@ export async function fetchAllMosqueRows<T>(
   const rows: T[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabaseClient
+    let query = supabaseClient
       .from('mosques')
       .select(selectColumns)
       .order(orderBy, { ascending })
       .range(from, from + pageSize - 1);
+    if (options.signal) {
+      query = query.abortSignal(options.signal);
+    }
+    const { data, error } = await query;
 
     if (error) return { data: rows, error };
 

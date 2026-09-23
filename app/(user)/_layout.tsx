@@ -1,23 +1,34 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { HapticTab } from '../../components/haptic-tab';
 import { tokens } from '../../theme/tokens';
 
 export default function UserTabs() {
-  const pillIcon = (icon: keyof typeof Ionicons.glyphMap) => {
+  const pillIcon = (
+    outlineIcon: keyof typeof Ionicons.glyphMap,
+    filledIcon: keyof typeof Ionicons.glyphMap
+  ) => {
     const Icon = ({ color, focused }: { color: string; focused: boolean }) => (
       <View
         style={{
-          padding: tokens.spacing.xs,
-          borderRadius: tokens.radius.md,
-          backgroundColor: focused ? tokens.color.bg.tintSoft : 'transparent',
+          width: 42,
+          height: 30,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: tokens.radius.pill,
+          backgroundColor: focused ? '#E0F2FE' : 'transparent',
         }}
       >
-        <Ionicons name={icon} size={tokens.icon.md} color={focused ? tokens.color.text.accent : color} />
+        <Ionicons
+          name={focused ? filledIcon : outlineIcon}
+          size={focused ? 21 : 20}
+          color={focused ? '#0284C7' : color}
+        />
       </View>
     );
-    Icon.displayName = `PillIcon(${icon})`;
+    Icon.displayName = `PillIcon(${outlineIcon})`;
     return Icon;
   };
 
@@ -27,23 +38,30 @@ export default function UserTabs() {
       screenOptions={{
         headerShown: false,
         lazy: true,
+        tabBarButton: HapticTab,
         tabBarActiveTintColor: tokens.color.text.primary,
-        tabBarInactiveTintColor: tokens.color.text.muted,
+        tabBarInactiveTintColor: '#64748B',
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: {
           fontWeight: tokens.typography.weight.extrabold,
-          fontSize: tokens.typography.size.sm,
-          marginTop: tokens.spacing.xxs,
+          fontSize: 10.5,
+          lineHeight: 13,
+          marginTop: 2,
         },
-        tabBarItemStyle: { paddingVertical: 6 },
+        tabBarItemStyle: { paddingTop: 7, paddingBottom: 3 },
         tabBarStyle: {
           backgroundColor: tokens.color.bg.surface,
-          borderTopColor: tokens.color.border.transparent,
-          height: Platform.OS === 'android' ? tokens.tabBar.userHeightAndroid : tokens.tabBar.userHeightIos,
-          paddingBottom: Platform.OS === 'android' ? tokens.spacing.sm : tokens.spacing.md,
-          paddingTop: 10,
-          paddingHorizontal: 18,
-          ...tokens.shadow.card,
+          borderTopColor: '#E2E8F0',
+          borderTopWidth: StyleSheet.hairlineWidth,
+          height: Platform.OS === 'android' ? 70 : 78,
+          paddingBottom: Platform.OS === 'android' ? 7 : 16,
+          paddingTop: 2,
+          paddingHorizontal: 8,
+          shadowColor: '#0F172A',
+          shadowOpacity: 0.08,
+          shadowRadius: 18,
+          shadowOffset: { width: 0, height: -5 },
+          elevation: 16,
         },
       }}
     >
@@ -51,33 +69,63 @@ export default function UserTabs() {
         name="listener-home"
         options={{
           title: 'Home',
-          tabBarIcon: pillIcon('home-outline'),
+          tabBarAccessibilityLabel: 'Home',
+          tabBarIcon: pillIcon('home-outline', 'home'),
         }}
       />
-      <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen
+        name="guidance"
+        options={{
+          title: 'Guidance',
+          tabBarAccessibilityLabel: 'Guidance, Qur’an and reflection',
+          tabBarIcon: pillIcon('sparkles-outline', 'sparkles'),
+        }}
+      />
+      <Tabs.Screen
+        name="my-mosque"
+        options={{
+          title: 'My Mosque',
+          tabBarAccessibilityLabel: 'Open my default mosque',
+          tabBarIcon: pillIcon('business-outline', 'business'),
+        }}
+      />
       <Tabs.Screen
         name="discover"
         options={{
           title: 'Discover',
-          tabBarIcon: pillIcon('compass-outline'),
+          tabBarAccessibilityLabel: 'Discover other mosques',
+          tabBarIcon: pillIcon('compass-outline', 'compass'),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: pillIcon('settings-outline'),
+          tabBarIcon: pillIcon('settings-outline', 'settings'),
         }}
       />
+      <Tabs.Screen name="index" options={{ href: null, headerShown: false }} />
 
       {/* hidden routes for user area */}
+      <Tabs.Screen name="quran" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="duas" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="now" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="live-player" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="mosque/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-prayer-times/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="service/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="event/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="campaign/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="jumuah/[id]" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="manage-mosques" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="invite-mosque" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="request-mosque" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-admin-request" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-onboarding-hub" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-messages/[mosqueId]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-enquiries" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-enquiry" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="mosque-conversation" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

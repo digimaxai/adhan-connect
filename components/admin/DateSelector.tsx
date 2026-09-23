@@ -92,7 +92,7 @@ export function DateSelector({ date, onChange }: Props) {
         </Pressable>
       </View>
       {showPicker && Platform.OS === 'android' ? (
-        <DateTimePicker
+        <DateTimePicker themeVariant="light"
           value={normalizeDate(tempDate ?? safeDate)}
           onChange={handlePickerChange}
           mode="date"

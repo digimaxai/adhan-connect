@@ -43,18 +43,10 @@ function clampVolume(value: number, fallback = 0.7) {
   return Math.max(0, Math.min(1, Math.round(normalized * 100) / 100));
 }
 
-function parseRouteLocation(lat?: string, lng?: string): UserLocation | null {
-  const latitude = Number(lat);
-  const longitude = Number(lng);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
-  return { latitude, longitude };
-}
-
 export default function NowScreen() {
   const router = useRouter();
   const segments = useSegments();
-  const params = useLocalSearchParams<{ mosqueId?: string; lat?: string; lng?: string }>();
+  const params = useLocalSearchParams<{ mosqueId?: string }>();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const requestedMosqueId = typeof params.mosqueId === 'string' ? params.mosqueId : null;
@@ -80,9 +72,8 @@ export default function NowScreen() {
   const autoPlayStreamIdRef = useRef<string | null>(null);
   const [sliderWidth, setSliderWidth] = useState(1);
   const [clockMs, setClockMs] = useState(() => Date.now());
-  const [listenerLocation, setListenerLocation] = useState<UserLocation | null>(() =>
-    parseRouteLocation(params.lat, params.lng)
-  );
+  const [listenerLocation, setListenerLocation] =
+    useState<UserLocation | null>(null);
   const playScale = useRef(new Animated.Value(1)).current;
   const hadActiveStreamRef = useRef(false);
 
@@ -128,14 +119,7 @@ export default function NowScreen() {
   const safeVolume = useMemo(() => clampVolume(volume), [volume]);
 
   useEffect(() => {
-    const routeLocation = parseRouteLocation(params.lat, params.lng);
-    if (routeLocation) {
-      setListenerLocation(routeLocation);
-    }
-  }, [params.lat, params.lng]);
-
-  useEffect(() => {
-    if (listenerLocation) return;
+    if (!userId || listenerLocation) return;
     let cancelled = false;
     (async () => {
       const permission = await Location.getForegroundPermissionsAsync();
@@ -153,7 +137,7 @@ export default function NowScreen() {
     return () => {
       cancelled = true;
     };
-  }, [listenerLocation]);
+  }, [listenerLocation, userId]);
 
   const load = useCallback(async (options?: { background?: boolean }) => {
     const background = !!options?.background;

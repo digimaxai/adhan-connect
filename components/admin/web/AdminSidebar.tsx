@@ -41,6 +41,20 @@ const UsersIcon = () => (
   </svg>
 );
 
+const AccountIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <circle cx="8" cy="5" r="2.75" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M2.5 14c0-2.485 2.462-4.5 5.5-4.5s5.5 2.015 5.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
+const InboxIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
+    <path d="M1.5 9.5h3l2 2.5h3l2-2.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+  </svg>
+);
+
 const MosqueCtxIcon = () => (
   <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
     <path d="M7 1.5C4.8 3.5 3.5 5.5 3.5 7.75a3.5 3.5 0 007 0C10.5 5.5 9.2 3.5 7 1.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
@@ -97,10 +111,13 @@ export default function AdminSidebar({ compact = false, isPhone = false }: Props
   const { user, signOut } = useAuth();
 
   const globalItems: NavItem[] = [
-    { label: 'Dashboard',    href: '/admin',               icon: <GridIcon /> },
-    { label: 'Prayer Times', href: '/admin/prayer-times',  icon: <ClockIcon /> },
-    { label: 'Mosques',      href: '/admin/mosques',        icon: <BuildingIcon /> },
-    { label: 'Users',        href: '/admin/users',          icon: <UsersIcon /> },
+    { label: 'Dashboard',         href: '/admin',                    icon: <GridIcon /> },
+    { label: 'Mosque Requests',   href: '/admin/mosque-requests',    icon: <InboxIcon /> },
+    { label: 'Prayer Times',      href: '/admin/prayer-times',       icon: <ClockIcon /> },
+    { label: 'Mosques',           href: '/admin/mosques',             icon: <BuildingIcon /> },
+    { label: 'Mosque Assistant',  href: '/admin/mosque-assistant',   icon: <BuildingIcon /> },
+    { label: 'Users',             href: '/admin/users',               icon: <UsersIcon /> },
+    { label: 'Account',           href: '/admin/account',             icon: <AccountIcon /> },
   ];
 
   const mosqueItems: NavItem[] = selectedMosqueId

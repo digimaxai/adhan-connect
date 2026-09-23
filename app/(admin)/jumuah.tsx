@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { BackButton } from '@/components/ui/back-button';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -72,7 +72,6 @@ function toDbTime(value: string) {
 }
 
 export default function AdminJumuahScreen() {
-  const router = useRouter();
   const { selectedMosque, loading: mosqueLoading } = useAdminMosque();
   const [slots, setSlots] = useState<SlotForm[]>([]);
   const [loading, setLoading] = useState(false);
@@ -252,9 +251,7 @@ export default function AdminJumuahScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <View style={styles.navBar}>
-        <Pressable onPress={() => router.push('/(admin)' as any)} style={({ pressed }) => [styles.navBack, pressed && styles.pressed]} hitSlop={8}>
-          <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-        </Pressable>
+        <BackButton fallbackHref="/admin-home" />
         <View style={{ flex: 1 }}>
           <AppText variant="sectionTitle" style={styles.navTitle}>Jumuah</AppText>
           {selectedMosque ? (
@@ -428,7 +425,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: tokens.spacing.lg,
     paddingVertical: tokens.spacing.md,
   },
-  navBack: { padding: 4 },
+  navBack: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#E0F2FE' },
   navTitle: { fontSize: 22, fontWeight: tokens.typography.weight.extrabold },
   addBtn: {
     flexDirection: 'row',

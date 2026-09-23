@@ -1,6 +1,13 @@
 import { persistentStorage } from './persistentStorage';
 
-export type StaffEntryMode = 'admin' | 'muezzin';
+/**
+ * The authenticated workspace to open. Listener is available to every account;
+ * admin and muezzin are additive capabilities resolved from server-side access.
+ *
+ * The storage key intentionally keeps its existing name so current admin and
+ * muezzin preferences remain valid after adding listener selection.
+ */
+export type StaffEntryMode = 'listener' | 'admin' | 'muezzin';
 
 type PreferredStaffEntryListener = (userId: string | null, mode: StaffEntryMode | null) => void;
 
@@ -11,7 +18,9 @@ function storageKey(userId: string | null) {
 }
 
 function normalizeEntryMode(value: string | null): StaffEntryMode | null {
-  if (value === 'admin' || value === 'muezzin') return value;
+  if (value === 'listener' || value === 'admin' || value === 'muezzin') {
+    return value;
+  }
   return null;
 }
 

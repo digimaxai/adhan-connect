@@ -48,6 +48,17 @@ export async function getPrayerTimesByDate(mosqueId: string, dateIso: string) {
   return data ?? null;
 }
 
+// Removing the saved row hands the date back to the live resolution chain
+// (iqamah schedule, ELM jamat, calculation settings and adjustments).
+export async function deletePrayerTimesForDate(mosqueId: string, dateIso: string) {
+  const { error } = await supabase
+    .from('prayer_times')
+    .delete()
+    .eq('mosque_id', mosqueId)
+    .eq('date', dateIso);
+  if (error && error.code !== 'PGRST116') throw error;
+}
+
 export async function listPrayerTimesByDates(mosqueId: string, dateIsos: string[]) {
   const dates = Array.from(new Set(dateIsos.map((value) => value?.slice(0, 10)).filter(Boolean)));
   if (!dates.length) return [] as PrayerTimesRow[];

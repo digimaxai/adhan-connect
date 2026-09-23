@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { getPrayerTimesByDate, PrayerTimesRow, upsertPrayerTimes } from '../../lib/api/admin/prayerTimes';
 import { getDailyPrayerTimes } from '../../lib/api/prayerTimesUnified';
 import { DateSelector } from '../../components/admin/DateSelector';
+import { PrayerAvailabilityReasons } from '../../components/admin/PrayerAvailabilityReasons';
 
 const prayers: { key: keyof PrayerTimeForm; label: string }[] = [
   { key: 'fajr', label: 'Fajr' },
@@ -147,7 +148,7 @@ export default function PrayerTimesAdminScreen() {
     const base = form[pickerState.prayer][pickerState.field];
     const d = new Date(selectedDate);
     if (base) {
-      const [h, m] = base.split(':').map((n) => parseInt(n, 10));
+      const [h, m] = base.split(':').map((n: string) => parseInt(n, 10));
       d.setHours(h, m, 0, 0);
     }
     return d;
@@ -199,12 +200,17 @@ export default function PrayerTimesAdminScreen() {
           </View>
         ))
       )}
+      {mosqueName && mosqueId ? (
+        <View style={{ marginTop: 16 }}>
+          <PrayerAvailabilityReasons mosqueId={mosqueId} mosqueName={mosqueName} />
+        </View>
+      ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable onPress={handleSave} disabled={saving || !mosqueId} style={({ pressed }) => [styles.saveBtn, pressed && { opacity: 0.9 }]}>
         <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
       </Pressable>
       {pickerState && pickerValue ? (
-        <DateTimePicker value={pickerValue} mode="time" onChange={handleTimePicked} />
+        <DateTimePicker themeVariant="light" value={pickerValue} mode="time" onChange={handleTimePicked} />
       ) : null}
     </ScrollView>
   );
@@ -261,7 +267,7 @@ function toHm(val?: string | null) {
 
 function combine(day: Date, hm: string | null) {
   if (!hm) return null;
-  const [h, m] = hm.split(':').map((n) => parseInt(n, 10));
+  const [h, m] = hm.split(':').map((n: string) => parseInt(n, 10));
   const d = new Date(day);
   d.setHours(h, m, 0, 0);
   return d.toISOString();

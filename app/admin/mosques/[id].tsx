@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../lib/supabaseClient';
+import { mosqueServiceLabel, MOSQUE_SERVICE_OPTIONS } from '../../../lib/mosqueServices';
 import { RequireMainAdmin } from '../../../components/admin/web/RequireMainAdmin';
 import { AdminContextProvider, useAdminContext } from '../../../lib/admin-web/adminContext';
 import { AdminFeedbackProvider, useAdminFeedback } from '../../../lib/admin-web/adminFeedback';
@@ -26,6 +27,7 @@ import ConfirmDialog from '../../../components/admin/web/ConfirmDialog';
 import { Button, Modal, Pill, Select, TextInput } from '../../../components/admin/web/ui';
 import { ALADHAN_METHODS, DEFAULT_ALADHAN_METHOD } from '../../../lib/api/aladhan';
 import { isValidTimeZone, TIMEZONE_OPTIONS } from '../../../lib/timeZones';
+import { EMPTY_PRAYER_TIME_ADJUSTMENTS, normalizePrayerTimeAdjustments, PRAYER_ADJUSTMENT_KEYS, type PrayerTimeAdjustments } from '../../../lib/prayerTimeAdjustments';
 import type {
   BroadcastReadinessPayload,
   BroadcastReadinessPostAction,
@@ -52,8 +54,21 @@ type MosqueRow = {
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
   prayer_source?: string | null;
+  prayer_time_adjustments?: PrayerTimeAdjustments | null;
   lat?: number | null;
   lng?: number | null;
+  description?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  postcode?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  website?: string | null;
+  management_info?: string | null;
+  services?: string[] | null;
+  prayers_not_offered?: string[] | null;
+  prayers_not_offered_reasons?: Record<string, string> | null;
+  onboarding_status?: 'directory_only' | 'in_progress' | 'claimed' | null;
   created_at?: string | null;
 };
 
@@ -78,7 +93,7 @@ type UpstreamStateRow = {
   updated_at?: string | null;
 };
 type MosqueWorkspaceTab = 'overview' | 'admins' | 'muezzins';
-type EditMosqueMode = 'profile' | 'live-stream';
+type EditMosqueMode = 'profile' | 'live-stream' | 'about';
 type AdminApiOptions = {
   method?: 'GET' | 'POST';
   body?: Record<string, unknown>;
@@ -155,6 +170,8 @@ async function loadMosqueWorkspaceViaServer(mosqueId: string): Promise<MosqueWor
   };
 }
 
+const MOSQUE_SERVICES = MOSQUE_SERVICE_OPTIONS;
+
 export default function MosqueProfilePage() {
   return (
     <RequireMainAdmin>
@@ -214,13 +231,14 @@ function MosqueProfileShell() {
   const [editOpen, setEditOpen] = useState(false);
   const [editMode, setEditMode] = useState<EditMosqueMode>('profile');
   const [editForm, setEditForm] = useState({
-    name: '', city: '', country: '', status: 'pending',
+    name: '', city: '', country: '', status: 'pending', onboardingStatus: 'directory_only' as 'directory_only' | 'in_progress' | 'claimed',
     timeZone: 'UTC',
     lat: '', lng: '',
     allowMultiMosqueLocalAdmins: false,
     prayerSource: 'aladhan' as 'aladhan' | 'elm',
     prayerCalculationMethod: DEFAULT_ALADHAN_METHOD,
     prayerSchool: 0,
+    prayerTimeAdjustments: { ...EMPTY_PRAYER_TIME_ADJUSTMENTS },
     liveStreamEnabled: false,
     liveStreamProvider: 'external',
     liveStreamPlaybackUrl: '',
@@ -230,6 +248,17 @@ function MosqueProfileShell() {
     liveStreamStreamKey: '',
     liveStreamStatusSecret: '',
     liveStreamListenerSecret: '',
+    description: '',
+    addressLine1: '',
+    addressLine2: '',
+    postcode: '',
+    contactPhone: '',
+    contactEmail: '',
+    website: '',
+    managementInfo: '',
+    services: [] as string[],
+    prayersNotOffered: [] as string[],
+    prayerReasons: {} as Record<string, string>,
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -339,12 +368,14 @@ function MosqueProfileShell() {
       country: mosque.country ?? '',
       timeZone: mosque.time_zone?.trim() || 'UTC',
       status: mosque.status ?? 'pending',
+      onboardingStatus: (['directory_only', 'in_progress', 'claimed'].includes(mosque.onboarding_status ?? '') ? mosque.onboarding_status : 'directory_only') as 'directory_only' | 'in_progress' | 'claimed',
       lat: mosque.lat != null ? String(mosque.lat) : '',
       lng: mosque.lng != null ? String(mosque.lng) : '',
       allowMultiMosqueLocalAdmins: !!mosque.allow_multi_mosque_local_admins,
       prayerSource: (mosque.prayer_source === 'elm' ? 'elm' : 'aladhan') as 'aladhan' | 'elm',
       prayerCalculationMethod: mosque.prayer_calculation_method ?? DEFAULT_ALADHAN_METHOD,
       prayerSchool: mosque.prayer_school ?? 0,
+      prayerTimeAdjustments: normalizePrayerTimeAdjustments(mosque.prayer_time_adjustments),
       liveStreamEnabled: !!mosque.live_stream_enabled,
       liveStreamProvider: normalizeLiveStreamProvider(mosque.live_stream_provider),
       liveStreamPlaybackUrl: mosque.live_stream_playback_url ?? '',
@@ -354,6 +385,17 @@ function MosqueProfileShell() {
       liveStreamStreamKey: mosque.live_stream_stream_key ?? '',
       liveStreamStatusSecret: mosque.live_stream_status_secret ?? '',
       liveStreamListenerSecret: mosque.live_stream_listener_secret ?? '',
+      description: mosque.description ?? '',
+      addressLine1: mosque.address_line1 ?? '',
+      addressLine2: mosque.address_line2 ?? '',
+      postcode: mosque.postcode ?? '',
+      contactPhone: mosque.contact_phone ?? '',
+      contactEmail: mosque.contact_email ?? '',
+      website: mosque.website ?? '',
+      managementInfo: mosque.management_info ?? '',
+      services: mosque.services ?? [],
+      prayersNotOffered: mosque.prayers_not_offered ?? [],
+      prayerReasons: mosque.prayers_not_offered_reasons ?? {},
     });
   }, [mosque]);
 
@@ -376,9 +418,8 @@ function MosqueProfileShell() {
   const liveStreamStreamKeyConfigured = !!mosque?.live_stream_stream_key?.trim();
   const liveStreamStatusSecret = mosque?.live_stream_status_secret?.trim() || '';
   const liveStreamListenerSecret = mosque ? resolveLiveStreamListenerSecret(mosque) || '' : '';
-  const editCityIsLondon = editForm.city.trim().toLowerCase().includes('london');
   const editTimeZoneIsListed = TIMEZONE_OPTIONS.some((option) => option.value === editForm.timeZone);
-  const effectivePrayerSource = editCityIsLondon ? editForm.prayerSource : 'aladhan';
+  const effectivePrayerSource = editForm.prayerSource;
   const editProviderProfile = useMemo(() => getLiveStreamProviderProfile(editForm.liveStreamProvider), [editForm.liveStreamProvider]);
   const editProviderUsesExternalEncoder = editProviderProfile.supportsExternalEncoder;
   const editProviderUsesStreamCredential = editProviderProfile.supportsExternalEncoder || editProviderProfile.requiresStreamKey;
@@ -731,6 +772,9 @@ function MosqueProfileShell() {
 
   const handleSaveEdit = async () => {
     if (!mosqueId) return;
+    if (editMode === 'about' && editForm.prayersNotOffered.some(prayer => !editForm.prayerReasons[prayer]?.trim())) {
+      setEditError('Please add a reason for each prayer that is not offered.'); return;
+    }
     const nextName = editForm.name.trim();
     if (!nextName) { setEditError('Name is required.'); return; }
     const timeZone = editForm.timeZone.trim();
@@ -780,7 +824,7 @@ function MosqueProfileShell() {
     }
 
     const payload: Record<string, any> = {
-      name: nextName, status: editForm.status,
+      name: nextName, status: editForm.status, onboarding_status: editForm.onboardingStatus,
       city: editForm.city.trim() || null, country: editForm.country.trim() || null,
       time_zone: timeZone,
       lat: latVal, lng: lngVal,
@@ -788,6 +832,7 @@ function MosqueProfileShell() {
       prayer_source: effectivePrayerSource,
       prayer_calculation_method: editForm.prayerCalculationMethod,
       prayer_school: editForm.prayerSchool,
+      prayer_time_adjustments: normalizePrayerTimeAdjustments(editForm.prayerTimeAdjustments),
       live_stream_enabled: editForm.liveStreamEnabled,
       live_stream_provider: lsp,
       live_stream_playback_url: lspProfile.requiresPlaybackUrl ? liveStreamPlaybackUrl : null,
@@ -797,6 +842,17 @@ function MosqueProfileShell() {
       live_stream_stream_key: lspProfile.supportsExternalEncoder ? liveStreamStreamKey || null : null,
       live_stream_status_secret: needsProviderCallbackSecret ? liveStreamStatusSecret || null : null,
       live_stream_listener_secret: needsListenerAccessSecret ? liveStreamListenerSecret || null : null,
+      description: editForm.description.trim() || null,
+      address_line1: editForm.addressLine1.trim() || null,
+      address_line2: editForm.addressLine2.trim() || null,
+      postcode: editForm.postcode.trim() || null,
+      contact_phone: editForm.contactPhone.trim() || null,
+      contact_email: editForm.contactEmail.trim() || null,
+      website: editForm.website.trim() || null,
+      management_info: editForm.managementInfo.trim() || null,
+      services: editForm.services.length > 0 ? editForm.services : null,
+      prayers_not_offered: editForm.prayersNotOffered.length > 0 ? editForm.prayersNotOffered : null,
+      ...(editMode === 'about' ? { prayers_not_offered_reasons: Object.fromEntries(editForm.prayersNotOffered.map(prayer => [prayer, editForm.prayerReasons[prayer]?.trim() ?? ''])) } : {}),
     };
 
     setEditError(null);
@@ -973,7 +1029,8 @@ function MosqueProfileShell() {
 
   const commandActions = [
     { key: 'mosque-back', label: 'Back to mosque directory', description: 'Return to the main mosque list.', keywords: ['back', 'directory'], onSelect: () => router.push('/admin/mosques' as any) },
-    { key: 'mosque-edit', label: 'Edit mosque', description: 'Open the profile and status editor.', keywords: ['edit', 'mosque', 'profile'], onSelect: () => setEditOpen(true) },
+    { key: 'mosque-edit', label: 'Edit mosque', description: 'Open the profile and status editor.', keywords: ['edit', 'mosque', 'profile'], onSelect: () => { setEditMode('profile'); setEditError(null); setEditOpen(true); } },
+    { key: 'mosque-edit-about', label: 'Edit about & contact', description: 'Update description, address, contact details, and services.', keywords: ['about', 'contact', 'address', 'phone', 'email', 'website', 'services', 'imam'], onSelect: () => { setEditMode('about'); setEditError(null); setEditOpen(true); } },
     { key: 'mosque-prayer-times', label: 'Open prayer times workspace', description: 'Manage timetable uploads for this mosque.', keywords: ['prayer', 'times', 'timetable'], onSelect: () => router.push(`/admin/mosques/${mosqueId}/prayer-times` as any) },
     { key: 'mosque-copy-id', label: 'Copy mosque ID', description: 'Copy to clipboard.', keywords: ['copy', 'id'], onSelect: () => handleCopyText(mosque?.id ?? '', 'Mosque ID copied.') },
   ];
@@ -1071,6 +1128,45 @@ function MosqueProfileShell() {
             </div>
             <div style={styles.inlineActions}>
               <Button variant="ghost" onClick={() => handleCopyText(mosque?.id ?? '', 'Mosque ID copied.')}>Copy mosque ID</Button>
+            </div>
+          </AdminPanel>
+
+          {/* About & Contact panel */}
+          <AdminPanel
+            title="About & contact"
+            subtitle="Public profile, address, contact details, and services offered."
+            action={<Button variant="ghost" onClick={() => { setEditMode('about'); setEditError(null); setEditOpen(true); }}>Edit about</Button>}
+          >
+            <div style={styles.metaList}>
+              {mosque?.description?.trim() ? (
+                <div style={{ ...metaRowStyle, flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                  <span style={styles.metaLabel}>About</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.6, color: '#0f172a', whiteSpace: 'pre-wrap' }}>{mosque.description.trim()}</span>
+                </div>
+              ) : null}
+              {[
+                ['Address', [mosque?.address_line1, mosque?.address_line2, mosque?.city, mosque?.postcode].filter(Boolean).join(', ') || null],
+                ['Phone', mosque?.contact_phone?.trim() || null],
+                ['Email', mosque?.contact_email?.trim() || null],
+                ['Website', mosque?.website?.trim() || null],
+                ['Key staff', mosque?.management_info?.trim() || null],
+              ].map(([label, value]) => value ? (
+                <div key={String(label)} style={metaRowStyle}>
+                  <span style={styles.metaLabel}>{label}</span>
+                  <span style={{ fontSize: 14, color: '#0f172a', wordBreak: 'break-word', textAlign: 'right', maxWidth: 280 }}>{value}</span>
+                </div>
+              ) : null)}
+              {mosque?.services?.length ? (
+                <div style={{ ...metaRowStyle, flexDirection: 'column', alignItems: 'flex-start', gap: 8, borderBottom: 'none' }}>
+                  <span style={styles.metaLabel}>Services</span>
+                  <div style={styles.chipRow}>
+                    {mosque.services.map((s) => <span key={s} style={styles.chip}>{mosqueServiceLabel(s, mosque.prayers_not_offered)}</span>)}
+                  </div>
+                </div>
+              ) : null}
+              {!mosque?.description && !mosque?.address_line1 && !mosque?.contact_phone && !mosque?.contact_email && !mosque?.website && !mosque?.management_info && !mosque?.services?.length ? (
+                <span style={styles.muted}>No about information set. Click &ldquo;Edit about&rdquo; to add it.</span>
+              ) : null}
             </div>
           </AdminPanel>
 
@@ -1464,7 +1560,7 @@ function MosqueProfileShell() {
       ) : null}
 
       {/* Edit mosque modal */}
-      <Modal open={editOpen} onClose={() => { setEditOpen(false); setEditError(null); }} title={editMode === 'live-stream' ? 'Edit Live Stream Config' : 'Edit Mosque'}>
+      <Modal open={editOpen} onClose={() => { setEditOpen(false); setEditError(null); }} title={editMode === 'live-stream' ? 'Edit Live Stream Config' : editMode === 'about' ? 'Edit About & Contact' : 'Edit Mosque'}>
         <div style={styles.modalStack}>
           {editMode === 'profile' ? (
             <>
@@ -1534,8 +1630,18 @@ function MosqueProfileShell() {
                   <option value="inactive">Inactive</option>
                 </Select>
               </div>
-              {editCityIsLondon && (
-                <div>
+              <div>
+                <label style={styles.label} htmlFor="edit-onboarding-status">Claim status</label>
+                <Select id="edit-onboarding-status" value={editForm.onboardingStatus} onChange={(e) => setEditForm((p) => ({ ...p, onboardingStatus: e.target.value as 'directory_only' | 'in_progress' | 'claimed' }))}>
+                  <option value="directory_only">Directory listing — unclaimed</option>
+                  <option value="in_progress">Setting up — admin assigned, not yet operational</option>
+                  <option value="claimed">Claimed — actively managed by mosque staff</option>
+                </Select>
+                <div style={styles.helperText}>
+                  Set to &quot;Claimed&quot; once a local admin has taken responsibility for this mosque&#39;s prayer times and schedule. This removes the &quot;not yet claimed&quot; notice shown to listeners.
+                </div>
+              </div>
+              <div>
                   <label style={styles.label}>Prayer times source</label>
                   <div style={styles.toggleRow}>
                     <Button
@@ -1557,11 +1663,10 @@ function MosqueProfileShell() {
                   </div>
                   <div style={styles.helperText}>
                     {editForm.prayerSource === 'elm'
-                      ? 'Uses the official East London Mosque published timetable. Includes both adhan and congregation (jamaat) times. Manual schedules still take precedence when uploaded.'
+                      ? 'Uses the London Unified beginning-time timetable published by East London Mosque. Your mosque’s congregation times remain separate. Uploaded or manually entered schedules still take precedence.'
                       : 'Uses the Aladhan API to calculate prayer times from coordinates and the selected calculation method below.'}
                   </div>
-                </div>
-              )}
+              </div>
               {effectivePrayerSource === 'aladhan' && (
                 <div>
                   <label style={styles.label} htmlFor="edit-prayer-method">Prayer time calculation method</label>
@@ -1604,11 +1709,177 @@ function MosqueProfileShell() {
                 </div>
               </div>
               <div>
+                <label style={styles.label}>Automatic beginning-time adjustments</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 8 }}>
+                  {PRAYER_ADJUSTMENT_KEYS.map((prayer) => (
+                    <label key={prayer} style={styles.label}>
+                      {prayer.charAt(0).toUpperCase() + prayer.slice(1)} (minutes)
+                      <TextInput
+                        type="number" min={-30} max={30} step={1}
+                        value={String(editForm.prayerTimeAdjustments[prayer])}
+                        onChange={(event) => setEditForm((previous) => ({
+                          ...previous,
+                          prayerTimeAdjustments: normalizePrayerTimeAdjustments({
+                            ...previous.prayerTimeAdjustments,
+                            [prayer]: Number(event.target.value),
+                          }),
+                        }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div style={styles.helperText}>Use −30 to +30 minutes. Adjustments apply only to automatically calculated beginning times; uploaded and manual schedules remain unchanged.</div>
+              </div>
+              <div>
                 <label style={styles.label}>Cross-mosque admin access</label>
                 <div style={styles.toggleRow}>
                   <Button variant={editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'} type="button" aria-pressed={editForm.allowMultiMosqueLocalAdmins} onClick={() => setEditForm((p) => ({ ...p, allowMultiMosqueLocalAdmins: true }))}>Shared</Button>
                   <Button variant={!editForm.allowMultiMosqueLocalAdmins ? 'primary' : 'ghost'} type="button" aria-pressed={!editForm.allowMultiMosqueLocalAdmins} onClick={() => setEditForm((p) => ({ ...p, allowMultiMosqueLocalAdmins: false }))}>Exclusive</Button>
                 </div>
+              </div>
+            </>
+          ) : null}
+
+          {editMode === 'about' ? (
+            <>
+              {/* Description */}
+              <div>
+                <label style={styles.label} htmlFor="about-description">About this mosque</label>
+                <textarea
+                  id="about-description"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
+                  placeholder="Describe the mosque — its history, community, and what makes it special."
+                  rows={5}
+                  style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #d1d9e3', fontSize: 14, boxSizing: 'border-box', outline: 'none', backgroundColor: '#fff', color: '#0f172a', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.55 }}
+                />
+              </div>
+
+              {/* Address */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#64748b', marginBottom: 10 }}>Address</div>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+                  <div>
+                    <label style={styles.label} htmlFor="about-addr1">Address line 1</label>
+                    <TextInput id="about-addr1" value={editForm.addressLine1} onChange={(e) => setEditForm((p) => ({ ...p, addressLine1: e.target.value }))} placeholder="Street address" />
+                  </div>
+                  <div>
+                    <label style={styles.label} htmlFor="about-addr2">Address line 2</label>
+                    <TextInput id="about-addr2" value={editForm.addressLine2} onChange={(e) => setEditForm((p) => ({ ...p, addressLine2: e.target.value }))} placeholder="Area, district (optional)" />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 120 }}>
+                      <label style={styles.label} htmlFor="about-postcode">Postcode / ZIP</label>
+                      <TextInput id="about-postcode" value={editForm.postcode} onChange={(e) => setEditForm((p) => ({ ...p, postcode: e.target.value }))} placeholder="e.g. E1 6RF" autoCapitalize="characters" />
+                    </div>
+                    <div style={{ flex: 2, minWidth: 160 }}>
+                      <label style={styles.label} htmlFor="about-city-ro">City</label>
+                      <TextInput id="about-city-ro" value={editForm.city} onChange={(e) => setEditForm((p) => ({ ...p, city: e.target.value }))} placeholder="City" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#64748b', marginBottom: 10 }}>Contact</div>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+                  <div>
+                    <label style={styles.label} htmlFor="about-phone">Phone</label>
+                    <TextInput id="about-phone" type="tel" value={editForm.contactPhone} onChange={(e) => setEditForm((p) => ({ ...p, contactPhone: e.target.value }))} placeholder="+44 20 1234 5678" />
+                  </div>
+                  <div>
+                    <label style={styles.label} htmlFor="about-email">Public email</label>
+                    <TextInput id="about-email" type="email" value={editForm.contactEmail} onChange={(e) => setEditForm((p) => ({ ...p, contactEmail: e.target.value }))} placeholder="info@mosquename.org" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                  </div>
+                  <div>
+                    <label style={styles.label} htmlFor="about-website">Website</label>
+                    <TextInput id="about-website" type="url" value={editForm.website} onChange={(e) => setEditForm((p) => ({ ...p, website: e.target.value }))} placeholder="https://mosquename.org" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Staff / Imam */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#64748b', marginBottom: 10 }}>Key staff (optional)</div>
+                <textarea
+                  id="about-imam"
+                  value={editForm.managementInfo}
+                  onChange={(e) => setEditForm((p) => ({ ...p, managementInfo: e.target.value }))}
+                  placeholder="e.g. Imam: Sheikh Mohammed Abdullah. Khatib: Mufti Ismail Menk."
+                  rows={3}
+                  style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #d1d9e3', fontSize: 14, boxSizing: 'border-box', outline: 'none', backgroundColor: '#fff', color: '#0f172a', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.55 }}
+                />
+                <div style={styles.helperText}>Names and roles of key staff — imam, khatib, administrator.</div>
+              </div>
+
+              {/* Prayer availability */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#64748b', marginBottom: 6 }}>Daily prayer availability</div>
+                <div style={styles.helperText}>Tick any prayers that are <strong>not</strong> held in congregation at this location. Listeners will see &ldquo;Not offered here&rdquo; instead of a blank time.</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                  {(['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as const).map((prayer) => {
+                    const label = prayer.charAt(0).toUpperCase() + prayer.slice(1);
+                    const excluded = editForm.prayersNotOffered.includes(prayer);
+                    return (
+                      <label key={prayer} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: `1px solid ${excluded ? '#ef4444' : '#d1d9e3'}`, backgroundColor: excluded ? '#fff7f7' : '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: excluded ? '#b91c1c' : '#0f172a' }}>
+                        <input
+                          type="checkbox"
+                          checked={excluded}
+                          onChange={() => setEditForm((p) => ({
+                            ...p,
+                            prayersNotOffered: excluded
+                              ? p.prayersNotOffered.filter((pr) => pr !== prayer)
+                              : [...p.prayersNotOffered, prayer],
+                          }))}
+                          style={{ width: 14, height: 14, flexShrink: 0 }}
+                        />
+                        {label} not offered
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {editForm.prayersNotOffered.map(prayer => (
+                <div key={prayer}>
+                  <label htmlFor={`reason-${prayer}`} style={{ display: 'block', fontWeight: 700, marginBottom: 6 }}>
+                    Why {prayer.charAt(0).toUpperCase() + prayer.slice(1)} is not offered (required)
+                  </label>
+                  <textarea id={`reason-${prayer}`} rows={2} maxLength={500} required
+                    value={editForm.prayerReasons[prayer] ?? ''}
+                    onChange={event => setEditForm(previous => ({ ...previous, prayerReasons: { ...previous.prayerReasons, [prayer]: event.target.value } }))}
+                    placeholder="Explain the reason to listeners"
+                    style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #cbd5e1', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 14 }} />
+                  <div style={styles.helperText}>Shown publicly when listeners open the prayer info icon. Up to 500 characters.</div>
+                </div>
+              ))}
+
+              {/* Services */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#64748b', marginBottom: 10 }}>Services offered</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+                  {MOSQUE_SERVICES.map((service) => {
+                    const checked = editForm.services.includes(service);
+                    return (
+                      <label key={service} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1px solid ${checked ? '#0f172a' : '#d1d9e3'}`, backgroundColor: checked ? '#f0f4ff' : '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setEditForm((p) => ({
+                            ...p,
+                            services: checked
+                              ? p.services.filter((s) => s !== service)
+                              : [...p.services, service],
+                          }))}
+                          style={{ width: 15, height: 15, flexShrink: 0 }}
+                        />
+                        {mosqueServiceLabel(service, editForm.prayersNotOffered)}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={styles.helperText}>Displayed on the mosque profile page so followers know what to expect.</div>
               </div>
             </>
           ) : null}

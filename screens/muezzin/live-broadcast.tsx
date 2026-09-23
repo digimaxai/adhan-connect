@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BackButton } from '@/components/ui/back-button';
 import { Audio } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -129,7 +130,7 @@ export default function MuezzinLiveScreen() {
     const fromTimes = effectivePrayerKey ? prayerTimes.times?.[effectivePrayerKey] : null;
     if (fromTimes) {
       const resolvedPrayerKey = effectivePrayerKey as PrayerName;
-      const [h, m] = fromTimes.split(':').map((v) => parseInt(v, 10));
+      const [h, m] = fromTimes.split(':').map((v: string) => parseInt(v, 10));
       const d = new Date();
       d.setHours(h, m, 0, 0);
       return {
@@ -499,9 +500,7 @@ export default function MuezzinLiveScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-          <Ionicons name="arrow-back" size={22} color="#0F172A" />
-        </Pressable>
+        <BackButton fallbackHref="/(muezzin)/muezzin-home" />
         <Text style={styles.headerTitle}>Live Broadcast</Text>
         <View style={{ width: 22 }} />
       </View>

@@ -25,6 +25,21 @@ Legacy external-provider values may remain stored for rollback, but they are
 ignored while LiveKit is selected and are not shown as active requirements in
 the portal.
 
+## External encoder configuration
+
+RTMP or RTMPS can be used for encoder ingest, but it is not a listener
+playback protocol. The current listener proxy accepts allowlisted continuous
+HTTP(S) audio such as Icecast AAC/MP3/OGG. It deliberately rejects HLS
+playlists by URL, response type, and body marker because a safe HLS design must
+also sign and validate every playlist, segment, redirect, and key URI.
+
+Before selecting an external provider, add its exact playback and HTTP ingest
+hostnames to the server-only `LIVE_STREAM_UPSTREAM_ALLOWED_HOSTS` value.
+`*.provider.example` may be used only for a provider-controlled suffix and does
+not include the apex. Do not include a scheme, path, credentials, or port.
+Every redirect is checked against the same list; private and local destinations
+remain blocked even if listed.
+
 ## Stages
 
 1. `Setup pending`

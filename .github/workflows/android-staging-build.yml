@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    name: Build staging APK
+    name: Build staging APK/AAB
     runs-on: ubuntu-latest
     env:
       APP_VARIANT: staging
@@ -28,6 +28,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The release Gradle variant bundles JS via a plain Node process that
+      # does not go through Expo CLI's own dotenv loader (unlike `expo
+      # prebuild`/the debug variant's bundling, which picked these up fine
+      # from the job-level env above) — it only reliably reads EXPO_PUBLIC_*
+      # values from an actual .env file, same as local development.
+      - name: Write .env.local for release JS bundling
+        run: |
+          cat > .env.local <<EOF
+          EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY}
+          EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB=${EXPO_PUBLIC_SUPABASE_REDIRECT_URL_WEB}
+          EXPO_PUBLIC_SUPABASE_REDIRECT_URL_NATIVE=${EXPO_PUBLIC_SUPABASE_REDIRECT_URL_NATIVE}
+          EXPO_PUBLIC_API_BASE_URL=${EXPO_PUBLIC_API_BASE_URL}
+          EXPO_PUBLIC_APPLE_AUTH_ENABLED=${EXPO_PUBLIC_APPLE_AUTH_ENABLED}
+          EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=${EXPO_PUBLIC_GOOGLE_AUTH_ENABLED}
+          EXPO_PUBLIC_SOCIAL_LINKING_ENABLED=${EXPO_PUBLIC_SOCIAL_LINKING_ENABLED}
+          EOF
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -47,4 +65,43 @@ jobs:
         with:
           name: adhan-connect-staging-android
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # Signed release AAB, for Play Console upload (internal testing track,
+      # then production). Only runs once the upload keystore secrets exist —
+      # harmless no-op until then, so this workflow keeps working for plain
+      # debug-APK sideload testing in the meantime.
+      - name: Check release signing secrets are configured
+        id: signing
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decode upload keystore
+        if: steps.signing.outputs.configured == 'true'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+
+      - name: Add release signing config
+        if: steps.signing.outputs.configured == 'true'
+        run: python3 scripts/patch-android-release-signing.py android/app/build.gradle
+
+      - name: Build signed release AAB
+        if: steps.signing.outputs.configured == 'true'
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease
+
+      - name: Upload signed AAB artifact
+        if: steps.signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: adhan-connect-staging-android-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 30

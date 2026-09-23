@@ -1,4 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { BackButton } from '@/components/ui/back-button';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -118,7 +119,7 @@ function EventsList({ events, router }: { events: EventItem[]; router: ReturnTyp
         return (
           <React.Fragment key={ev.id}>
             <Pressable
-              onPress={() => router.push({ pathname: '/(admin)/event/[id]', params: { id: ev.id } } as any)}
+              onPress={() => router.push({ pathname: '/(admin)/event-editor/[id]', params: { id: ev.id } } as any)}
               style={({ pressed }) => [styles.listRow, pressed && styles.rowPressed]}
             >
               <View style={styles.eventDateBadge}>
@@ -171,12 +172,11 @@ function CampaignsList({ campaigns, router }: { campaigns: CampaignItem[]; route
     <View style={styles.listCard}>
       {campaigns.map((c, i) => {
         const chip = statusChip(c.status);
-        const progress = pct(c.raised_cents, c.goal_cents);
         const isLast = i === campaigns.length - 1;
         return (
           <React.Fragment key={c.id}>
             <Pressable
-              onPress={() => router.push({ pathname: '/(admin)/campaign/[id]', params: { id: c.id } } as any)}
+              onPress={() => router.push({ pathname: '/(admin)/campaign-editor/[id]', params: { id: c.id } } as any)}
               style={({ pressed }) => [styles.listRow, pressed && styles.rowPressed]}
             >
               <View style={styles.campaignIconWrap}>
@@ -189,13 +189,7 @@ function CampaignsList({ campaigns, router }: { campaigns: CampaignItem[]; route
                     <AppText style={[styles.chipText, { color: chip.color }]}>{chip.label}</AppText>
                   </View>
                 </View>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${progress}%` as any }]} />
-                </View>
-                <AppText variant="caption" color={tokens.color.text.secondary}>
-                  {fmtCurrency(c.raised_cents)} raised of {fmtCurrency(c.goal_cents)}
-                  {c.end_at ? ` · ends ${fmtDateOnly(c.end_at)}` : ''}
-                </AppText>
+                <AppText variant="caption" >Donations collected on the mosque’s external page</AppText>
               </View>
               <Ionicons name="chevron-forward" size={16} color={tokens.color.text.muted} />
             </Pressable>
@@ -365,8 +359,8 @@ export default function ContentHubScreen() {
   }, [tab, loadTab]);
 
   const handleNew = () => {
-    if (tab === 'events') router.push({ pathname: '/(admin)/event/[id]', params: { id: 'new' } } as any);
-    else if (tab === 'campaigns') router.push({ pathname: '/(admin)/campaign/[id]', params: { id: 'new' } } as any);
+    if (tab === 'events') router.push({ pathname: '/(admin)/event-editor/[id]', params: { id: 'new' } } as any);
+    else if (tab === 'campaigns') router.push({ pathname: '/(admin)/campaign-editor/[id]', params: { id: 'new' } } as any);
     else router.push({ pathname: '/(admin)/announcement/[id]', params: { id: 'new' } } as any);
   };
 
@@ -383,13 +377,7 @@ export default function ContentHubScreen() {
       {/* ── Fixed header ── */}
       <View style={styles.fixedHeader}>
         <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.push('/(admin)' as any)}
-            style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
-            hitSlop={8}
-          >
-            <Ionicons name="arrow-back" size={20} color={tokens.color.text.primary} />
-          </Pressable>
+          <BackButton fallbackHref="/admin-home" />
           <View style={styles.headerTitles}>
             {selectedMosque ? (
               <AppText variant="caption" style={styles.headerMosque} numberOfLines={1}>
@@ -487,7 +475,7 @@ const styles = StyleSheet.create({
     gap: tokens.spacing.sm,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backBtn: { padding: 4 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#E0F2FE' },
   headerTitles: { flex: 1 },
   headerMosque: { color: '#0369A1', fontWeight: tokens.typography.weight.semibold, fontSize: tokens.typography.size.xs },
   headerTitle: { fontSize: 22, fontWeight: tokens.typography.weight.extrabold, lineHeight: 28 },

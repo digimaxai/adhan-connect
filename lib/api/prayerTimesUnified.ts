@@ -3,6 +3,7 @@ import { PrayerName } from '../adhans';
 import { fetchServerApi, resolveApiUrls, supportsServerApi } from './apiBaseUrl';
 import { DEFAULT_ALADHAN_METHOD, fetchAladhanTimes } from './aladhan';
 import { fetchELMTimes } from './londonPrayerTimes';
+import { addMinutes, normalizePrayerTimeAdjustments, type PrayerTimeAdjustments } from '../prayerTimeAdjustments';
 
 export type PrayerTimeSlot = { adhan: Date | null; iqama: Date | null };
 export type NormalizedPrayerTimes = Record<PrayerName, PrayerTimeSlot>;
@@ -44,6 +45,7 @@ type MosquePrayerGeoRow = {
   prayer_calculation_method?: number | null;
   prayer_school?: number | null;
   prayer_source?: string | null;
+  prayer_time_adjustments?: PrayerTimeAdjustments | null;
 };
 
 type SourceTimingMaps = {
@@ -57,13 +59,39 @@ const safeDate = (value?: string | Date | null): Date | null => {
   return isNaN(parsed.getTime()) ? null : parsed;
 };
 
+function getLondonOffsetMinutes(dateIso: string): number {
+  // Get London UTC offset at noon on the given date (avoids DST edge cases)
+  const utcNoon = new Date(`${dateIso}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(utcNoon);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 12);
+  const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  return h * 60 + m - 720; // London hours/mins at UTC noon minus 720 = offset in minutes
+}
+
 const safeDateWithBase = (value: string | Date | null | undefined, dateIso: string) => {
   if (!value) return null;
   if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
   if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value.trim())) {
+    // Bare "HH:MM" strings (ELM/legacy timetable data) are always London local time,
+    // regardless of the server/device runtime timezone. Convert explicitly instead of
+    // letting the Date constructor assume the runtime's local timezone (see 5acab79).
     const timePart = value.length === 5 ? `${value}:00` : value;
-    const parsed = new Date(`${dateIso}T${timePart}`);
-    return isNaN(parsed.getTime()) ? null : parsed;
+    const [hStr, mStr, sStr = '0'] = timePart.split(':');
+    const h = Number(hStr), min = Number(mStr), s = Number(sStr);
+    if (Number.isNaN(h) || Number.isNaN(min)) return null;
+    const offsetMin = getLondonOffsetMinutes(dateIso);
+    const utcMs = Date.UTC(
+      Number(dateIso.slice(0, 4)),
+      Number(dateIso.slice(5, 7)) - 1,
+      Number(dateIso.slice(8, 10)),
+      h, min, s
+    ) - offsetMin * 60 * 1000;
+    return new Date(utcMs);
   }
   const parsed = new Date(value);
   return isNaN(parsed.getTime()) ? null : parsed;
@@ -136,7 +164,7 @@ async function loadDailyPrayerTimesViaServer(
 async function loadMosquePrayerGeo(mosqueId: string): Promise<MosquePrayerGeoRow | null> {
   const { data: geoFull, error: geoFullErr } = await supabase
     .from('mosques')
-    .select('lat, lng, prayer_calculation_method, prayer_school, prayer_source')
+    .select('lat, lng, prayer_calculation_method, prayer_school, prayer_source, prayer_time_adjustments')
     .eq('id', mosqueId)
     .maybeSingle<MosquePrayerGeoRow>();
 
@@ -187,7 +215,17 @@ async function fetchSourceTimingMaps(geoRow: MosquePrayerGeoRow | null, dateIso:
     return adhan ? { adhan, iqama: {} } : null;
   }
 
-  const elmTimings = await fetchELMTimes(dateIso);
+  // Try DB cache first (anon read access); fall back to direct ELM API call
+  const elmTimings =
+    (await Promise.resolve(
+      supabase
+        .from('elm_timetable')
+        .select('fajr,fajr_jamat,sunrise,dhuhr,dhuhr_jamat,asr,asr_2,asr_jamat,magrib,magrib_jamat,isha,isha_jamat')
+        .eq('date', dateIso)
+        .maybeSingle()
+    )
+      .then(({ data }) => (data ? { date: dateIso, ...data } : null))
+      .catch(() => null)) || (await fetchELMTimes(dateIso));
   const aladhanFallback = async () => fetchAladhanTimingMap(geoRow, dateIso, school);
 
   if (!elmTimings) {
@@ -223,35 +261,86 @@ async function fetchSourceTimingMaps(geoRow: MosquePrayerGeoRow | null, dateIso:
   };
 }
 
+async function resolveIqamaFromSchedule(
+  mosqueId: string,
+  prayer: PrayerName,
+  dateIso: string
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('mosque_iqamah_schedules')
+      .select('iqama_time')
+      .eq('mosque_id', mosqueId)
+      .eq('prayer', prayer)
+      .lte('start_date', dateIso)
+      .or(`end_date.is.null,end_date.gte.${dateIso}`)
+      .order('start_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data.iqama_time ?? null;
+  } catch (err) {
+    console.warn('[resolveIqamaFromSchedule] lookup failed', err);
+    return null;
+  }
+}
+
 async function fillPartialPrayerTimesFromSource(
   mosqueId: string,
   dateIso: string,
   normalized: NormalizedPrayerTimes
 ): Promise<NormalizedPrayerTimes> {
-  const nullPrayers = PRAYER_NAMES.filter((p) => normalized[p].adhan === null);
-  if (nullPrayers.length === 0) return normalized;
+  const nullAdhanPrayers = PRAYER_NAMES.filter((p) => normalized[p].adhan === null);
+  const nullIqamaPrayers = PRAYER_NAMES.filter((p) => normalized[p].iqama === null);
+  if (nullAdhanPrayers.length === 0 && nullIqamaPrayers.length === 0) return normalized;
+
+  const filled: NormalizedPrayerTimes = {
+    fajr: { ...normalized.fajr },
+    dhuhr: { ...normalized.dhuhr },
+    asr: { ...normalized.asr },
+    maghrib: { ...normalized.maghrib },
+    isha: { ...normalized.isha },
+  };
+
+  // Iqama has its own resolution chain (schedule, then ELM jamat) that is
+  // independent of whether adhan needed filling, so it's resolved even when
+  // this row's adhan is already fully set (e.g. explicit adhan correction,
+  // no iqama override). See mosque_iqamah_schedules migration for precedence.
+  if (nullIqamaPrayers.length) {
+    for (const p of nullIqamaPrayers) {
+      const scheduled = await resolveIqamaFromSchedule(mosqueId, p, dateIso);
+      if (scheduled) {
+        filled[p] = { adhan: filled[p].adhan, iqama: safeDateWithBase(scheduled, dateIso) };
+      }
+    }
+  }
+
+  const stillNullIqamaPrayers = nullIqamaPrayers.filter((p) => filled[p].iqama === null);
+  if (nullAdhanPrayers.length === 0 && stillNullIqamaPrayers.length === 0) return filled;
 
   try {
     const geoRow = await loadMosquePrayerGeo(mosqueId);
     const sourceTimings = await fetchSourceTimingMaps(geoRow, dateIso);
-    if (!sourceTimings) return normalized;
+    if (!sourceTimings) return filled;
 
-    const filled: NormalizedPrayerTimes = {
-      fajr: { ...normalized.fajr },
-      dhuhr: { ...normalized.dhuhr },
-      asr: { ...normalized.asr },
-      maghrib: { ...normalized.maghrib },
-      isha: { ...normalized.isha },
-    };
-    nullPrayers.forEach((p) => {
-      if (sourceTimings.adhan[p]) {
-        filled[p] = { adhan: safeDateWithBase(sourceTimings.adhan[p], dateIso), iqama: filled[p].iqama };
+    const nullAdhanSet = new Set(nullAdhanPrayers);
+    [...new Set([...nullAdhanPrayers, ...stillNullIqamaPrayers])].forEach((p) => {
+      if (nullAdhanSet.has(p) && sourceTimings.adhan[p]) {
+        filled[p] = {
+          adhan: addMinutes(safeDateWithBase(sourceTimings.adhan[p], dateIso), normalizePrayerTimeAdjustments(geoRow?.prayer_time_adjustments)[p]),
+          iqama: filled[p].iqama,
+        };
+      }
+      // Iqama already resolved above from schedule; ELM jamat is the final
+      // fallback only when no schedule row matched this prayer/date.
+      if (filled[p].iqama === null && sourceTimings.iqama[p]) {
+        filled[p] = { adhan: filled[p].adhan, iqama: safeDateWithBase(sourceTimings.iqama[p], dateIso) };
       }
     });
     return filled;
   } catch (fillErr: any) {
     console.warn('[getDailyPrayerTimes] partial fill threw', fillErr?.message ?? fillErr);
-    return normalized;
+    return filled;
   }
 }
 
@@ -340,7 +429,7 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
         fallback[name] = { adhan: convertLegacyTimesToDate(legacyDate, slot), iqama: null };
       });
 
-      return fallback;
+      return await fillPartialPrayerTimesFromSource(mosqueId, dateIso, fallback);
     }
     if (legacyErr && legacyErr.code !== 'PGRST116') {
       console.warn('[getDailyPrayerTimes] legacy mosque_prayer_times error', legacyErr.message ?? legacyErr);
@@ -372,7 +461,7 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
         rotaNormalized[key] = { adhan: safeDateWithBase(row.adhan_time ?? null, dateIso), iqama: null };
       });
       const hasAny = PRAYER_NAMES.some((p) => rotaNormalized[p].adhan);
-      if (hasAny) return rotaNormalized;
+      if (hasAny) return await fillPartialPrayerTimesFromSource(mosqueId, dateIso, rotaNormalized);
     } else if (rotaErr && rotaErr.code !== 'PGRST116') {
       console.warn('[getDailyPrayerTimes] staff_rota fallback error', rotaErr.message ?? rotaErr);
     }
@@ -383,13 +472,14 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
   const serverResult = await loadDailyPrayerTimesViaServer(mosqueId, dateIso);
   if (serverResult?.row) {
     const serverNormalized = normalizePrayerTimesRowWithBase(serverResult.row, dateIso);
-    return serverResult.source === 'prayer_times' || !serverResult.source
-      ? fillPartialPrayerTimesFromSource(mosqueId, dateIso, serverNormalized)
-      : serverNormalized;
+    // Always run the fill pass: it only touches null fields, so it is a no-op
+    // when the server already resolved everything, but it protects clients
+    // from a deployed API that predates iqamah-schedule resolution.
+    return fillPartialPrayerTimesFromSource(mosqueId, dateIso, serverNormalized);
   }
 
   // Last resort: auto-calculate from the mosque's configured source (ELM or Aladhan).
-  // ELM also populates iqama from jamaat times; Aladhan provides adhan only.
+  // Both sources provide beginning times only; congregation times remain mosque controlled.
   try {
     const mosqueGeo = await loadMosquePrayerGeo(mosqueId);
     const sourceTimings = await fetchSourceTimingMaps(mosqueGeo, dateIso);
@@ -398,11 +488,14 @@ export async function getDailyPrayerTimes(mosqueId: string, date: Date): Promise
     const calculated = emptyNormalized();
     PRAYER_NAMES.forEach((prayer) => {
       calculated[prayer] = {
-        adhan: safeDateWithBase(sourceTimings.adhan[prayer], dateIso),
-        iqama: safeDateWithBase(sourceTimings.iqama[prayer], dateIso),
+        adhan: addMinutes(safeDateWithBase(sourceTimings.adhan[prayer], dateIso), normalizePrayerTimeAdjustments(mosqueGeo?.prayer_time_adjustments)[prayer]),
+        iqama: null,
       };
     });
-    return calculated;
+    // Most dates never get a saved prayer_times row, so this is the path the
+    // vast majority of listener reads hit — without this, a mosque's iqamah
+    // schedule (and ELM jamat) would never apply on any auto-calculated date.
+    return await fillPartialPrayerTimesFromSource(mosqueId, dateIso, calculated);
   } catch (err: any) {
     console.warn('[getDailyPrayerTimes] auto-calculate fallback threw', err?.message ?? err);
   }
