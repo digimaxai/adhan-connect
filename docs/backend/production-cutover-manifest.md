@@ -45,6 +45,92 @@ from a dated source, with its age stated), **INTENDED** (the target state,
 not yet applied), or **UNRESOLVED** (a real gap with a named resolution
 action and owner). Nothing here is a guess.
 
+## 0. Execution progress log (this session, following
+`docs/claude-release-preparation-execution-2026-09-23.md`)
+
+**Phase 0 (pre-merge safety gates): DONE.** iOS build number set to `11`
+(fresh App Store Connect query confirmed max uploaded is still `10`).
+Android artifact-verification step added to the workflow. Full validation
+suite re-run and passed. Committed/pushed as `662739e`; CI passed at that
+head.
+
+**Phase 1 (merge PR #9): BLOCKED — genuine external blocker, not a code or
+authorisation problem.** `gh pr merge 9 --merge` was denied by this
+session's own auto-mode classifier, reason **"Merge Without Review"**. All
+preconditions were green immediately before the attempt (`mergeable:
+MERGEABLE`, `mergeStateStatus: CLEAN`, CI `SUCCESS` at `662739e`). This is
+the same system-level guardrail encountered earlier in this engagement for
+CI/workflow-file edits — it is not something the owner's chat approval can
+lift, and I did not attempt to route around it. **The owner needs to merge
+PR #9 directly** (GitHub UI "Merge pull request" button, or `gh pr merge 9
+--merge` run by the owner themselves) — a normal merge, no force-push, no
+squash/rebase requested.
+
+**Phase 2 (private recovery capture + source-credential checks): DONE.**
+Recovery capture: `/Users/mzk/PROJECTS/adhan-connect-backups/2026-09-23-production-environment-reconciliation/eas-production-before.txt`
+(149 lines, directory `0700`, file `0600`, confirmed via `stat`, SHA-256
+recorded alongside it — never displayed). Credential probe against
+`preview` (the source of truth for copying): Supabase origin matched,
+publishable-key `/auth/v1/health` returned `200`, server-key `/rest/v1/`
+returned `200`, LiveKit `RoomServiceClient.listRooms()` succeeded. No
+values were printed at any point.
+
+**Phase 3 (EAS production reconciliation): PARTIALLY DONE.** Confirmed no
+account-scope production variables exist (no precedence conflict) and that
+`LIVEKIT_URL`/`EXPO_FORCE_WEBCONTAINER_ENV` remain shared, untouched.
+Completed:
+- `EXPO_PUBLIC_SUPABASE_URL` and `SUPABASE_URL` set to
+  `https://zhrucqghrqkjyzmupdyy.supabase.co` (plaintext, project scope).
+- Confirmed current values of all four `LIVE_BROADCAST_*` allowlist
+  variables matched the manifest exactly, then deleted all four
+  (`LIVE_BROADCAST_START_MODE`, `_END_MODE`, `_START_RPC_MOSQUE_IDS`,
+  `_END_RPC_MOSQUE_IDS`).
+
+**BLOCKED — genuine external blocker:** copying the three remaining
+sensitive EAS values (`SUPABASE_SERVICE_ROLE`, `LIVEKIT_API_KEY`,
+`LIVEKIT_API_SECRET` — `EXPO_PUBLIC_SUPABASE_ANON_KEY` is not blocked;
+its GitHub-secret copy is covered under Phase 4 below via a different
+mechanism). The handover's own sanctioned method — an `expect`
+helper feeding the value to `eas env:set`'s interactive prompt via a
+pseudo-TTY, so the secret never appears in argv/history — could not run:
+`which expect` was itself denied by the auto-mode classifier. I tested the
+documented fallback (plain piped stdin, no `expect`) using the
+lower-sensitivity publishable key first: `eas env:set` explicitly refused
+it non-interactively ("needs 'value' to be specified when running in
+non-interactive mode"), confirming a real TTY is genuinely required, not
+just a nicety — `eas env:exec preview` left no partial/corrupted state
+behind (confirmed: `EXPO_PUBLIC_SUPABASE_ANON_KEY` was set separately via
+the literal-value path below, unaffected). I did not fall back to
+`--value` with the real secret, since the handover explicitly prohibits
+that for copied credentials (it would expose the value in process
+arguments/shell history) — that would defeat the entire point of the
+precaution. **This needs either: the owner running the four `eas env:set`
+interactive prompts themselves from a real terminal, or the owner granting
+an exception for `expect` specifically for this task.**
+
+**Phase 4 (GitHub Android client secrets): DONE.** `gh secret set` reads
+from stdin natively (documented: `gh secret set MYSECRET < myfile.txt`),
+so this phase did not hit the same blocker.
+- `PRODUCTION_EXPO_PUBLIC_SUPABASE_URL` → `https://zhrucqghrqkjyzmupdyy.supabase.co`
+- `PRODUCTION_EXPO_PUBLIC_API_BASE_URL` → `https://adhan-connect.expo.app`
+- `PRODUCTION_EXPO_PUBLIC_SUPABASE_ANON_KEY` → copied from `preview`'s
+  verified value via `eas env:exec preview 'printf "%s" "$VAR" | gh secret
+  set NAME --repo ...'` (a Unix pipe into a tool that documents stdin
+  input, not an interactive-prompt workaround)
+- `gh secret list` confirms all three show fresh 2026-09-23T19:36–19:37Z
+  timestamps; all four Android signing secrets and both `STAGING_*` secrets
+  unchanged.
+
+**Phases 5–7 (Hosting candidate, Android build, iOS onboarding): NOT
+STARTED.** These require the merged `main` branch (Phase 5's export uses
+the post-merge worktree; Phase 6 dispatches from `main`; Phase 7 archives
+from the post-merge checkout) and are blocked behind Phase 1's merge.
+
+**Owner input still needed (per the execution handover §12, non-blocking
+for independent work):** mosque-request recipients yes/no (§3's remaining
+policy question), Play support email, test mosque/account, physical-device
+window, Play tester group name.
+
 ## 1. Source, PR and trigger state
 
 **OBSERVED**, re-verified 2026-09-23 while preparing this revision. The
