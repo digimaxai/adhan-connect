@@ -33,39 +33,26 @@ jobs:
           cache: npm
 
       - name: Validate production target
-        shell: bash
+        run: node scripts/validate-production-build.js --environment-only
+
+      - name: Require release signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
-          test -n "$EXPO_PUBLIC_SUPABASE_URL"
-          test -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY"
-          test -n "$EXPO_PUBLIC_API_BASE_URL"
           node <<'NODE'
-          const expectedSupabaseHost = 'yecbsezhwvpdkuzmmziv.supabase.co';
-          const supabase = new URL(process.env.EXPO_PUBLIC_SUPABASE_URL);
-          const api = new URL(process.env.EXPO_PUBLIC_API_BASE_URL);
-          if (supabase.protocol !== 'https:' || supabase.hostname !== expectedSupabaseHost) {
-            throw new Error('Production build has the wrong Supabase target.');
-          }
-          if (api.protocol !== 'https:') {
-            throw new Error('Production API base URL must use HTTPS.');
-          }
+          const names = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'];
+          const missing = names.filter(name => !process.env[name]?.trim());
+          if (missing.length) throw new Error(`Missing signing secrets: ${missing.join(', ')}`);
           NODE
 
       - name: Install dependencies
         run: npm ci
 
       - name: Verify production app identity
-        run: |
-          node <<'NODE'
-          const { execFileSync } = require('node:child_process');
-          const config = JSON.parse(execFileSync('npx', ['expo', 'config', '--json'], { encoding: 'utf8' }));
-          if (config.android?.package !== 'com.maksumsdigitalagency.adhanconnect') {
-            throw new Error(`Unexpected Android package: ${config.android?.package ?? 'missing'}`);
-          }
-          if (config.extra?.appVariant !== 'production') {
-            throw new Error(`Unexpected app variant: ${config.extra?.appVariant ?? 'missing'}`);
-          }
-          NODE
+        run: node scripts/validate-production-build.js
 
       - name: Write .env.local for release JS bundling
         run: |
@@ -88,49 +75,42 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build debug APK for production-backend smoke testing
-        working-directory: android
-        run: |
-          chmod +x ./gradlew
-          ./gradlew assembleDebug
-
-      - name: Upload smoke-test APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: adhan-connect-production-beta-android-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 14
-
-      - name: Check release signing secrets are configured
-        id: signing
-        run: |
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Decode upload keystore
-        if: steps.signing.outputs.configured == 'true'
-        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
 
       - name: Add release signing config
-        if: steps.signing.outputs.configured == 'true'
         run: python3 scripts/patch-android-release-signing.py android/app/build.gradle
 
-      - name: Build signed release AAB
-        if: steps.signing.outputs.configured == 'true'
+      - name: Build signed release APK and AAB
         working-directory: android
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew bundleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease bundleRelease
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: adhan-connect-production-beta-android-apk-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload signed AAB
-        if: steps.signing.outputs.configured == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: adhan-connect-production-beta-android-aab
           path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
           retention-days: 30
+
+      - name: Remove temporary signing file
+        if: always()
+        run: rm -f android/app/upload-keystore.jks

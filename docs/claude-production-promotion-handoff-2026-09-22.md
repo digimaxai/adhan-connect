@@ -1,5 +1,13 @@
 # Claude Code execution handover: stable app promotion
 
+> Progress update, 23 September: Task A source preparation is now implemented
+> and locally validated. Read
+> [the Codex review](codex-production-preparation-review-2026-09-23.md) before
+> following historical pending-status statements below. That review also records
+> read-only Xcode Cloud/GitHub inspection. Start next with Task B; Tasks C/D
+> remain unstarted. Production workflows/environments/native acceptance are
+> still outstanding. Do not repeat completed source edits.
+
 Prepared 22 September 2026. Read this entire file before making changes.
 This is the primary continuation instruction for production promotion. Read
 `docs/backend/in-place-production-promotion-review-2026-09-22.md` for the
@@ -416,6 +424,9 @@ stopped or credits interrupted, leave this information before ending. Describe
 build, upload, alias switch, device acceptance and store release separately.
 Do not say the app is proven unbroken on the strength of CI alone.
 
-For the next session: start with task A. Neither task A nor the environment
-switch was completed when this handover was written. Historical tests/approvals
-do not mark new work done.
+For the next session: prepare Task B, using the 23 September review for completed
+Task A source work and read-only workflow evidence. Production Xcode Cloud setup,
+cloud environment reconciliation, native builds and physical acceptance remain
+pending; include them as explicit gates in the packet. Tasks C/D and the
+environment switch have not started. Historical tests/approvals do not mark
+new work done.

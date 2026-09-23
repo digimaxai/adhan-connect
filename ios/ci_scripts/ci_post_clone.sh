@@ -54,6 +54,12 @@ echo "Writing .env.local from EXPO_PUBLIC_* workflow variables..."
 env | /usr/bin/grep -E '^EXPO_PUBLIC_[A-Z0-9_]+=' > .env.local || true
 echo "  $(wc -l < .env.local | tr -d ' ') EXPO_PUBLIC_* values written"
 
+# This release branch contains the production native project. The staging
+# branch retains its own hook/project; a staging variant here would generate
+# the wrong scheme for this Xcode Cloud workflow.
+echo "Verifying production target and resolved app identity..."
+node scripts/validate-production-build.js
+
 echo "Regenerating native iOS project (APP_VARIANT=${APP_VARIANT:-unset})..."
 npx expo prebuild --platform ios
 

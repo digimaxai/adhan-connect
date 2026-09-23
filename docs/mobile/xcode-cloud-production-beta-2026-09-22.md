@@ -1,5 +1,13 @@
 # Xcode Cloud production-beta workflow
 
+Read-only inspection on 23 September found no production Xcode Cloud product.
+The existing staging workflow starts automatically only on the exact `staging`
+branch. Latest uploaded builds were production **10** and staging **41**;
+configure a non-conflicting production build number before the first upload.
+Environment values, signing and tester groups remain unverified. See
+[`../codex-production-preparation-review-2026-09-23.md`](../codex-production-preparation-review-2026-09-23.md)
+for resource IDs and inspection evidence. No workflow was created or changed.
+
 For the current in-place promotion, production targets the retained Supabase
 project `zhrucqghrqkjyzmupdyy`, not the old production project. Follow the exact
 environment mapping and workflow-inspection gates in

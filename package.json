@@ -31,7 +31,9 @@
     "test:devotional:api": "node ./scripts/test-devotional-api.js",
     "lint": "expo lint",
     "postinstall": "patch-package",
-    "test:services": "node scripts/services/test-rules.js"
+    "test:services": "node scripts/services/test-rules.js",
+    "validate:app-identity": "node ./scripts/validate-app-config-identity.js",
+    "test:production-build-guards": "node --test ./scripts/test-production-build-guards.js"
   },
   "dependencies": {
     "@expo-google-fonts/amiri-quran": "^0.4.1",

@@ -49,7 +49,10 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "ios": {}
+      "ios": {},
+      "env": {
+        "APP_VARIANT": "production"
+      }
     }
   },
   "submit": {

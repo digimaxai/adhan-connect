@@ -1,10 +1,19 @@
 # Adhan Connect - Claude/Codex Handoff
 
+Latest (2026-09-23): Claude's source preparation was reviewed and completed by
+Codex. Production iOS/Android now share strict target/identity validation;
+Android requires signing and builds a standalone release APK plus AAB. Local
+checks pass. Existing Apple API access allowed read-only workflow inspection:
+staging auto-builds only `staging`; no production Xcode Cloud product was found.
+See `docs/codex-production-preparation-review-2026-09-23.md` for exact evidence,
+build history and remaining gates. No cloud settings, builds or cutover changed.
+
 **Start here for production promotion:**
 [`docs/claude-production-promotion-handoff-2026-09-22.md`](docs/claude-production-promotion-handoff-2026-09-22.md).
 It contains the ordered execution tasks, exact environment mapping, approval
 boundaries, acceptance evidence, rollback requirements and explicit unknowns.
-No build-target correction or in-place cutover has happened yet. Do not infer
+Build-target code corrections are recorded in the 23 September review; no
+in-place cutover has happened. Do not infer
 completion from the existence of a plan or reuse superseded reset instructions.
 
 Latest release decision (2026-09-22): the owner requested a simpler promotion
