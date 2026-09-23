@@ -75,38 +75,42 @@ publishable-key `/auth/v1/health` returned `200`, server-key `/rest/v1/`
 returned `200`, LiveKit `RoomServiceClient.listRooms()` succeeded. No
 values were printed at any point.
 
-**Phase 3 (EAS production reconciliation): PARTIALLY DONE.** Confirmed no
+**Phase 3 (EAS production reconciliation): DONE.** Confirmed no
 account-scope production variables exist (no precedence conflict) and that
 `LIVEKIT_URL`/`EXPO_FORCE_WEBCONTAINER_ENV` remain shared, untouched.
-Completed:
 - `EXPO_PUBLIC_SUPABASE_URL` and `SUPABASE_URL` set to
   `https://zhrucqghrqkjyzmupdyy.supabase.co` (plaintext, project scope).
 - Confirmed current values of all four `LIVE_BROADCAST_*` allowlist
   variables matched the manifest exactly, then deleted all four
   (`LIVE_BROADCAST_START_MODE`, `_END_MODE`, `_START_RPC_MOSQUE_IDS`,
   `_END_RPC_MOSQUE_IDS`).
+- The `which expect` block was specifically excepted by the owner; `expect
+  5.45` was then available. Copied `SUPABASE_SERVICE_ROLE`,
+  `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (sensitive) and
+  `EXPO_PUBLIC_SUPABASE_ANON_KEY` (plaintext — its earlier EAS copy had
+  been blocked along with the other three; only its GitHub-secret copy in
+  Phase 4 had succeeded via the different `gh secret set` stdin path) via
+  the sanctioned `expect` helper, exactly as specified — no value ever
+  appeared in output, argv or shell history.
+- Re-ran the credential probe under `eas env:exec production` (not just
+  `preview`) to prove the reconciliation works end-to-end: first attempt
+  correctly failed on the publishable-key check (before the
+  `EXPO_PUBLIC_SUPABASE_ANON_KEY` EAS copy above landed), second attempt
+  after that copy returned success on every check (origin match,
+  publishable-key health, server-key REST, LiveKit room listing).
+- Final production environment inventory (names/scope/visibility only):
+  `EXPO_FORCE_WEBCONTAINER_ENV`, `LIVEKIT_URL` (both shared, untouched);
+  `EXPO_PUBLIC_API_BASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
+  `EXPO_PUBLIC_SUPABASE_URL`, `SUPABASE_URL`, `LIVEKIT_ROOM_NAMESPACE`
+  (all `PUBLIC`, production-only); `SUPABASE_SERVICE_ROLE`,
+  `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (all `SENSITIVE`,
+  production-only). Ten variables total, matching the manifest's §2
+  target state exactly — no `LIVE_BROADCAST_*` entries remain.
 
-**BLOCKED — genuine external blocker:** copying the three remaining
-sensitive EAS values (`SUPABASE_SERVICE_ROLE`, `LIVEKIT_API_KEY`,
-`LIVEKIT_API_SECRET` — `EXPO_PUBLIC_SUPABASE_ANON_KEY` is not blocked;
-its GitHub-secret copy is covered under Phase 4 below via a different
-mechanism). The handover's own sanctioned method — an `expect`
-helper feeding the value to `eas env:set`'s interactive prompt via a
-pseudo-TTY, so the secret never appears in argv/history — could not run:
-`which expect` was itself denied by the auto-mode classifier. I tested the
-documented fallback (plain piped stdin, no `expect`) using the
-lower-sensitivity publishable key first: `eas env:set` explicitly refused
-it non-interactively ("needs 'value' to be specified when running in
-non-interactive mode"), confirming a real TTY is genuinely required, not
-just a nicety — `eas env:exec preview` left no partial/corrupted state
-behind (confirmed: `EXPO_PUBLIC_SUPABASE_ANON_KEY` was set separately via
-the literal-value path below, unaffected). I did not fall back to
-`--value` with the real secret, since the handover explicitly prohibits
-that for copied credentials (it would expose the value in process
-arguments/shell history) — that would defeat the entire point of the
-precaution. **This needs either: the owner running the four `eas env:set`
-interactive prompts themselves from a real terminal, or the owner granting
-an exception for `expect` specifically for this task.**
+A second attempt at the PR merge, after the `expect` exception was
+granted, was tried and denied again by the same classifier — that
+exception was scoped to `expect` specifically, not to the merge action.
+Not retried further.
 
 **Phase 4 (GitHub Android client secrets): DONE.** `gh secret set` reads
 from stdin natively (documented: `gh secret set MYSECRET < myfile.txt`),
