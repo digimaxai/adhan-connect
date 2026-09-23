@@ -1,5 +1,12 @@
 # Claude Code: remaining production-promotion actions
 
+> **Superseding execution checkpoint:** the owner authorised the bounded
+> release-preparation work on 23 September 2026. Start with
+> `docs/claude-release-preparation-execution-2026-09-23.md`; it contains the
+> exact executable sequence, two newly identified pre-merge safety gates and
+> the actions that remain prohibited. This file remains background and later
+> cutover context.
+
 > Google Play update: the owner now reports developer approval. Follow
 > [the Android beta addendum](mobile/google-play-beta-plan-2026-09-23.md) when
 > planning internal distribution. GitHub remains the build system. Account/app
@@ -24,12 +31,14 @@
 > build as version code 2 (committed `app.json` value — EAS `autoIncrement`
 > does not apply to this GitHub-built workflow). Revision 3 was committed and
 > pushed as `60d08a1`; the separately authorised Google Play app-record update
-> was committed and pushed as `afbb512`. Do not create a competing second manifest
-> and do not skip directly to merge/configuration/builds.
+> was committed and pushed as `afbb512`. Do not create a competing second
+> manifest. Follow the superseding authorised execution checkpoint rather than
+> the older instruction to stop before merge/configuration/builds.
 
-Prepared 23 September 2026 at the owner's request. This is the current task
-order and status entry point. It clarifies sequencing; it does not authorise a
-cutover, database reset, public store release or permission-policy changes.
+Prepared 23 September 2026 at the owner's request. This file records the broader
+task order. The superseding execution handover records the later bounded
+release-preparation approval; neither document authorises service cutover,
+database reset, public store release or permission-policy changes.
 
 ## 1. Start here: objective and what is already finished
 
@@ -40,7 +49,8 @@ testing the recorded-adhan work. Preserve the current demo through preparation.
 Read these files in order before making changes:
 
 1. This file.
-2. `docs/backend/production-cutover-manifest.md` — current DRAFT; revise in place.
+2. `docs/backend/production-cutover-manifest.md` — release preparation authorised;
+   service cutover remains unauthorised; revise in place.
 3. `docs/codex-review-cutover-manifest-2026-09-23.md` — mandatory corrections to
    the current manifest before a preparation approval request.
 4. `docs/mobile/google-play-beta-plan-2026-09-23.md` — confirmed organisation
@@ -150,12 +160,13 @@ blocking. No cloud values or workflows changed in this step.
 
 ## 4. Revise Task B's manifest and finish the release-preparation proposal
 
-Revise the existing `docs/backend/production-cutover-manifest.md` in place. Keep
-status `DRAFT — NOT AUTHORISED FOR EXECUTION` until every item in
-`docs/codex-review-cutover-manifest-2026-09-23.md` is resolved, incorporated or
-recorded as a tested blocker. Separate observed values, intended values and
-unverified values. Every unknown must have a resolution action and owner; never
-turn placeholders into guessed resource IDs or executable commands.
+Revise the existing `docs/backend/production-cutover-manifest.md` in place. Its
+release-preparation scope is now authorised by the superseding execution
+handover; preserve the explicit unauthorised status for service cutover, Play
+upload/tester rollout and future-staging actions. Separate observed values,
+intended values and unverified values. Every unknown must have a resolution
+action and owner; never turn placeholders into guessed resource IDs or
+executable commands.
 
 Include these sections:
 

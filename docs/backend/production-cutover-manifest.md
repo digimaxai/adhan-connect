@@ -1,8 +1,19 @@
 # Production cutover manifest
 
-**Status: DRAFT — NOT AUTHORISED FOR EXECUTION.**
+**Status: RELEASE PREPARATION AUTHORISED — SERVICE CUTOVER NOT AUTHORISED.**
 
-Revision 4 (23 September 2026, Codex), refreshing revision 3 after its
+The owner explicitly approved the bounded release-preparation checkpoint in
+chat on 23 September 2026. That approval covers the pre-merge release-safety
+corrections, PR #9 merge, production-only EAS/GitHub reconciliation, an
+unaliased production-configured Hosting candidate, and the first Android/iOS
+production artifacts. It does not cover the root Hosting alias, Supabase Auth,
+database, notification/cron/automation routing, Google Play upload or tester
+rollout, future-staging reset, or recorded-Adhan feature integration.
+
+Revision 5 (23 September 2026, Codex) records the owner's bounded
+release-preparation approval, makes `APP_VARIANT=production` explicit for the
+Hosting export, and adds the iOS build-number pre-merge gate and dedicated
+Claude execution handover. Revision 4 refreshed revision 3 after its
 documentation commits and the separately authorised Google Play app-record
 creation, and replacing the remaining executable placeholders with exact,
 interactive commands that do not put credential values in shell history.
@@ -13,16 +24,16 @@ Revision 3 addressed every numbered item in
 useful evidence is preserved; corrected conclusions are labelled
 **REVISED** inline rather than silently replaced, so drift across review
 passes stays visible — including one correction of a previous correction
-(§4's Xcode Cloud role/connection findings). This document still does not
-authorise any service mutation, merge, native build start, Auth patch,
-notification switch, database action, further Play configuration, or upload.
+(§4's Xcode Cloud role/connection findings). The authorisation applies only
+to the release-preparation actions listed above; all service-cutover, Play
+upload/tester rollout and future-staging actions remain unauthorised.
 
-Two checkpoints remain separate and are both still open:
+Two checkpoints remain separate:
 
 - **Release preparation** (§4–5 below): merge PR #9, configure production
   Xcode Cloud, register/run the Android workflow, publish a matched
   production API export, prepare (not execute) Google Play internal
-  testing. Needs its own bounded approval (§10).
+  testing. **Authorised**, subject to the guards and stop conditions below.
 - **Service cutover** (§6 of the primary handover, restated in §9 below):
   the shared-database switch — Auth routing, alias move, notification
   dispatcher, assistant-automation. Needs the single approval described in
@@ -493,8 +504,11 @@ gh secret set PRODUCTION_EXPO_PUBLIC_SUPABASE_ANON_KEY
 gh secret set PRODUCTION_EXPO_PUBLIC_API_BASE_URL --body "https://adhan-connect.expo.app"
 # Record the mutation time; there is no read-back path to confirm the value afterward except a build.
 
-# 5. Production export, from the pinned post-merge SHA, local dotenv disabled:
-EXPO_NO_DOTENV=1 eas env:exec production "npx expo export --platform web --clear"
+# 5. Production export, from the pinned post-merge SHA, local dotenv disabled
+#    and the variant explicit (the retained zhr... Supabase ref otherwise triggers
+#    app.config.js's historical staging inference):
+EXPO_NO_DOTENV=1 eas env:exec production \
+  "APP_VARIANT=production EXPO_NO_DOTENV=1 npx expo export --platform web --clear"
 # `npx expo export` writes to `dist/` by default; no override exists in package.json/scripts.
 
 # 6. Deploy WITHOUT --prod and WITHOUT --alias (never move the root/preview alias here). Write the
@@ -600,10 +614,11 @@ Rollback route unchanged from revision 1.
 
 ## 10. Outstanding blockers and next concrete action
 
-**Blocking release preparation:**
+**Release-preparation state:**
 
-1. PR #9 merge — needs the bounded release-preparation approval requested
-   below. Confirmed `MERGEABLE`/`CLEAN` as of this revision.
+1. ~~PR #9 release-preparation authority~~ — **RESOLVED:** explicitly approved
+   by the owner on 23 September 2026. Recheck `MERGEABLE`/`CLEAN` and all CI
+   immediately before merge.
 2. The recovery directory for EAS production values is created (§3,
    0700, empty) but the actual `eas env:list --include-sensitive` capture
    into it has not been run — blocks §8 forward step 3 specifically.
@@ -611,37 +626,37 @@ Rollback route unchanged from revision 1.
    testers remain **UNRESOLVED — ask owner**, needed before store-listing
    setup and before any internal-testing release respectively — not
    before anything else in release preparation.
+4. The committed iOS build number is `1`, while the last observed production
+   upload is `10`. Refresh App Store Connect and set the source build number
+   to the fresh maximum plus one before merge/iOS archive, as required by the
+   Claude execution handover. This blocks only the iOS archive until resolved.
 
 **Blocking cutover only (not release preparation, §6's boundary
 correction):**
 
-4. Fresh Auth safe-field audit of the retained project.
-5. Fresh notification/automation/live-state re-check.
-6. Fresh full-database snapshot "after write quiescence" (§7).
+5. Fresh Auth safe-field audit of the retained project.
+6. Fresh notification/automation/live-state re-check.
+7. Fresh full-database snapshot "after write quiescence" (§7).
 
 **Resolved across this session's two revisions:**
 
-7. ~~App Store Connect key role~~ — **Admin**, confirmed by owner
+8. ~~App Store Connect key role~~ — **Admin**, confirmed by owner
    2026-09-23. Not "Apple's highest role" (that's `Account Holder`) —
    corrected in revision 3 per r2 review item 1.
-8. ~~Whether the GitHub repository is connected to Xcode Cloud~~ — **yes**,
+9. ~~Whether the GitHub repository is connected to Xcode Cloud~~ — **yes**,
    `digimaxai/adhan-connect` already connected (Codex's r2 inspection).
    The actual gap is app `6792143739`'s missing product onboarding, not a
    GitHub authorization — corrected in revision 3.
-9. ~~EAS account-scope precedence risk~~ — checked read-only by Codex, no
+10. ~~EAS account-scope precedence risk~~ — checked read-only by Codex, no
    account-wide production variables exist.
 
 **Owner-input questions, not blockers on my independent work:**
 
-10. The four acceptance-window questions (§9) plus Play tester group (§4)
+11. The four acceptance-window questions (§9) plus Play tester group (§4)
     — bundled, asked in the r2-revision reply; awaiting answers.
 
-**Next concrete action**: report items 3 and 10 (the still-open owner
-questions) alongside this revision, and request the bounded
-release-preparation approval covering exactly: merge PR #9, the EAS
-production-values recovery capture (§8 step 2) followed by EAS/GitHub
-production environment reconciliation per §3, the first real native
-builds, and a candidate Hosting deployment restricted to the read-only
-smoke tests in §8. This explicitly excludes Google Play app
-creation/upload (needs its own confirmed fields first, item 3) and
-excludes §9's service cutover entirely.
+**Next concrete action**: execute the authorised release-preparation sequence
+using `docs/claude-release-preparation-execution-2026-09-23.md`. Resolve the
+iOS build-number and Android artifact-verification pre-merge gates there,
+then merge, reconcile, build and record evidence. Continue to exclude Google
+Play upload/tester rollout and §9's service cutover entirely.

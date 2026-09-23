@@ -1,11 +1,13 @@
 # Google Play availability: update to production-promotion plan
 
 23 September 2026. The owner confirmed an approved **organisation** developer
-account. Play Console currently shows “Create your first app”; no Adhan Connect
-app record exists and no AAB/APK has been uploaded. This supersedes historical
-statements that developer-account approval is still pending. It establishes
-account onboarding, not approval of an app or production release. It does not
-authorise app creation, a Play upload or public release.
+account and subsequently created the first app record personally. The record is
+`Adhan Connect`, package `com.maksumsdigitalagency.adhanconnect`, default language
+English (United Kingdom), classified as an app and free. The owner accepted the
+three creation declarations. No AAB/APK has been uploaded, no testing track is
+configured and no testers are invited. This supersedes historical statements
+that developer-account approval or app creation is still pending. It does not
+authorise a Play upload, tester rollout or public release.
 
 ## Revised Android path
 
@@ -29,30 +31,16 @@ before applying for production access. Internal testing is available separately;
 it does not satisfy that closed-test requirement. Apply this only if it pertains
 to the verified account and app status. See [Google's testing requirements](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en-GB).
 
-## Minimum information requested from the owner now
+## Remaining information requested from the owner
 
-Confirmed by the owner: organisation account; no app record or prior upload;
-Console offers “Create your first app”. The numeric developer account ID is not
-needed for initial planning or owner-operated Console setup. Request it later only
-if a specific API integration or account-scoped diagnostic requires it; do not
-store it in source merely for identification.
+The app record, language, name, package, app/free classification and creation
+declarations are complete. The numeric developer account ID is not needed for
+the current owner-operated setup. Request it only if a specific API operation
+later requires it; do not store it in source merely for identification.
 
-The next owner choices needed before creating the app record are:
-
-1. Default language (proposed: English (United Kingdom), subject to Console
-   availability and owner preference).
-2. Store name (proposed: `Adhan Connect`; Google currently limits it to 30
-   characters and permits later changes).
-3. App rather than game, and free rather than paid (proposed based on current
-   product behavior; owner must confirm because changing a published free app to
-   paid later is restricted).
-4. Public app-support email address. Do not place a private login address in Git.
-5. Owner acceptance of the Developer Program Policies, US export-law declaration
-   and Play App Signing terms in Console. These are account-holder declarations
-   and must not be accepted by an agent without explicit authority.
-
-Google's current first-app form requires those fields and declarations. See
-[Create and set up your app](https://support.google.com/googleplay/android-developer/answer/9859152?hl=en).
+The remaining owner choices are the public app-support email and the private
+internal-tester list or Google Group. Do not place either a private login address
+or tester email list in Git/chat. See [Create and set up your app](https://support.google.com/googleplay/android-developer/answer/9859152?hl=en).
 
 Before the first internal release, additionally identify:
 
@@ -76,9 +64,8 @@ Console upload. Do not invent an assistant email address for a Console invitatio
 
 ## Signing and artifact checks before any upload
 
-1. Verify that the Console app is the intended production package and account.
-   If absent, prepare its creation details for the approved setup step; do not
-   silently choose another package or create a duplicate app.
+1. Verify that the existing Console app is the intended production package and
+   account. Do not create a duplicate app or choose another package.
 2. Inspect Play App Signing state. For an established app, compare the existing
    GitHub signing certificate against its registered upload certificate before
    using the AAB. Existing secret names do not prove a signing match. For first
@@ -101,8 +88,9 @@ Google describes the distinction between the upload key and app signing key in
 
 ## Incorporate into the manifest and approval sequence
 
-Claude should revise `docs/backend/production-cutover-manifest.md` alongside the
-existing Codex review; preserve its DRAFT status until its gaps are resolved.
+Claude should update `docs/backend/production-cutover-manifest.md` alongside the
+existing Codex review. Its release-preparation scope is now authorised; preserve
+the explicit prohibition on service cutover and Play upload/tester rollout.
 
 Add account/app status, selected internal track, signing verification, version
 code, tester group, upload method and any Console blockers to the Android section.
