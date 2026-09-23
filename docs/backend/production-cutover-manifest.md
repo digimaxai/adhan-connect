@@ -318,23 +318,33 @@ discover there's no increment mechanism.
 ### Google Play internal testing (new — from
 `docs/mobile/google-play-beta-plan-2026-09-23.md`)
 
-**Confirmed status**: organisation developer account, approved. Console
-shows "Create your first app" — **no Adhan Connect app record exists, no
-AAB/APK has ever been uploaded.** This is account onboarding, not app or
-release approval. GitHub Actions remains the build system; Play is an
-*additional* distribution route for the signed AAB the Android workflow
-already produces, not a replacement for the APK-based acceptance path.
+**REVISED — app record now exists.** The owner created it directly in
+Console 2026-09-23, after personally reviewing and checking all three
+declarations (Developer Program Policies, Play App Signing Terms of
+Service, US export laws) — I did not accept any of them. Confirmed values:
 
-**Proposed first-app values** (owner must confirm each, not assume):
-
-| Field | Proposed default | Confirmed? |
+| Field | Value | Status |
 | --- | --- | --- |
-| Default language | English (United Kingdom) | **UNRESOLVED — ask owner** |
-| Store listing name | `Adhan Connect` (Google limits 30 characters) | **UNRESOLVED — ask owner** |
-| App vs. game, free vs. paid | App, Free | **UNRESOLVED — ask owner** (changing free→paid later is restricted, so this needs deliberate confirmation, not silent assumption) |
-| Public app-support email | — | **UNRESOLVED — ask owner.** Must be a public-facing address; do not place a private login address in Git or chat |
-| Policy/export-law/Play App Signing declarations | — | **Owner-only** — these are account-holder legal declarations; I cannot and will not accept them on the owner's behalf |
-| Internal tester Google accounts or existing tester group | — | **UNRESOLVED — ask owner**, bundled with the physical-device tester questions already pending in §9 |
+| App name | `Adhan Connect` | **Set** |
+| Package name | `com.maksumsdigitalagency.adhanconnect` | **Set — permanent, cannot be changed** |
+| Default language | English (United Kingdom) | **Set** |
+| App vs. game | App | **Set** |
+| Free vs. paid | Free (selected on the creation form; Google allows changing this up until first publish, per the form's own text) | **Set** |
+| Declarations | All three checked by the owner | **Set** |
+
+GitHub Actions remains the build system; Play is an *additional*
+distribution route for the signed AAB the Android workflow already
+produces, not a replacement for the APK-based acceptance path.
+
+**Still open, surfaced by the post-creation Dashboard** (not yet
+addressed, no action taken):
+
+| Item | Status |
+| --- | --- |
+| Public app-support email | **UNRESOLVED — ask owner.** Not collected at creation; Console's Dashboard now shows a "Set up your app" task for store listing details, which is where this normally lives. Must be public-facing, not a private login address |
+| Internal tester Google accounts or existing tester group | **UNRESOLVED — ask owner**, bundled with the physical-device tester questions already pending in §9 |
+| Store listing content (description, screenshots, privacy policy URL, etc.) | **Not started** — surfaced by Dashboard's "Provide information about your app and set up your store listing" task; out of scope for this manifest's release-preparation checkpoint, needed before any public/production Play release, not necessarily before internal testing |
+| "Release your app early for internal testing without review" (up to 100 testers) | **Not started** — Dashboard surfaces this directly, but it needs an actual AAB to upload, which doesn't exist yet (blocked on the Android GitHub workflow, itself blocked on the release-preparation approval, §10) |
 
 **Signing verification required before any upload** (not yet performed,
 no upload exists to verify): once the Android workflow produces a signed
@@ -354,11 +364,10 @@ no-network-action checks (install, cold launch to the sign-in screen,
 uninstall) can precede cutover; anything that would authenticate or read
 live data cannot.
 
-**Not started**: no app record created, no AAB uploaded, no track
-configured, no testers invited. All of §4's Google Play content is
-planning only, per the addendum's own closing line: "No merge, build,
-upload, track rollout, signing change or cloud mutation occurred as part
-of writing this update" — equally true of this manifest revision.
+**Status as of this revision**: app record created (above). No AAB
+uploaded, no track configured, no testers invited — those remain their
+own separate checkpoints, gated on the Android artifact existing at all
+(§10) and on the still-open owner questions above.
 
 ## 5. Native build record slots and candidate server deployment
 
@@ -369,7 +378,8 @@ Unchanged from revision 1 — still genuinely blocked, nothing to fill:
 | Production iOS build number/run ID | BLOCKED — no workflow exists (product onboarding needed first, §4) |
 | Production Android run URL/SHA/checksums | BLOCKED — not registered on `main`; version code will be **2** (committed `app.json` value, confirmed this revision, §4) |
 | Candidate production Hosting deployment ID | BLOCKED — no production-configured export produced |
-| Google Play app record / internal-track release ID | BLOCKED — no app record exists (§4) |
+| Google Play app record | **Created** — `Adhan Connect`, `com.maksumsdigitalagency.adhanconnect` (§4) |
+| Google Play internal-track release ID | BLOCKED — needs a signed AAB, which doesn't exist yet (§4, §10) |
 | Final post-merge build SHA | Unknown until PR #9 merges |
 
 ## 6. Fresh read-only service state
@@ -558,8 +568,10 @@ Rollback route unchanged from revision 1.
 2. The recovery directory for EAS production values is created (§3,
    0700, empty) but the actual `eas env:list --include-sensitive` capture
    into it has not been run — blocks §8 forward step 3 specifically.
-3. Google Play owner-input fields (§4) — needed before app-record
-   creation specifically, not before anything else in release preparation.
+3. Google Play app record is created (§4). Support email and internal
+   testers remain **UNRESOLVED — ask owner**, needed before store-listing
+   setup and before any internal-testing release respectively — not
+   before anything else in release preparation.
 
 **Blocking cutover only (not release preparation, §6's boundary
 correction):**
