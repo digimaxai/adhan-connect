@@ -22,8 +22,9 @@
 > rather than `chmod`-ing after; exact `eas env:delete`/`env:set` syntax is
 > confirmed via CLI help throughout; Android's first production artifact will
 > build as version code 2 (committed `app.json` value — EAS `autoIncrement`
-> does not apply to this GitHub-built workflow). Still uncommitted in the
-> worktree pending owner review. Do not create a competing second manifest
+> does not apply to this GitHub-built workflow). Revision 3 was committed and
+> pushed as `60d08a1`; the separately authorised Google Play app-record update
+> was committed and pushed as `afbb512`. Do not create a competing second manifest
 > and do not skip directly to merge/configuration/builds.
 
 Prepared 23 September 2026 at the owner's request. This is the current task
@@ -189,13 +190,15 @@ internal testers and an acceptable switch window. Bundle these questions and
 continue independent preparation. Never ask for passwords in chat or reset
 accounts merely to make testing easier.
 
-For Google Play, the owner has already answered: organisation account; no app
-record; no previous upload; Console shows “Create your first app”. Do not ask for
-the numeric account ID unless a specific API operation later requires it. Before
-proposing app creation, obtain or confirm: default language, store name, app/free
-classification, public support email, and which internal tester Google accounts
-or group will be used. Proposed defaults are English (United Kingdom), `Adhan
-Connect`, app, free. The owner must accept Google's policy/export/signing terms.
+For Google Play, the owner has already created the first app record after
+personally accepting Google's required declarations: organisation account;
+`Adhan Connect`; package `com.maksumsdigitalagency.adhanconnect`; English
+(United Kingdom); app; free. No AAB has been uploaded and no testing track or
+tester list exists. Do not ask for the numeric account ID unless a specific API
+operation later requires it. The remaining owner inputs are the public support
+email and the internal tester Google accounts or group; keep actual email lists
+out of chat. App creation and declaration acceptance are complete and must not
+be repeated.
 
 ### How to guide the owner
 

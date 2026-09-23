@@ -2,7 +2,11 @@
 
 **Status: DRAFT — NOT AUTHORISED FOR EXECUTION.**
 
-Revision 3 (23 September 2026, Claude), addressing every numbered item in
+Revision 4 (23 September 2026, Codex), refreshing revision 3 after its
+documentation commits and the separately authorised Google Play app-record
+creation, and replacing the remaining executable placeholders with exact,
+interactive commands that do not put credential values in shell history.
+Revision 3 addressed every numbered item in
 `docs/codex-review-cutover-manifest-r2-2026-09-23.md`, on top of revision
 2's response to `docs/codex-review-cutover-manifest-2026-09-23.md` and
 `docs/mobile/google-play-beta-plan-2026-09-23.md`. Earlier revisions'
@@ -11,7 +15,7 @@ useful evidence is preserved; corrected conclusions are labelled
 passes stays visible — including one correction of a previous correction
 (§4's Xcode Cloud role/connection findings). This document still does not
 authorise any service mutation, merge, native build start, Auth patch,
-notification switch, database action, Play app creation, or upload.
+notification switch, database action, further Play configuration, or upload.
 
 Two checkpoints remain separate and are both still open:
 
@@ -37,24 +41,21 @@ action and owner). Nothing here is a guess.
 | Item | Value |
 | --- | --- |
 | Branch | `release/stable-staging-to-production-2026-09-21` |
-| HEAD | `5dc057793bb00b33fce5c1d5a9c8b5937d2162cc` |
+| HEAD | `afbb5124743dfab2e55efefdff3be6fb5a8b0ed6` |
 | Local vs. `origin/release/...` | clean, matches origin |
 | Task A implementation commit | `c1b8f57223197bdea5fa7fd753797460d8d3cace` — ancestor of HEAD |
-| PR #9 | `OPEN`, `isDraft: true`, base `main`, `headRefOid` = current HEAD, **`mergeable: MERGEABLE`, `mergeStateStatus: CLEAN`** |
-| PR #9 CI | `checks` (workflow `CI`) — `SUCCESS`, completed `2026-09-23T09:56:56Z`, run `35845836188` |
+| PR #9 | `OPEN`, `isDraft: true`, base `main`, `headRefOid` = `afbb5124743dfab2e55efefdff3be6fb5a8b0ed6`, **`mergeable: MERGEABLE`, `mergeStateStatus: CLEAN`** |
+| PR #9 CI | `checks` (workflow `CI`) — `SUCCESS`, completed `2026-09-23T16:28:20Z`, run `35888883922` |
 | Registered GitHub Actions workflows (default branch `main`) | `CI` (`ci.yml`), `Android Staging Build` (`android-staging-build.yml`) only |
 | `Android Production Beta Build` | Not registered on `main`; cannot be `workflow_dispatch`-triggered until merged |
 
-**REVISED (accuracy correction, review r2 item 7):** the worktree is
-**not** clean while this manifest is being actively revised — that is
-expected mid-edit, not a defect. State the actual current condition rather
-than a snapshot from before edits started: as of this revision,
-`docs/backend/production-cutover-manifest.md` and
-`docs/claude-remaining-production-actions-2026-09-23.md` are modified, and
-`docs/codex-review-cutover-manifest-r2-2026-09-23.md` is untracked. Nothing
-else in the worktree is touched. This will be true again the moment these
-are committed or reverted — read `git status --short` fresh rather than
-trusting either this note or revision 1's superseded claim.
+**REVISED (accuracy correction, review r2 item 7):** immediately before
+revision 4 was edited, the worktree was clean and matched the remote release
+branch (`git rev-list --left-right --count` returned `0 0`). Revision 3 and
+the Google Play record update are committed and pushed as `60d08a1` and
+`afbb512` respectively. Editing this document temporarily makes the worktree
+dirty; read `git status --short` fresh before acting rather than treating a
+documented snapshot as a permanent condition.
 
 ## 2. Before/after map and concrete per-value decisions
 
@@ -109,17 +110,11 @@ All target variables confirmed `production`-only scope this revision
 **except** `LIVEKIT_URL` and `EXPO_FORCE_WEBCONTAINER_ENV`, which are
 shared records and must not be touched (§2).
 
-Exact command (current, non-deprecated CLI syntax — `eas env:update`/
-`env:create` are deprecated per their own `--help` output; `eas env:set`
-both creates and updates):
-
-```sh
-eas env:set production --name EXPO_PUBLIC_SUPABASE_URL \
-  --value https://zhrucqghrqkjyzmupdyy.supabase.co \
-  --visibility plaintext --non-interactive
-# repeat per variable: EXPO_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_URL (plaintext),
-# SUPABASE_SERVICE_ROLE, LIVEKIT_API_KEY, LIVEKIT_API_SECRET (--visibility sensitive)
-```
+The exhaustive commands are in §8. They use the current, non-deprecated
+`eas env:set` syntax for every variable (`eas env:update` and `env:create`
+are deprecated per their own `--help` output). Public literals are supplied
+non-interactively; credentials and recipient values use the interactive
+value prompt so they do not enter shell history or process arguments.
 
 **Source of each new value**, per review item 2 — "a passing build does
 not prove key/project matching," so provenance and an authenticated check
@@ -220,11 +215,10 @@ packet may retain one. It contains no data yet; the `eas env:list`
 capture itself is deferred to the approved reconciliation step, not run
 during this read-only revision pass.
 
-For each individual `eas env:set ... --value <secret>` call during
-reconciliation, the value must come from a secure, non-history-logged
-mechanism (an interactively piped value or a value read from a `0600`
-file), never typed as a literal in a command that lands in shell history
-or process listing.
+For each sensitive `eas env:set` operation during reconciliation, omit
+`--value` and `--non-interactive` and enter the value only in the CLI's
+interactive value prompt, as shown in §8. This keeps it out of shell history
+and command-line process listings. Do not echo it or paste it into chat.
 
 **No fresh full-database/Storage export taken this session** — still an
 UNRESOLVED, blocking prerequisite to cutover specifically (§9), separate
@@ -292,8 +286,9 @@ Unchanged from revision 1 (Codex review did not flag this section):
 1. Merge PR #9 — registers the workflow on `main`.
 2. Confirm all four signing secrets present (confirmed again this
    revision via `gh secret list`, unchanged since 2026-09-13).
-3. Confirm `PRODUCTION_EXPO_PUBLIC_*` GitHub secrets target the retained
-   project (verifiable only by consequence — §3).
+3. Set `PRODUCTION_EXPO_PUBLIC_*` GitHub secrets fresh from the same
+   independently verified sources used for EAS production (§3); the build
+   guard then checks that required values were consumed and are well formed.
 4. Manually dispatch `Android Production Beta Build` from `main` at the
    pinned merge SHA.
 5. Record run URL, SHA, APK/AAB artifact names/checksums, and verify the
@@ -431,7 +426,7 @@ deployment handling.
 # 1. Confirm PR state immediately before merging (re-run, don't trust this document's cached values):
 gh pr view 9 --json mergeable,mergeStateStatus,statusCheckRollup,headRefOid
 # Proceed only if mergeable=MERGEABLE, mergeStateStatus=CLEAN, statusCheckRollup all SUCCESS.
-# Merge via GitHub UI or: gh pr merge 9 --merge --subject "<reviewed subject>"
+# Merge using the already-reviewed PR title: gh pr merge 9 --merge
 # Record the resulting main HEAD SHA immediately: git fetch origin && git rev-parse origin/main
 
 # 2. Capture recoverable previous EAS production values BEFORE any change (§3, §7) —
@@ -442,12 +437,29 @@ eas env:list --environment production --include-sensitive --format long \
 ls -la /Users/mzk/PROJECTS/adhan-connect-backups/2026-09-23-production-environment-reconciliation
 # Verify directory 0700, file 0600 — both from creation, not via a later chmod.
 
-# 3. Reconcile EAS production (current, non-deprecated syntax; run once per variable):
+# 3. Reconcile EAS production (current, non-deprecated syntax).
+# Public literals can be supplied non-interactively:
 eas env:set production --name EXPO_PUBLIC_SUPABASE_URL \
   --value https://zhrucqghrqkjyzmupdyy.supabase.co --visibility plaintext --non-interactive
-# ... repeat per §3's table. Do NOT touch LIVEKIT_URL or EXPO_FORCE_WEBCONTAINER_ENV (shared scope).
-# Secret values (SUPABASE_SERVICE_ROLE, LIVEKIT_API_KEY/SECRET) must come from a secure,
-# non-history-logged mechanism, not a literal in this command text.
+eas env:set production --name SUPABASE_URL \
+  --value https://zhrucqghrqkjyzmupdyy.supabase.co --visibility plaintext --non-interactive
+eas env:set production --name MOSQUE_REQUEST_ADMIN_URL \
+  --value https://adhan-connect.expo.app/admin/mosque-requests \
+  --visibility sensitive --non-interactive
+
+# For every credential or recipient value below, omit --value and
+# --non-interactive. Paste the value only into the CLI's interactive prompt,
+# using the verified preview value described in §3. The value must never be
+# printed, pasted into chat, or supplied as a command-line argument:
+eas env:set production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --visibility plaintext
+eas env:set production --name SUPABASE_SERVICE_ROLE --visibility sensitive
+eas env:set production --name LIVEKIT_API_KEY --visibility sensitive
+eas env:set production --name LIVEKIT_API_SECRET --visibility sensitive
+eas env:set production --name RESEND_API_KEY --visibility sensitive
+eas env:set production --name MOSQUE_REQUEST_NOTIFY_EMAIL --visibility sensitive
+eas env:set production --name MOSQUE_REQUEST_NOTIFY_FROM --visibility sensitive
+
+# Do NOT touch LIVEKIT_URL or EXPO_FORCE_WEBCONTAINER_ENV: each is a shared-scope record.
 
 # Unset the four stale Harrow-only allowlist entries (exact help-verified syntax, r2 item 5):
 eas env:delete production --variable-name LIVE_BROADCAST_START_MODE --scope project --non-interactive
@@ -472,19 +484,19 @@ curl -sf -o /dev/null -w '%{http_code}' \
 # 4b. Set the matching GitHub secrets from the SAME verified-good values (r2 item 4 — do not
 #     trust GitHub's existing unreadable values; overwrite fresh from the authoritative source):
 gh secret set PRODUCTION_EXPO_PUBLIC_SUPABASE_URL --body "https://zhrucqghrqkjyzmupdyy.supabase.co"
-gh secret set PRODUCTION_EXPO_PUBLIC_SUPABASE_ANON_KEY < /path/to/secure/value  # never as a literal arg
+gh secret set PRODUCTION_EXPO_PUBLIC_SUPABASE_ANON_KEY
+# The command above reads the value through its secure interactive prompt/stdin;
+# paste the same verified publishable key used for EAS production. Do not use --body.
 gh secret set PRODUCTION_EXPO_PUBLIC_API_BASE_URL --body "https://adhan-connect.expo.app"
 # Record the mutation time; there is no read-back path to confirm the value afterward except a build.
 
 # 5. Production export, from the pinned post-merge SHA, local dotenv disabled:
 EXPO_NO_DOTENV=1 eas env:exec production "npx expo export --platform web --clear"
-# Confirmed this revision: `npx expo export` writes to `dist/` by default, and `eas deploy`'s
-# `--export-dir` also defaults to `dist` (checked `eas deploy --help`) — no explicit flag needed,
-# no override found in package.json/scripts.
+# `npx expo export` writes to `dist/` by default; no override exists in package.json/scripts.
 
 # 6. Deploy WITHOUT --prod and WITHOUT --alias (never move the root/preview alias here). Write the
 #    result outside the repository, not as an untracked file inside the git working directory (r2 item 5):
-eas deploy --environment production --json \
+eas deploy --environment production --export-dir dist --json \
   > /Users/mzk/PROJECTS/adhan-connect-backups/2026-09-23-production-environment-reconciliation/deploy-result.json
 # --id is a CUSTOM identifier if you choose to set one; omitted here, so EAS assigns one automatically.
 # Read the assigned deployment ID and URL from that file — do not invent or pre-guess it.
@@ -499,24 +511,48 @@ eas deploy --environment production --json \
 
 ### Release preparation — reverse
 
-- EAS production environment: restore each changed variable from the
-  recovery file with
-  `eas env:set production --name <NAME> --value <FROM-RECOVERY-FILE> --visibility <matching> --non-interactive`.
+- EAS production environment: restore the previous values captured in
+  `eas-production-before.txt` using the four exact commands below, entering
+  each recovered value only at its interactive prompt. Do not use `--value`
+  for a recovered credential:
+
+  ```sh
+  eas env:set production --name EXPO_PUBLIC_SUPABASE_URL --visibility plaintext
+  eas env:set production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --visibility plaintext
+  eas env:set production --name SUPABASE_URL --visibility plaintext
+  eas env:set production --name SUPABASE_SERVICE_ROLE --visibility sensitive
+  ```
+
   Re-create the four deleted `LIVE_BROADCAST_*` allowlist entries from
-  their §2 observed values the same way, if reversal is needed:
-  `eas env:set production --name LIVE_BROADCAST_START_MODE --value allowlist --visibility plaintext --non-interactive`
-  (and the matching `END_MODE`/`START_RPC_MOSQUE_IDS`/`END_RPC_MOSQUE_IDS`
-  with `52fbe3bf-2d08-4009-9921-208afb5b3169`). Delete any variable
-  created fresh this session and not previously present
-  (`LIVEKIT_API_KEY`/`SECRET`, `RESEND_API_KEY`, `MOSQUE_REQUEST_*`) with
-  `eas env:delete production --variable-name <NAME> --scope project --non-interactive`
-  (exact form confirmed via `eas env:delete --help` this revision).
+  their §2 observed values, if reversal is needed:
+
+  ```sh
+  eas env:set production --name LIVE_BROADCAST_START_MODE --value allowlist --visibility plaintext --non-interactive
+  eas env:set production --name LIVE_BROADCAST_END_MODE --value allowlist --visibility plaintext --non-interactive
+  eas env:set production --name LIVE_BROADCAST_START_RPC_MOSQUE_IDS --value 52fbe3bf-2d08-4009-9921-208afb5b3169 --visibility plaintext --non-interactive
+  eas env:set production --name LIVE_BROADCAST_END_RPC_MOSQUE_IDS --value 52fbe3bf-2d08-4009-9921-208afb5b3169 --visibility plaintext --non-interactive
+  ```
+
+  Delete variables created fresh during reconciliation and absent before it
+  using these exact commands (syntax confirmed via `eas env:delete --help`):
+
+  ```sh
+  eas env:delete production --variable-name LIVEKIT_API_KEY --scope project --non-interactive
+  eas env:delete production --variable-name LIVEKIT_API_SECRET --scope project --non-interactive
+  eas env:delete production --variable-name RESEND_API_KEY --scope project --non-interactive
+  eas env:delete production --variable-name MOSQUE_REQUEST_NOTIFY_EMAIL --scope project --non-interactive
+  eas env:delete production --variable-name MOSQUE_REQUEST_NOTIFY_FROM --scope project --non-interactive
+  eas env:delete production --variable-name MOSQUE_REQUEST_ADMIN_URL --scope project --non-interactive
+  ```
 - GitHub `PRODUCTION_*` secrets: per §3's r2 correction, there is no
   read-back path, so "reverse" means `gh secret set` a newly verified
   intended value from the recovery file — not restoring unreadable old
   bytes, which never could be read to begin with.
-- Candidate Hosting deployment: `eas deploy:delete <DEPLOYMENT_ID>`
-  (confirmed command, `eas deploy:delete --help` checked this revision).
+- Candidate Hosting deployment: use the exact ID recorded in §5 after
+  deployment and run `eas deploy:delete` interactively; select that ID and
+  verify its unique URL before confirming deletion. The root and preview
+  aliases must remain untouched (`eas deploy:delete --help` checked this
+  revision).
   Root/preview aliases were never touched, so no alias reversal is needed
   for this checkpoint specifically.
 - PR merge: reverting a merge to `main` is a separate, higher-impact
