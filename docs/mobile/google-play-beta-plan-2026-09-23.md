@@ -1,9 +1,11 @@
 # Google Play availability: update to production-promotion plan
 
-23 September 2026. The owner reports that Google has approved their developer
-account/application. The precise approval type and available tracks have not yet
-been inspected. This supersedes historical statements that developer-account
-approval is still pending. It does not authorise a Play upload or public release.
+23 September 2026. The owner confirmed an approved **organisation** developer
+account. Play Console currently shows “Create your first app”; no Adhan Connect
+app record exists and no AAB/APK has been uploaded. This supersedes historical
+statements that developer-account approval is still pending. It establishes
+account onboarding, not approval of an app or production release. It does not
+authorise app creation, a Play upload or public release.
 
 ## Revised Android path
 
@@ -29,13 +31,28 @@ to the verified account and app status. See [Google's testing requirements](http
 
 ## Minimum information requested from the owner now
 
-1. Account type: organisation or personal. If personal, confirm creation date if
-   it matters to the production-access requirement.
-2. Exact non-sensitive wording of Google's approval and any remaining Console
-   Dashboard verification/setup tasks. Do not request identity documents.
-3. Whether an Adhan Connect app record already exists; if yes, its Console URL
-   and package name, and whether any AAB/APK has previously been uploaded. The
-   URL identifies the account/app to inspect without needing login credentials.
+Confirmed by the owner: organisation account; no app record or prior upload;
+Console offers “Create your first app”. The numeric developer account ID is not
+needed for initial planning or owner-operated Console setup. Request it later only
+if a specific API integration or account-scoped diagnostic requires it; do not
+store it in source merely for identification.
+
+The next owner choices needed before creating the app record are:
+
+1. Default language (proposed: English (United Kingdom), subject to Console
+   availability and owner preference).
+2. Store name (proposed: `Adhan Connect`; Google currently limits it to 30
+   characters and permits later changes).
+3. App rather than game, and free rather than paid (proposed based on current
+   product behavior; owner must confirm because changing a published free app to
+   paid later is restricted).
+4. Public app-support email address. Do not place a private login address in Git.
+5. Owner acceptance of the Developer Program Policies, US export-law declaration
+   and Play App Signing terms in Console. These are account-holder declarations
+   and must not be accepted by an agent without explicit authority.
+
+Google's current first-app form requires those fields and declarations. See
+[Create and set up your app](https://support.google.com/googleplay/android-developer/answer/9859152?hl=en).
 
 Before the first internal release, additionally identify:
 
