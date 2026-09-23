@@ -54,17 +54,23 @@ Android artifact-verification step added to the workflow. Full validation
 suite re-run and passed. Committed/pushed as `662739e`; CI passed at that
 head.
 
-**Phase 1 (merge PR #9): BLOCKED — genuine external blocker, not a code or
-authorisation problem.** `gh pr merge 9 --merge` was denied by this
-session's own auto-mode classifier, reason **"Merge Without Review"**. All
-preconditions were green immediately before the attempt (`mergeable:
-MERGEABLE`, `mergeStateStatus: CLEAN`, CI `SUCCESS` at `662739e`). This is
-the same system-level guardrail encountered earlier in this engagement for
-CI/workflow-file edits — it is not something the owner's chat approval can
-lift, and I did not attempt to route around it. **The owner needs to merge
-PR #9 directly** (GitHub UI "Merge pull request" button, or `gh pr merge 9
---merge` run by the owner themselves) — a normal merge, no force-push, no
-squash/rebase requested.
+**Phase 1 (merge PR #9): DONE — merged by the owner directly.** The merge
+action itself was consistently denied to me by the auto-mode classifier
+("Merge Without Review"), including after the `expect` exception, so the
+owner ran `gh pr merge 9 --merge` themselves. Merge commit **`MERGE_SHA =
+0cdbae235d43f83467e1698bcd59c73c3b9ce9e6`** ("Merge pull request #9 from
+digimaxai/release/stable-staging-to-production-2026-09-21"). Confirmed via
+`git fetch origin` + `git rev-parse origin/main`. `Android Production Beta
+Build` is now `active` on `gh workflow list --all` alongside `Android
+Staging Build` and `CI`.
+
+Created the isolated post-merge checkout at
+`/private/tmp/adhan-connect-production-preparation-main` (path did not
+already exist, confirmed before creating): `git worktree add --detach ...
+origin/main`, detached HEAD verified equal to `MERGE_SHA`, worktree clean.
+`npm ci` installed 1029 packages (pre-existing 50 moderate/high advisories
+consistent with prior handoffs, not newly introduced). All subsequent
+Phase 5–7 work runs from this checkout.
 
 **Phase 2 (private recovery capture + source-credential checks): DONE.**
 Recovery capture: `/Users/mzk/PROJECTS/adhan-connect-backups/2026-09-23-production-environment-reconciliation/eas-production-before.txt`
@@ -125,10 +131,38 @@ so this phase did not hit the same blocker.
   timestamps; all four Android signing secrets and both `STAGING_*` secrets
   unchanged.
 
-**Phases 5–7 (Hosting candidate, Android build, iOS onboarding): NOT
-STARTED.** These require the merged `main` branch (Phase 5's export uses
-the post-merge worktree; Phase 6 dispatches from `main`; Phase 7 archives
-from the post-merge checkout) and are blocked behind Phase 1's merge.
+**Phase 5 (unaliased Hosting candidate): DONE.** No unexpected `.env.local`
+in the post-merge worktree. `validate-production-build.js` passed under
+`eas env:exec production` with explicit `APP_VARIANT=production`. Export
+(`npx expo export --platform web --clear`) produced 223 files in `dist/`.
+Pre-deploy safety scan: no `sb_secret_`-prefixed literal anywhere in
+`dist/`; the only `SUPABASE_SERVICE_ROLE`/`LIVEKIT_API_SECRET` matches
+were variable-name references inside `dist/server/` (server-only bundled
+API route code, not client-shipped, and not the secret values themselves).
+
+Deployed with `eas deploy --environment production --export-dir dist
+--json` — **no `--prod`, no `--alias`** — output written directly to the
+private recovery directory (`deploy-result.json`, confirmed `0600`):
+
+- **Candidate ID: `nk7xe5x70a`**
+- **Candidate URL: `https://adhan-connect--nk7xe5x70a.expo.app`**
+- Dashboard: `https://expo.dev/projects/20092fdb-b6af-47f8-891a-42f343175678/hosting/deployments`
+
+Allowed checks only, all passed:
+- `/`, `/callback`, `/new-password` all HTTP `200` (checked via `curl -sI`).
+- `LIVE_REGRESSION_BASE_URL=https://adhan-connect--nk7xe5x70a.expo.app
+  node scripts/test-live-regression-contracts.js` →
+  `{"ok":true,"productionDataMutations":0}`, all 5 listener/staff pages
+  `200`, all 9 protected endpoints `401`, unsigned-playback and
+  invalid-nearby-location requests both `400`.
+
+No sign-in, session reuse, admin action, rota edit, notification
+registration, broadcast, or mosque-request action was performed against
+this candidate. It is not deleted and not aliased — held for cutover
+review per the handover.
+
+**Phase 6 (Android build) and Phase 7 (iOS onboarding): IN PROGRESS —
+see below.**
 
 **Owner input still needed (per the execution handover §12, non-blocking
 for independent work):** mosque-request recipients yes/no (§3's remaining
