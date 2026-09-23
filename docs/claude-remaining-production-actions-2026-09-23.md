@@ -6,12 +6,25 @@
 > status and signing must be verified; uploads still need the applicable release
 > approval. This supersedes the old assumption that Play is unavailable.
 
-> **Current continuation checkpoint:** Claude created
-> `docs/backend/production-cutover-manifest.md`; Codex reviewed it in
-> `docs/codex-review-cutover-manifest-2026-09-23.md`. The draft is useful but is
-> not yet ready for approval. Revise it against every numbered review item and
-> the Google Play addendum. Do not create a competing second manifest and do not
-> skip directly to merge/configuration/builds.
+> **Current continuation checkpoint:** manifest revision 3 addresses every
+> numbered item in `docs/codex-review-cutover-manifest-r2-2026-09-23.md`, on
+> top of revision 2's response to the first review and the Google Play
+> addendum. Key corrections this pass: the App Store Connect key's role
+> (`Admin`, confirmed by the owner) is **not** Apple's highest role — that's
+> `Account Holder`, a distinct role revision 2 conflated it with; the GitHub
+> repository is already connected to Xcode Cloud (`digimaxai/adhan-connect`,
+> confirmed by Codex) — the actual gap is app `6792143739`'s missing product
+> onboarding, not a GitHub authorization; the Supabase credential probes were
+> replaced with the documented `apikey`-header health-check form (the
+> `sb_publishable_*`/`sb_secret_*` formats aren't JWTs, so `Authorization:
+> Bearer` was wrong); the sensitive-value recovery capture now creates its
+> directory at mode 0700 and sets `umask 077` before any secret touches disk,
+> rather than `chmod`-ing after; exact `eas env:delete`/`env:set` syntax is
+> confirmed via CLI help throughout; Android's first production artifact will
+> build as version code 2 (committed `app.json` value — EAS `autoIncrement`
+> does not apply to this GitHub-built workflow). Still uncommitted in the
+> worktree pending owner review. Do not create a competing second manifest
+> and do not skip directly to merge/configuration/builds.
 
 Prepared 23 September 2026 at the owner's request. This is the current task
 order and status entry point. It clarifies sequencing; it does not authorise a
