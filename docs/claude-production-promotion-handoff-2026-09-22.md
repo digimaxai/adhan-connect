@@ -1,5 +1,10 @@
 # Claude Code execution handover: stable app promotion
 
+> Current remaining-action order:
+> [Claude continuation checklist, 23 September](claude-remaining-production-actions-2026-09-23.md).
+> It separates release setup/builds from final service-cutover approval so the
+> final packet can contain real artifact IDs without circular prerequisites.
+
 > Progress update, 23 September: Task A source preparation is now implemented
 > and locally validated. Read
 > [the Codex review](codex-production-preparation-review-2026-09-23.md) before

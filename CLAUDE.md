@@ -1,5 +1,11 @@
 # Adhan Connect - Claude/Codex Handoff
 
+**Remaining action checklist (23 September):**
+[`docs/claude-remaining-production-actions-2026-09-23.md`](docs/claude-remaining-production-actions-2026-09-23.md).
+Read this first for current task order, completed Android work, build/cutover
+sequencing and exact remaining outputs. Next: read-only reconciliation and the
+draft cutover manifest; no manual source patch is needed from the owner.
+
 Latest (2026-09-23): Claude's source preparation was reviewed and completed by
 Codex. Production iOS/Android now share strict target/identity validation;
 Android requires signing and builds a standalone release APK plus AAB. Local
