@@ -1,5 +1,11 @@
 # Adhan Connect - Claude/Codex Handoff
 
+**Google Play update (23 September):** owner reports developer approval. Read
+[`docs/mobile/google-play-beta-plan-2026-09-23.md`](docs/mobile/google-play-beta-plan-2026-09-23.md).
+Prepare internal testing alongside GitHub APK/AAB builds; verify exact account/app
+approval, signing and tester status. No upload or public rollout is authorised by
+the status update. Historical statements that account approval is pending are stale.
+
 **Remaining action checklist (23 September):**
 [`docs/claude-remaining-production-actions-2026-09-23.md`](docs/claude-remaining-production-actions-2026-09-23.md).
 Read this first for current task order, completed Android work, build/cutover

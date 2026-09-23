@@ -1,5 +1,11 @@
 # Claude Code: remaining production-promotion actions
 
+> Google Play update: the owner now reports developer approval. Follow
+> [the Android beta addendum](mobile/google-play-beta-plan-2026-09-23.md) when
+> planning internal distribution. GitHub remains the build system. Account/app
+> status and signing must be verified; uploads still need the applicable release
+> approval. This supersedes the old assumption that Play is unavailable.
+
 Prepared 23 September 2026 at the owner's request. This is the current task
 order and status entry point. It clarifies sequencing; it does not authorise a
 cutover, database reset, public store release or permission-policy changes.
