@@ -200,7 +200,45 @@ non-clean, reused the existing `ios/` directory — matches
 remaining steps (Create Workflow in Xcode, product/workflow onboarding,
 archive) are the owner-only interactive part — no public API creates the
 missing `ciProduct` directly, confirmed by both this session's and the
-prior review's research. Presenting the exact steps to the owner now.
+prior review's research.
+
+**Phase 7 progress (24 September 2026):**
+- The owner created the production Xcode Cloud product through Xcode's
+  Create Workflow flow. Product `AdhanConnect`, id
+  `7c14de93-bdfe-4bd8-9bf8-2e204cf77bec`; the repository connection already
+  existed. The auto-created "Default" workflow had an automatic
+  branch-change trigger on `main` and a Build-only action, so it was edited
+  before any build ran. Final saved workflow (verified via read-only API):
+  `Production Beta`, id `3D728722-30C8-486E-B768-20BA0341EB44`, container
+  `ios/AdhanConnect.xcworkspace`, no branch/pull-request/tag/scheduled
+  triggers (manual start only), single `Archive - iOS` action on scheme
+  `AdhanConnect`, distribution audience `INTERNAL_ONLY`. Staging product
+  and workflow untouched. Environment variables were entered by the owner
+  in Xcode; the publishable key was supplied via the local clipboard and
+  never displayed.
+- **Build-number finding:** Xcode Cloud stamps its own per-product run
+  counter as the build number (staging source says `1`, yet its uploads
+  are 41, 40, 39...). The Phase 0 source edit to `11` is therefore not what
+  Xcode Cloud uses. The product's Next Build Number was `1`; the owner set
+  it to `11` in App Store Connect (Xcode Cloud > AdhanConnect > Settings >
+  Build Number). The first run received number 11 as intended.
+- **Run 11 (`81f95fc7-0023-4944-ad0f-a57a162c7ed4`): FAILED at export.**
+  Source commit `0cdbae2` (= MERGE_SHA). `ci_post_clone.log` shows
+  "Production build validation passed", so the environment values were
+  accepted. Xcode 27 (27A266a, equal to Apple's "Latest Release", not the
+  27.2 beta) compiled and produced an `.xcarchive`. The only error is the
+  App Store export: "Automatic signing cannot update bundle identifier
+  `com.maksumsdigitalagency.adhanconnect` ... to enable Push
+  Notifications. Update your bundle identifier on
+  https://developer.apple.com/account" followed by "No profiles for
+  `com.maksumsdigitalagency.adhanconnect` were found". Nothing was
+  uploaded. The app's entitlements request Push Notifications
+  (`aps-environment`) and Sign in with Apple; the production App ID needs
+  those capabilities enabled in the Apple Developer portal. Owner-only
+  step, in progress. The read-only capabilities listing for both App IDs
+  returned none, so it is not treated as reliable evidence either way.
+  The next run will be number 12. Logs are stored privately under
+  `xcode-cloud-run-11-logs/` in the recovery directory (not in Git).
 
 **Owner input still needed (per the execution handover §12, non-blocking
 for independent work):** mosque-request recipients yes/no (§3's remaining
