@@ -48,6 +48,39 @@ action and owner). Nothing here is a guess.
 ## 0. Execution progress log (this session, following
 `docs/claude-release-preparation-execution-2026-09-23.md`)
 
+**Checkpoint outcome (25 September 2026, Claude):** release preparation
+is complete for the authorised scope. Status, in the required vocabulary:
+source merged (`MERGE_SHA 0cdbae235d43f83467e1698bcd59c73c3b9ce9e6`);
+production configuration reconciled (EAS production and the three GitHub
+`PRODUCTION_*` secrets, verified end to end); candidate API deployed
+unaliased (`nk7xe5x70a`); native artifacts produced (Android run
+`35916661014`, APK and AAB; iOS Xcode Cloud run 12, build 12, `VALID` in
+TestFlight, internal audience only). **Not done and not claimed:** service
+cutover, root alias move, Supabase Auth/database/notification/automation
+changes, Google Play upload, tester rollout beyond the existing internal
+group, connected-device acceptance, production readiness.
+
+**Device check (owner-reported, 25 September 2026):** build 12 was attached
+to the existing internal group `AdhanConnectTesters` by the owner in App
+Store Connect (the group's "all builds" setting had not attached it
+automatically), installed from TestFlight on the owner's iPhone, launched,
+and reached the sign-in screen. Deliberately not signed in: the app's API
+address (`adhan-connect.expo.app`) still targets the old database until the
+separately approved cutover, so any connected test would be misleading.
+This is an install-and-launch check only, not acceptance.
+
+**Lessons recorded for the next session:** (1) Merging a pull request and
+reading/writing unrelated harmless files were intermittently refused by
+this session's automatic permission layer; the owner ran the merge
+directly. (2) Xcode Cloud numbers builds with its own per-product counter
+at export; set Next Build Number in App Store Connect rather than editing
+source. (3) A new App ID needs Push Notifications and Sign in with Apple
+enabled in the Apple Developer portal before Xcode Cloud can sign; the
+App Store Connect capability listing API returned nothing for either App
+ID, so it cannot be used to confirm this. (4) Attach a processed build to
+the internal TestFlight group manually. (5) Private helper scripts and
+downloaded artifacts remain only in the private recovery directory.
+
 **Phase 0 (pre-merge safety gates): DONE.** iOS build number set to `11`
 (fresh App Store Connect query confirmed max uploaded is still `10`).
 Android artifact-verification step added to the workflow. Full validation
