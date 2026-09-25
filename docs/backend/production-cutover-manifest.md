@@ -190,7 +190,7 @@ Not yet done (separately gated, outside this checkpoint): physical-device
 install/launch check (no device available in this session), AAB upload to
 Google Play.
 
-**Phase 7 (iOS onboarding): IN PROGRESS.** In the post-merge worktree,
+**Phase 7 (iOS onboarding and first archive): DONE — build 12 produced and processed in TestFlight (internal only).** In the post-merge worktree,
 regenerated the native iOS project under `eas env:exec production` with
 explicit `APP_VARIANT=production` (`npx expo prebuild --platform ios`,
 non-clean, reused the existing `ios/` directory — matches
@@ -239,6 +239,41 @@ prior review's research.
   returned none, so it is not treated as reliable evidence either way.
   The next run will be number 12. Logs are stored privately under
   `xcode-cloud-run-11-logs/` in the recovery directory (not in Git).
+- After the owner enabled Push Notifications and Sign in with Apple on the
+  production App ID in the Apple Developer portal, the workflow was started
+  again. **Run 12 (`c56e20d4-bb97-4f90-ae8f-b0ee5dedeb7e`): SUCCEEDED**
+  (started 2026-09-25T17:57:49Z, finished 18:08:31Z), manual start on
+  `main`, source commit `0cdbae2` (= MERGE_SHA), Xcode 27 (27A266a) on
+  macOS 27 (26A428), workflow `Production Beta`. Verified from the
+  downloaded artifacts (private directory `xcode-cloud-run-12/`, not in
+  Git):
+  - Build log: "Production build validation passed."
+  - Archive and exported IPA: bundle identifier
+    `com.maksumsdigitalagency.adhanconnect`, display name `Adhan Connect`,
+    version `1.0.0`, URL schemes `adhanconnect` and the bundle id, no
+    "staging" string in the IPA Info.plist.
+  - **Build number:** the archive's Info.plist carries `11` (the Phase 0
+    source value) but the exported IPA that is uploaded carries **`12`**.
+    Xcode Cloud stamps its own run counter at export, so the source
+    `buildNumber`/`CURRENT_PROJECT_VERSION` value of 11 is not what
+    reaches App Store Connect. It is harmless, but is not the mechanism
+    that controls the number; the product's Next Build Number setting in
+    App Store Connect is.
+  - App Store provisioning profile "iOS Team Store Provisioning Profile:
+    com.maksumsdigitalagency.adhanconnect", team MAKSUMS LIMITED
+    (8T6CZ5MKU7), expires 2027-09-13; entitlements `aps-environment =
+    production`, Sign in with Apple `Default`, `get-task-allow = false`.
+  - App Store Connect: build **12** for app `6792143739` is `VALID`
+    (processed, not expired), uploaded 2026-09-25T11:05:39-07:00,
+    `usesNonExemptEncryption = false` (no export-compliance prompt),
+    internal state `READY_FOR_BETA_TESTING`, external state
+    `NOT_APPLICABLE` (the workflow's distribution audience is internal
+    only). Existing internal group `AdhanConnectTesters` has
+    `hasAccessToAllBuilds = true`. No tester group, invite or external
+    distribution was created or changed by this checkpoint. Status:
+    **native build produced; internally available in TestFlight;
+    service not switched; devices not yet accepted.**
+  - Staging product, workflow and app were not touched.
 
 **Owner input still needed (per the execution handover §12, non-blocking
 for independent work):** mosque-request recipients yes/no (§3's remaining
@@ -584,7 +619,7 @@ Unchanged from revision 1 — still genuinely blocked, nothing to fill:
 
 | Slot | Status |
 | --- | --- |
-| Production iOS build number | **Set: 11** (verified max uploaded was 10, §10 item 4). Run ID BLOCKED — no workflow exists yet (product onboarding needed first, §4/§10) |
+| Production iOS build number / run | **Build 12 uploaded and `VALID`** (App Store Connect app `6792143739`, version 1.0.0). Xcode Cloud run `c56e20d4-bb97-4f90-ae8f-b0ee5dedeb7e` (run number 12), workflow `Production Beta` (`3D728722-30C8-486E-B768-20BA0341EB44`), source `0cdbae2`. Run 11 failed at export (App ID capabilities) and uploaded nothing. The Phase 0 source value 11 is not what Xcode Cloud uses; it stamps the run counter at export (see Phase 7 notes). |
 | Production Android run URL/SHA/checksums | BLOCKED — not registered on `main`; version code will be **2** (committed `app.json` value, confirmed this revision, §4) |
 | Candidate production Hosting deployment ID | BLOCKED — no production-configured export produced |
 | Google Play app record | **Created** — `Adhan Connect`, `com.maksumsdigitalagency.adhanconnect` (§4) |
