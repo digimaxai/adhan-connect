@@ -880,6 +880,98 @@ apply.
 
 Rollback route unchanged from revision 1.
 
+## 9a. Pre-cutover fresh checks (26 September 2026, Claude)
+
+Read-only except the backup itself (which only reads from the source
+database and writes to a private local directory). No cloud configuration
+was changed.
+
+**Security incident — accidental secret exposure, self-reported.** A
+`notification_dispatch_config?select=*` query returned the row's
+`shared_secret` value in this session's tool output. That was a mistake —
+the query should have named only safe columns, as every other credential
+probe this session did. The value was not otherwise recorded, was not
+placed in any file, and I have not reproduced it since. **Recommend
+rotating this shared secret** (regenerate it and update whatever the
+`push-dispatch` Edge Function expects) before or as part of the cutover,
+as a precaution — treat it as exposed. This is a genuine mutation to
+notification infrastructure and is outside this session's current
+authorisation; it needs the owner's decision, not an automatic fix.
+
+**1. Fresh backup.** Private directory
+`/Users/mzk/PROJECTS/adhan-connect-backups/2026-09-26-pre-cutover-checks/`
+(`0700`), via `supabase db dump --linked` from the already-linked original
+checkout (required starting Docker Desktop, which was not running).
+`roles.sql` (370 bytes), `schema.sql` (403,924 bytes), `data.sql` (726,114
+bytes, `--use-copy`), each checksummed (`checksums.sha256`). `pg_dump`
+warned about a circular foreign-key reference on `prayer_schedule_imports`
+— a note for restore ordering, not a dump failure. Storage object payloads
+are not included (Supabase database backups never contain them, per the
+2026-09-21 backup's own documented limitation) and were not separately
+captured this pass.
+
+**2. Fresh Auth safe-field read of the retained project — never done
+before this.** Read via the Management API using the Supabase CLI's own
+stored personal access token (`~/.supabase/access-token`, read locally,
+never displayed), restricted to an explicit safe-field allowlist; any
+field name not on that allowlist was reported by name only, and 51 of
+those names were further flagged as looking secret-shaped and were not
+inspected at all.
+
+Actual current state (**materially different from what the old project's
+superseded audit showed, confirming that audit cannot be reused**):
+- `site_url`: `adhanconnect://callback` (the production native scheme —
+  not an HTTPS URL, not even localhost).
+- `uri_allow_list`: `adhanconnect://callback`, `adhanconnect://new-password`,
+  `http://localhost:8081/callback`, `http://localhost:8081/new-password`,
+  `http://localhost:8082/callback`, `http://localhost:8082/new-password`,
+  `adhanconnect-staging://**`.
+- **The two production HTTPS routes
+  (`https://adhan-connect.expo.app/callback` and `.../new-password`) are
+  confirmed absent.** This validates the primary handover §6.C.2 plan
+  exactly as written: add them, do not remove any existing entry.
+- `disable_signup: false`, `external_email_enabled: true`,
+  `mailer_autoconfirm: false` (email confirmation still required),
+  `security_captcha_enabled: false`, `jwt_exp: 3600`,
+  `refresh_token_rotation_enabled: true`.
+
+**3. Notification and automation state.**
+- `notification_dispatch_config`: `app_variant = "staging"`,
+  `function_url` = the expected `push-dispatch` Edge Function URL,
+  last updated 2026-09-03. Confirms the dispatcher has not yet been
+  switched — matches expectation, is exactly what the cutover's
+  notification step (primary handover §6.C.4) needs to change.
+- `notification_deliveries` with `status = pending`: **0 rows.** Nothing
+  queued and unsent right now.
+- `notification_events` has no `status` column — it is a pure append-only
+  event log (columns: `id, event_key, kind, user_id, mosque_id, adhan_id,
+  prayer, scheduled_for, title, body, data, created_at`), consistent with
+  the "asynchronous-outbox" design already recorded in
+  `test:notifications:safety`'s output. "Pending events" is not a
+  meaningful count for this table; delivery status is what matters, and
+  that's zero.
+- `active push_devices` by `app_variant`: `{"staging": 2}`. No production
+  devices registered yet — expected, since no real user has signed into
+  the new production build.
+- `mosque_assistant_automation` (singleton, not per-mosque — corrects an
+  earlier assumed table name): `enabled: true`, `last_checked_at: null`,
+  `last_queued: 0`, `last_error: null`. Still enabled, as the 2026-09-22
+  audit found; no evidence of recent activity, but "enabled" is the fact
+  that matters for the cutover's automation-disable step.
+
+**4. Live broadcast check.**
+- `adhans` with `status = live`: **0 rows.**
+- `streams` (`status` column only, no filter — the enum does not accept a
+  literal `"live"` value, corrected after an initial failed query):
+  2 rows, both `status = "active"` (meaning provider-configured, not
+  necessarily broadcasting), last updated 2026-09-06 and 2026-09-16 —
+  neither recent. Combined with zero live `adhans` rows, there is no
+  live broadcast in progress at the time of this check. This is a
+  point-in-time read, not a guarantee for the actual cutover window;
+  reconfirm immediately before switching, as the primary handover
+  itself requires ("a zero-live-row query alone cannot prove nobody is
+  about to start audio").
+
 ## 10. Outstanding blockers and next concrete action
 
 **Release-preparation state:**
