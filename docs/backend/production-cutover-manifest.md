@@ -845,17 +845,152 @@ eas deploy --environment production --export-dir dist --json \
   history) — not included as a routine reverse step; would need its own
   explicit approval if ever required.
 
-### Cutover — forward and reverse
+### Cutover — forward and reverse (concrete, drafted 26 September 2026)
 
-Still specified in the primary handover §6.C and §7, not restated here to
-avoid drift (unchanged from revision 1). **Correction (review item, "the
-primary handover gives constraints and sequence, not complete executable
-commands"):** treat the primary handover as the authoritative *sequence
-and constraints*, not as copy-pasteable final commands — the actual
-guarded Auth/notification/automation operations and their reverses must be
-written from the fresh deployed definitions in §6 once those are obtained,
-not assumed executable as written today. This is an explicit later-phase
-blocker for cutover specifically, separate from release preparation.
+**Still NOT authorised.** This replaces the earlier placeholder that
+pointed back to the primary handover's prose — every command below is
+derived from the actual deployed definitions, read this session (§9a and
+below), not assumed. The primary handover's §6.C ordering and §7 hazards
+still govern the sequence; this section makes each step literal.
+
+**C0. Immediately before running anything below, repeat §9a's checks
+fresh** — a zero-live-row query or an empty push-device list from earlier
+today does not prove either is still true now.
+
+**C1. Auth — additive PATCH only**
+
+Current confirmed state (§9a):
+```
+site_url: adhanconnect://callback
+uri_allow_list: adhanconnect://callback,adhanconnect://new-password,http://localhost:8081/callback,http://localhost:8081/new-password,http://localhost:8082/callback,http://localhost:8082/new-password,adhanconnect-staging://**
+```
+Forward — `PATCH /v1/projects/zhrucqghrqkjyzmupdyy/config/auth`, body
+containing **only** these two fields (every existing entry preserved,
+two new ones appended):
+```json
+{
+  "site_url": "https://adhan-connect.expo.app",
+  "uri_allow_list": "adhanconnect://callback,adhanconnect://new-password,http://localhost:8081/callback,http://localhost:8081/new-password,http://localhost:8082/callback,http://localhost:8082/new-password,adhanconnect-staging://**,https://adhan-connect.expo.app/callback,https://adhan-connect.expo.app/new-password"
+}
+```
+Verify: fresh `GET` of the same safe fields; confirm both new routes
+present and all seven previous entries unchanged.
+
+Reverse — the same `PATCH` with `site_url` and `uri_allow_list` restored
+to the exact "current confirmed state" values above.
+
+**C2. Notification switch — exact mechanics, confirmed from deployed
+source this session**
+
+Current state (§9a): exactly two cron jobs —
+`adhan-connect-push-dispatch-staging` (`* * * * *`, active) and
+`fetch-elm-timetable-daily` (daily 01:00, active). Two deployed Edge
+Functions: `push-dispatch` (v7) and `fetch-elm-timetable` (v4). Edge
+Function secrets include a project-wide `APP_VARIANT` (value not read —
+Management API only lists secret names). `configure_notification_dispatch_schedule_v1(p_function_url, p_app_variant)`
+**only unschedules a job matching the target variant's own name** — it
+does not touch a differently-named existing job. This confirms the exact
+hazard the primary handover warned about and makes the fix concrete: the
+staging job must be unscheduled as its own, separate, explicit step
+first.
+
+Forward, in this exact order:
+```sql
+-- 1. Stop the staging dispatcher explicitly (the config function will NOT do this for you).
+select cron.unschedule('adhan-connect-push-dispatch-staging');
+
+-- 2. Verify it's gone before continuing.
+select jobname, active from cron.job where jobname like 'adhan-connect-push-dispatch-%';
+-- expect: zero rows
+```
+```sh
+# 3. Switch the Edge Function's own variant secret (not a value-bearing secret, safe to type literally).
+supabase secrets set --project-ref zhrucqghrqkjyzmupdyy APP_VARIANT=production
+```
+```sql
+-- 4. Create the production schedule and repoint the config row (single call does both).
+select public.configure_notification_dispatch_schedule_v1(
+  'https://zhrucqghrqkjyzmupdyy.supabase.co/functions/v1/push-dispatch',
+  'production'
+);
+
+-- 5. Verify exactly one dispatcher job, it's the production one, and ELM is untouched.
+select jobname, schedule, active from cron.job order by jobname;
+-- expect: adhan-connect-push-dispatch-production (active), fetch-elm-timetable-daily (active). Nothing else.
+
+select app_variant, function_url from public.notification_dispatch_config where singleton;
+-- expect: production, the same push-dispatch URL.
+```
+**Residual-risk note, checked 26 September 2026, must be rechecked at
+execution time:** `active_push_devices_by_variant` was `{"staging": 2}` —
+**zero active production devices** at check time, and
+`materialize_notification_deliveries_v1` only inserts deliveries for
+devices matching the target variant. This means the very first production
+dispatch cycle after switching had nothing to send when checked. This is
+not a permanent guarantee — it changes the moment a real device registers
+under the production variant (i.e., after the physical-device acceptance
+step begins). Re-run the `active_push_devices_by_variant` check
+immediately before this step, not from this document.
+
+Reverse, in the same structure:
+```sql
+select cron.unschedule('adhan-connect-push-dispatch-production');
+```
+```sh
+supabase secrets set --project-ref zhrucqghrqkjyzmupdyy APP_VARIANT=staging
+```
+```sql
+select public.configure_notification_dispatch_schedule_v1(
+  'https://zhrucqghrqkjyzmupdyy.supabase.co/functions/v1/push-dispatch',
+  'staging'
+);
+-- recreates the staging job; verify exactly one dispatcher job again, staging, active.
+```
+`SB_SECRET_KEY` and all other Edge Function secrets are untouched by any
+of the above — only `APP_VARIANT` changes.
+
+**C3. Assistant automation — disable**
+
+Current state (§9a): singleton row in `mosque_assistant_automation`,
+`enabled: true`, `last_checked_at: null`, `last_queued: 0`,
+`last_error: null` (no evidence of in-flight work at check time — recheck
+before relying on this).
+
+Forward — `PATCH .../rest/v1/mosque_assistant_automation?singleton=eq.true`
+with service-role credentials, body `{"enabled": false}`. This is a
+boolean flip only; per the primary handover, it does not by itself cancel
+anything already queued elsewhere — the `last_queued: 0` / `last_error:
+null` read above is the evidence that nothing was in flight at check
+time, not a property of this PATCH.
+
+Reverse — the same `PATCH` with `{"enabled": true}`.
+
+**C4. Root alias move — exact command, help-verified this session**
+
+```sh
+# Forward: promote the already-verified candidate to serve the root alias.
+eas deploy:alias --id nk7xe5x70a --prod
+```
+Verify: `curl -sI https://adhan-connect.expo.app/` reaches the candidate's
+content (not a cache-stale response); re-run the same read-only checks
+used on the candidate in §8 Phase 5 against the root URL now.
+
+Reverse — **`b5blckazxb` is only last-observed**, not reconfirmed this
+session; reconfirm the actual current root-alias deployment ID
+immediately before cutover (there is no `eas` CLI list command for this,
+per §2's note — use the Expo dashboard), then:
+```sh
+eas deploy:alias --id <RECONFIRMED_PREVIOUS_ID> --prod
+```
+Per the primary handover: reverting only this alias is **not** a full
+rollback for binaries already distributed against the new database — it
+must be paired with the notification and Auth reversals above, and with
+retiring or reissuing any native builds already handed to testers.
+
+**Not yet resolved for this packet:** the two acceptance-window owner
+questions (test mosque/account, device timing) and the mosque-request
+email policy answer remain open per §10. They do not block preparing this
+packet, but the acceptance steps that follow C4 depend on them.
 
 ## 9. Acceptance matrix, test window, and rollback
 
